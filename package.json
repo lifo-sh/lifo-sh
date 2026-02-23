@@ -1,23 +1,10 @@
 {
   "name": "rapidos",
-  "version": "0.1.0",
   "private": true,
-  "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest"
-  },
-  "dependencies": {
-    "@xterm/xterm": "^5.5.0",
-    "@xterm/addon-fit": "^0.10.0",
-    "@xterm/addon-webgl": "^0.18.0"
-  },
-  "devDependencies": {
-    "typescript": "^5.7.0",
-    "vite": "^6.0.0",
-    "vitest": "^3.0.0"
+    "build": "pnpm --filter @lifo-sh/core build",
+    "typecheck": "pnpm --filter @lifo-sh/core typecheck",
+    "test": "pnpm --filter @lifo-sh/core test",
+    "dev": "pnpm --filter @lifo-sh/example-vite dev"
   }
 }

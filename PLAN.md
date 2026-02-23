@@ -1,4 +1,4 @@
-# BrowserOS — A Linux-like Operating System Built on Browser APIs
+# Lifo — A Linux-like Operating System Built on Browser APIs
 
 ## Project Vision
 
@@ -49,7 +49,7 @@ The browser already provides memory management, TCP/IP, display rendering, audio
 ## Project Structure (Actual)
 
 ```
-rapidos/
+lifo/
 ├── package.json
 ├── tsconfig.json
 ├── vite.config.ts
@@ -457,7 +457,7 @@ export class ProcFS implements FSBackend {
     ['version', async () => {
       const ua = navigator.userAgent;
       return new TextEncoder().encode(
-        `BrowserOS 1.0.0 (${ua})\n`
+        `Lifo 1.0.0 (${ua})\n`
       );
     }],
 
@@ -1533,7 +1533,7 @@ export function createChildProcessModule(kernel: Kernel) {
     execSync(command: string, options?: any): string {
       // Synchronous exec — uses Atomics.wait if possible
       // Fallback: throw error recommending async version
-      throw new Error('execSync is not supported in BrowserOS. Use exec() or spawn() instead.');
+      throw new Error('execSync is not supported in Lifo. Use exec() or spawn() instead.');
     },
 
     fork(modulePath: string, args?: string[], options?: any) {
@@ -1558,7 +1558,7 @@ export function createOsModule() {
   return {
     arch: () => 'wasm',           // We run on WASM/browser
     platform: () => 'browser',
-    type: () => 'BrowserOS',
+    type: () => 'Lifo',
     release: () => '1.0.0',
     hostname: () => location.hostname || 'localhost',
     homedir: () => '/home/user',
@@ -1663,11 +1663,11 @@ export class TerminalUI {
 ### 5.2 Prompt
 
 ```
-user@browseros:~$ _
+user@lifo:~$ _
 ```
 
 The prompt is configurable via `$PS1`:
-- Default: `\u@\h:\w\$ ` which expands to `user@browseros:~/path$ `
+- Default: `\u@\h:\w\$ ` which expands to `user@lifo:~/path$ `
 - `\u` = username, `\h` = hostname, `\w` = working directory, `\$` = $ (or # for root)
 
 ---
@@ -2010,7 +2010,7 @@ PATH=/usr/bin:/bin
 PWD=/home/user
 TERM=xterm-256color
 LANG=en_US.UTF-8
-HOSTNAME=browseros
+HOSTNAME=lifo
 EDITOR=nano
 BROWSER_OS_VERSION=1.0.0
 ```
@@ -2020,7 +2020,7 @@ BROWSER_OS_VERSION=1.0.0
 ## Default .bashrc
 
 ```bash
-# ~/.bashrc - BrowserOS user shell config
+# ~/.bashrc - Lifo user shell config
 
 # Prompt
 PS1='\[\033[1;32m\]\u@\h\[\033[0m\]:\[\033[1;34m\]\w\[\033[0m\]\$ '
@@ -2052,7 +2052,7 @@ export PAGER=less
 | |_) | | | (_) \ V  V /\__ \  __/ | |_| |___) |
 |____/|_|  \___/ \_/\_/ |___/\___|  \___/|____/
 
-Welcome to BrowserOS v1.0.0
+Welcome to Lifo v1.0.0
 Type 'help' for available commands.
 ```
 

@@ -1,8 +1,8 @@
 node_modules/
 dist/
-*.lock
+packages/*/dist/
+apps/*/dist/
 bun.lock
-pnpm-lock.yaml
 
 # Environment
 .env

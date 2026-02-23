@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+/* ── Tokyo Night theme ── */
+@theme {
+  --color-tokyo-bg: #1a1b26;
+  --color-tokyo-bg-dark: #16161e;
+  --color-tokyo-fg: #a9b1d6;
+  --color-tokyo-fg-bright: #c0caf5;
+  --color-tokyo-border: #2f3146;
+  --color-tokyo-comment: #565f89;
+  --color-tokyo-blue: #7aa2f7;
+  --color-tokyo-blue-bright: #89b4fa;
+  --color-tokyo-purple: #bb9af7;
+  --color-tokyo-green: #9ece6a;
+  --color-tokyo-orange: #ff9e64;
+  --color-tokyo-cyan: #89ddff;
+  --color-tokyo-hover: #1e2030;
+  --color-tokyo-active: #292e42;
+  --color-tokyo-muted: #9aa5ce;
+
+  --font-code: "Cascadia Code", "Fira Code", "JetBrains Mono", Menlo, monospace;
+}
+
+/* ── Base reset & body ── */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: var(--color-tokyo-bg);
+    color: var(--color-tokyo-fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+}
+
+/* ── Components: syntax highlighting ── */
+@layer components {
+  .code-comment { color: var(--color-tokyo-comment); }
+  .code-keyword { color: var(--color-tokyo-purple); }
+  .code-string  { color: var(--color-tokyo-green); }
+  .code-fn      { color: var(--color-tokyo-blue); }
+  .code-const   { color: var(--color-tokyo-orange); }
+  .code-punct   { color: var(--color-tokyo-cyan); }
+}
+
+/* ── Components: JS-toggled states ── */
+@layer components {
+  .sidebar-item.active {
+    background: var(--color-tokyo-active);
+    color: var(--color-tokyo-blue);
+    font-weight: 500;
+  }
+
+  .output-panel {
+    display: none;
+    width: 100%;
+    height: 100%;
+  }
+  .output-panel.active {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .tab-btn.active {
+    color: var(--color-tokyo-blue);
+    background: var(--color-tokyo-bg);
+    box-shadow: inset 0 -2px 0 var(--color-tokyo-blue);
+  }
+
+  .tab-panel {
+    position: absolute;
+    inset: 0;
+    padding: 8px;
+    display: none;
+  }
+  .tab-panel.active {
+    display: block;
+  }
+}
