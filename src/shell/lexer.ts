@@ -5,15 +5,25 @@ export function lex(input: string): Token[] {
   let i = 0;
 
   while (i < input.length) {
-    // Skip whitespace
+    // Skip whitespace (but NOT newlines -- they become Newline tokens)
     if (input[i] === ' ' || input[i] === '\t') {
+      i++;
+      continue;
+    }
+
+    // Newline
+    if (input[i] === '\n') {
+      tokens.push({ kind: TokenKind.Newline, value: '\n', pos: i });
       i++;
       continue;
     }
 
     // Comment -- skip to end of line
     if (input[i] === '#') {
-      break;
+      while (i < input.length && input[i] !== '\n') {
+        i++;
+      }
+      continue;
     }
 
     // Operators
@@ -99,9 +109,24 @@ function tryOperator(input: string, pos: number): { token: Token; end: number } 
     return { token: { kind: TokenKind.RedirectIn, value: '<', pos }, end: pos + 1 };
   }
 
+  // ;; (double semicolon -- case item terminator)
+  if (ch === ';' && next === ';') {
+    return { token: { kind: TokenKind.DoubleSemi, value: ';;', pos }, end: pos + 2 };
+  }
+
   // ; (semicolon)
   if (ch === ';') {
     return { token: { kind: TokenKind.Semi, value: ';', pos }, end: pos + 1 };
+  }
+
+  // ( (left paren)
+  if (ch === '(') {
+    return { token: { kind: TokenKind.LParen, value: '(', pos }, end: pos + 1 };
+  }
+
+  // ) (right paren)
+  if (ch === ')') {
+    return { token: { kind: TokenKind.RParen, value: ')', pos }, end: pos + 1 };
   }
 
   return null;
@@ -109,12 +134,12 @@ function tryOperator(input: string, pos: number): { token: Token; end: number } 
 
 function isOperatorBreak(ch: string): boolean {
   return ch === ' ' || ch === '\t' || ch === '|' || ch === '&' || ch === ';'
-    || ch === '>' || ch === '<' || ch === '\n';
+    || ch === '>' || ch === '<' || ch === '\n' || ch === '(' || ch === ')';
 }
 
 function isWordBreak(ch: string): boolean {
   return ch === ' ' || ch === '\t' || ch === '|' || ch === '&' || ch === ';'
-    || ch === '>' || ch === '<' || ch === '#' || ch === '\n';
+    || ch === '>' || ch === '<' || ch === '#' || ch === '\n' || ch === '(' || ch === ')';
 }
 
 function readWord(input: string, pos: number): { token: Token; end: number } | null {
@@ -186,13 +211,43 @@ function readWord(input: string, pos: number): { token: Token; end: number } | n
       continue;
     }
 
-    // $(...) command substitution
+    // $(...) or $((...)) command/arithmetic substitution
     if (ch === '$' && input[i + 1] === '(') {
       const subst = readCommandSubstitution(input, i);
       currentText += subst.text;
       i = subst.end;
       hasContent = true;
       continue;
+    }
+
+    // ${...} braced variable expansion -- read until matching }
+    if (ch === '$' && input[i + 1] === '{') {
+      currentText += '${';
+      let j = i + 2;
+      let depth = 1;
+      while (j < input.length && depth > 0) {
+        if (input[j] === '{') depth++;
+        else if (input[j] === '}') depth--;
+        if (depth > 0) {
+          currentText += input[j];
+        }
+        j++;
+      }
+      currentText += '}';
+      i = j;
+      hasContent = true;
+      continue;
+    }
+
+    // $# $@ $N $? -- special variables that start with $
+    if (ch === '$' && i + 1 < input.length) {
+      const nc = input[i + 1];
+      if (nc === '#' || nc === '@' || nc === '?' || /[0-9]/.test(nc)) {
+        currentText += '$' + nc;
+        i += 2;
+        hasContent = true;
+        continue;
+      }
     }
 
     // Check for operator/break chars that end the word
@@ -228,13 +283,43 @@ function readWord(input: string, pos: number): { token: Token; end: number } | n
 
 function readCommandSubstitution(input: string, pos: number): { text: string; end: number } {
   // pos points at '$'
-  let depth = 0;
   let i = pos + 1; // skip $
-  let text = '$(';
 
   if (input[i] !== '(') {
     return { text: '$', end: pos + 1 };
   }
+
+  // Check for $(( -- arithmetic expansion
+  if (input[i + 1] === '(') {
+    // Read until matching ))
+    let text = '$((';
+    let j = i + 2; // skip ((
+    let depth = 1;
+    while (j < input.length && depth > 0) {
+      if (input[j] === '(' && input[j + 1] === '(') {
+        depth++;
+        text += '((';
+        j += 2;
+      } else if (input[j] === ')' && input[j + 1] === ')') {
+        depth--;
+        if (depth === 0) {
+          text += '))';
+          j += 2;
+          break;
+        }
+        text += '))';
+        j += 2;
+      } else {
+        text += input[j];
+        j++;
+      }
+    }
+    return { text, end: j };
+  }
+
+  // Regular $(...) command substitution
+  let depth = 0;
+  let text = '$(';
   i++; // skip (
   depth = 1;
 

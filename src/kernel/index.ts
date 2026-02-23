@@ -2,6 +2,7 @@ import { VFS } from './vfs/index.js';
 import { ProcProvider } from './vfs/providers/ProcProvider.js';
 import { DevProvider } from './vfs/providers/DevProvider.js';
 import { PersistenceManager } from './persistence/PersistenceManager.js';
+import { installSamples } from './samples.js';
 
 const MOTD = `\x1b[1;36m
  ____                                ___  ____
@@ -12,6 +13,7 @@ const MOTD = `\x1b[1;36m
 \x1b[0m
 \x1b[2mA Linux-like OS running natively in your browser.\x1b[0m
 \x1b[2mType 'help' or try: ls, cd, cat, mkdir, touch\x1b[0m
+\x1b[2mExplore examples: ls ~/examples/scripts\x1b[0m
 `;
 
 const DEFAULT_PROFILE = `export PATH=/usr/bin:/bin
@@ -92,6 +94,9 @@ export class Kernel {
     if (!this.vfs.exists('/home/user/.bashrc')) {
       this.vfs.writeFile('/home/user/.bashrc', DEFAULT_BASHRC);
     }
+
+    // Install example files
+    installSamples(this.vfs);
   }
 
   getDefaultEnv(): Record<string, string> {

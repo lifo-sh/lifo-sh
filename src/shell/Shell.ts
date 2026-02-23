@@ -9,6 +9,7 @@ import { Interpreter, type BuiltinFn } from './interpreter.js';
 import { HistoryManager } from './history.js';
 import { JobTable } from './jobs.js';
 import { complete, type CompletionContext } from './completer.js';
+import { evaluateTest } from './test-builtin.js';
 
 export class Shell {
   private terminal: Terminal;
@@ -96,6 +97,10 @@ export class Shell {
     this.builtins.set('.', (args, _stdout, stderr) => this.builtinSource(args, stderr));
     this.builtins.set('alias', (args, stdout) => this.builtinAlias(args, stdout));
     this.builtins.set('unalias', (args, _stdout, stderr) => this.builtinUnalias(args, stderr));
+    this.builtins.set('test', (_args, _stdout, stderr) =>
+      Promise.resolve(evaluateTest(_args, this.vfs, stderr)));
+    this.builtins.set('[', (_args, _stdout, stderr) =>
+      Promise.resolve(evaluateTest(_args, this.vfs, stderr)));
   }
 
   getJobTable(): JobTable {
@@ -524,11 +529,7 @@ export class Shell {
   async sourceFile(path: string): Promise<void> {
     try {
       const content = this.vfs.readFileString(path);
-      for (const line of content.split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith('#')) continue;
-        await this.interpreter.executeLine(trimmed);
-      }
+      await this.interpreter.executeLine(content);
     } catch {
       // Silently ignore missing config files
     }
@@ -542,11 +543,7 @@ export class Shell {
     const path = resolve(this.cwd, args[0]);
     try {
       const content = this.vfs.readFileString(path);
-      for (const line of content.split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith('#')) continue;
-        await this.interpreter.executeLine(trimmed);
-      }
+      await this.interpreter.executeLine(content);
       return 0;
     } catch {
       stderr.write(`source: ${args[0]}: No such file\n`);

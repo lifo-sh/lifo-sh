@@ -13,6 +13,10 @@ export enum TokenKind {
   RedirectErr,    // 2>
   RedirectErrAppend, // 2>>
   RedirectAll,    // &>
+  DoubleSemi,     // ;;
+  LParen,         // (
+  RParen,         // )
+  Newline,        // \n
   EOF,
 }
 
@@ -46,7 +50,7 @@ export interface ListNode {
 
 export interface PipelineNode {
   type: 'pipeline';
-  commands: SimpleCommandNode[];
+  commands: CompoundCommandNode[];
   negated: boolean;
 }
 
@@ -62,4 +66,62 @@ export interface RedirectionNode {
   target: WordPart[];
 }
 
-export type ASTNode = ScriptNode | ListNode | PipelineNode | SimpleCommandNode;
+export interface IfNode {
+  type: 'if';
+  clauses: Array<{ condition: ListNode[]; body: ListNode[] }>;
+  elseBody: ListNode[] | null;
+  redirections: RedirectionNode[];
+}
+
+export interface ForNode {
+  type: 'for';
+  variable: string;
+  words: WordPart[][] | null;  // null = use "$@"
+  body: ListNode[];
+  redirections: RedirectionNode[];
+}
+
+export interface WhileNode {
+  type: 'while';
+  condition: ListNode[];
+  body: ListNode[];
+  redirections: RedirectionNode[];
+}
+
+export interface UntilNode {
+  type: 'until';
+  condition: ListNode[];
+  body: ListNode[];
+  redirections: RedirectionNode[];
+}
+
+export interface CaseNode {
+  type: 'case';
+  word: WordPart[];
+  items: Array<{ patterns: WordPart[][]; body: ListNode[] }>;
+  redirections: RedirectionNode[];
+}
+
+export interface FunctionDefNode {
+  type: 'function_def';
+  name: string;
+  body: CompoundCommandNode;
+}
+
+export interface GroupNode {
+  type: 'group';
+  body: ListNode[];
+  redirections: RedirectionNode[];
+}
+
+export type CompoundCommandNode =
+  | SimpleCommandNode
+  | IfNode
+  | ForNode
+  | WhileNode
+  | UntilNode
+  | CaseNode
+  | GroupNode
+  | FunctionDefNode;
+
+export type ASTNode = ScriptNode | ListNode | PipelineNode | CompoundCommandNode;

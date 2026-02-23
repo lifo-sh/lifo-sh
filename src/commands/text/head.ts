@@ -11,6 +11,8 @@ const command: Command = async (ctx) => {
     if (arg === '-n' && i + 1 < ctx.args.length) {
       count = parseInt(ctx.args[++i], 10);
       if (isNaN(count)) { ctx.stderr.write('head: invalid number of lines\n'); return 1; }
+    } else if (/^-\d+$/.test(arg)) {
+      count = parseInt(arg.slice(1), 10);
     } else {
       files.push(arg);
     }

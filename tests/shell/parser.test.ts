@@ -1,20 +1,23 @@
 import { describe, it, expect } from 'vitest';
 import { lex } from '../../src/shell/lexer.js';
 import { parse } from '../../src/shell/parser.js';
+import type { SimpleCommandNode } from '../../src/shell/types.js';
 
 function p(input: string) {
   return parse(lex(input));
 }
 
+function cmd(input: string, listIdx = 0, entryIdx = 0, cmdIdx = 0): SimpleCommandNode {
+  return p(input).lists[listIdx].entries[entryIdx].pipeline.commands[cmdIdx] as SimpleCommandNode;
+}
+
 describe('parser', () => {
   describe('simple commands', () => {
     it('parses a simple command', () => {
-      const ast = p('echo hello');
-      expect(ast.lists).toHaveLength(1);
-      const cmd = ast.lists[0].entries[0].pipeline.commands[0];
-      expect(cmd.words).toHaveLength(2);
-      expect(cmd.words[0][0].text).toBe('echo');
-      expect(cmd.words[1][0].text).toBe('hello');
+      const c = cmd('echo hello');
+      expect(c.words).toHaveLength(2);
+      expect(c.words[0][0].text).toBe('echo');
+      expect(c.words[1][0].text).toBe('hello');
     });
 
     it('parses empty input', () => {
@@ -23,9 +26,8 @@ describe('parser', () => {
     });
 
     it('parses multiple arguments', () => {
-      const ast = p('ls -la /tmp');
-      const cmd = ast.lists[0].entries[0].pipeline.commands[0];
-      expect(cmd.words).toHaveLength(3);
+      const c = cmd('ls -la /tmp');
+      expect(c.words).toHaveLength(3);
     });
   });
 
@@ -34,8 +36,8 @@ describe('parser', () => {
       const ast = p('echo hello | cat');
       const pipeline = ast.lists[0].entries[0].pipeline;
       expect(pipeline.commands).toHaveLength(2);
-      expect(pipeline.commands[0].words[0][0].text).toBe('echo');
-      expect(pipeline.commands[1].words[0][0].text).toBe('cat');
+      expect((pipeline.commands[0] as SimpleCommandNode).words[0][0].text).toBe('echo');
+      expect((pipeline.commands[1] as SimpleCommandNode).words[0][0].text).toBe('cat');
     });
 
     it('parses multi-stage pipeline', () => {
@@ -101,52 +103,45 @@ describe('parser', () => {
 
   describe('redirections', () => {
     it('parses output redirect', () => {
-      const ast = p('echo hi > out.txt');
-      const cmd = ast.lists[0].entries[0].pipeline.commands[0];
-      expect(cmd.redirections).toHaveLength(1);
-      expect(cmd.redirections[0].operator).toBe('>');
-      expect(cmd.redirections[0].target[0].text).toBe('out.txt');
+      const c = cmd('echo hi > out.txt');
+      expect(c.redirections).toHaveLength(1);
+      expect(c.redirections[0].operator).toBe('>');
+      expect(c.redirections[0].target[0].text).toBe('out.txt');
     });
 
     it('parses append redirect', () => {
-      const ast = p('echo hi >> out.txt');
-      const cmd = ast.lists[0].entries[0].pipeline.commands[0];
-      expect(cmd.redirections[0].operator).toBe('>>');
+      const c = cmd('echo hi >> out.txt');
+      expect(c.redirections[0].operator).toBe('>>');
     });
 
     it('parses input redirect', () => {
-      const ast = p('cat < in.txt');
-      const cmd = ast.lists[0].entries[0].pipeline.commands[0];
-      expect(cmd.redirections[0].operator).toBe('<');
+      const c = cmd('cat < in.txt');
+      expect(c.redirections[0].operator).toBe('<');
     });
 
     it('parses stderr redirect', () => {
-      const ast = p('cmd 2> err.txt');
-      const cmd = ast.lists[0].entries[0].pipeline.commands[0];
-      expect(cmd.redirections[0].operator).toBe('2>');
+      const c = cmd('cmd 2> err.txt');
+      expect(c.redirections[0].operator).toBe('2>');
     });
 
     it('parses multiple redirections', () => {
-      const ast = p('cmd > out 2> err');
-      const cmd = ast.lists[0].entries[0].pipeline.commands[0];
-      expect(cmd.redirections).toHaveLength(2);
+      const c = cmd('cmd > out 2> err');
+      expect(c.redirections).toHaveLength(2);
     });
   });
 
   describe('assignments', () => {
     it('parses variable assignment before command', () => {
-      const ast = p('FOO=bar echo $FOO');
-      const cmd = ast.lists[0].entries[0].pipeline.commands[0];
-      expect(cmd.assignments).toHaveLength(1);
-      expect(cmd.assignments[0].name).toBe('FOO');
-      expect(cmd.words).toHaveLength(2);
+      const c = cmd('FOO=bar echo $FOO');
+      expect(c.assignments).toHaveLength(1);
+      expect(c.assignments[0].name).toBe('FOO');
+      expect(c.words).toHaveLength(2);
     });
 
     it('parses standalone assignment', () => {
-      const ast = p('FOO=bar');
-      const cmd = ast.lists[0].entries[0].pipeline.commands[0];
-      expect(cmd.assignments).toHaveLength(1);
-      expect(cmd.words).toHaveLength(0);
+      const c = cmd('FOO=bar');
+      expect(c.assignments).toHaveLength(1);
+      expect(c.words).toHaveLength(0);
     });
   });
 
@@ -156,12 +151,12 @@ describe('parser', () => {
       const pipeline = ast.lists[0].entries[0].pipeline;
       expect(pipeline.commands).toHaveLength(2);
 
-      const cat = pipeline.commands[0];
+      const cat = pipeline.commands[0] as SimpleCommandNode;
       expect(cat.words[0][0].text).toBe('cat');
       expect(cat.redirections).toHaveLength(1);
       expect(cat.redirections[0].operator).toBe('<');
 
-      const sort = pipeline.commands[1];
+      const sort = pipeline.commands[1] as SimpleCommandNode;
       expect(sort.words[0][0].text).toBe('sort');
       expect(sort.redirections).toHaveLength(1);
       expect(sort.redirections[0].operator).toBe('>');
