@@ -1,0 +1,22 @@
+node_modules/
+dist/
+*.lock
+bun.lock
+pnpm-lock.yaml
+
+# Environment
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
