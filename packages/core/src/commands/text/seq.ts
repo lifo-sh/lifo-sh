@@ -4,7 +4,8 @@ const command: Command = async (ctx) => {
   const args = ctx.args;
 
   if (args.length === 0) {
-    ctx.stderr.write('seq: missing operand\n');
+    ctx.stderr.write('Usage: seq [-s SEP] [FIRST [INCR]] LAST\n');
+    ctx.stderr.write('Print a sequence of numbers.\n');
     return 1;
   }
 

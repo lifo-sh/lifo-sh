@@ -38,13 +38,18 @@ const command: Command = async (ctx) => {
 
   let input: string | Uint8Array;
 
-  if (files.length === 0 || (files.length === 1 && files[0] === '-')) {
+  if (files.length === 1 && files[0] === '-') {
+    // Explicit stdin via '-'
     if (ctx.stdin) {
       input = await ctx.stdin.readAll();
     } else {
       ctx.stderr.write('base64: missing input\n');
       return 1;
     }
+  } else if (files.length === 0) {
+    ctx.stderr.write(`Usage: base64 [-d] [-w COLS] [FILE]\n`);
+    ctx.stderr.write(`Encode or decode base64. Use '-' to read from stdin.\n`);
+    return 1;
   } else {
     const path = resolve(ctx.cwd, files[0]);
     try {

@@ -107,6 +107,8 @@ const PAGES: Record<string, { synopsis: string; description: string }> = {
 
   // Fun
   sl: { synopsis: 'sl', description: 'Steam Locomotive. Displays a train animation. A classic punishment for mistyping ls.' },
+  fastfetch: { synopsis: 'fastfetch [--logo default|small|none] [--color COLOR]', description: 'Display system information with a custom Lifo logo. Config at ~/.config/fastfetch/config.json. Supports custom logos, colors (256-color), and module selection.' },
+  neofetch: { synopsis: 'neofetch', description: 'Alias for fastfetch. Display system information with a custom Lifo logo.' },
 
   // Node.js
   node: { synopsis: 'node [-e CODE] [FILE]', description: 'Execute JavaScript using the Node.js-compatible runtime.' },

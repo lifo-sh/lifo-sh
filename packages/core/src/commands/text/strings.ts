@@ -45,17 +45,9 @@ const command: Command = async (ctx) => {
   let exitCode = 0;
 
   if (files.length === 0) {
-    if (ctx.stdin) {
-      const text = await ctx.stdin.readAll();
-      const data = new TextEncoder().encode(text);
-      for (const s of extractStrings(data, minLen)) {
-        ctx.stdout.write(s + '\n');
-      }
-    } else {
-      ctx.stderr.write('strings: missing file operand\n');
-      return 1;
-    }
-    return 0;
+    ctx.stderr.write('Usage: strings [-n MIN] FILE...\n');
+    ctx.stderr.write('Print sequences of printable characters from files.\n');
+    return 1;
   }
 
   for (const file of files) {

@@ -62,16 +62,9 @@ const command: Command = async (ctx) => {
   }
 
   if (files.length === 0) {
-    if (ctx.stdin) {
-      const text = await ctx.stdin.readAll();
-      const data = new TextEncoder().encode(text);
-      const hash = await sha256(data);
-      ctx.stdout.write(`${hash}  -\n`);
-    } else {
-      ctx.stderr.write('sha256sum: missing file operand\n');
-      return 1;
-    }
-    return 0;
+    ctx.stderr.write('Usage: sha256sum [-c FILE] FILE...\n');
+    ctx.stderr.write('Compute or verify SHA-256 checksums.\n');
+    return 1;
   }
 
   for (const file of files) {

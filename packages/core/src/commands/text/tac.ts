@@ -12,13 +12,9 @@ const command: Command = async (ctx) => {
   };
 
   if (ctx.args.length === 0) {
-    if (ctx.stdin) {
-      processContent(await ctx.stdin.readAll());
-    } else {
-      ctx.stderr.write('tac: missing operand\n');
-      return 1;
-    }
-    return 0;
+    ctx.stderr.write('Usage: tac FILE...\n');
+    ctx.stderr.write('Print files in reverse line order.\n');
+    return 1;
   }
 
   for (const arg of ctx.args) {
