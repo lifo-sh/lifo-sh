@@ -122,6 +122,7 @@ export function createDefaultRegistry(): CommandRegistry {
   registry.registerLazy('bc', () => import('./system/bc.js'));
   registry.registerLazy('man', () => import('./system/man.js'));
   registry.registerLazy('sha256sum', () => import('./system/sha256sum.js'));
+  registry.registerLazy('sl', () => import('./system/sl.js'));
 
   return registry;
 }

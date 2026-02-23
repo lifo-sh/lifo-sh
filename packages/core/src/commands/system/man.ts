@@ -94,6 +94,20 @@ const PAGES: Record<string, { synopsis: string; description: string }> = {
   zip: { synopsis: 'zip [-r] ARCHIVE FILE...', description: 'Package and compress files. -r recursive.' },
   unzip: { synopsis: 'unzip [-lo] ARCHIVE', description: 'Extract files from a ZIP archive. -l list, -o overwrite.' },
 
+  // Text editors & pagers
+  nano: { synopsis: 'nano [FILE]', description: 'A simple text editor. ^O save, ^X exit, ^K cut line, ^U paste, ^W search, arrow keys to navigate.' },
+  less: { synopsis: 'less [FILE]', description: 'View file contents one screen at a time. j/k scroll, f/b page, /pattern search, n/N next/prev match, q quit.' },
+
+  // Text utilities (continued)
+  seq: { synopsis: 'seq [-s SEP] [FIRST [INCR]] LAST', description: 'Print a sequence of numbers from FIRST to LAST with optional INCRement. -s sets separator (default newline).' },
+  tac: { synopsis: 'tac [FILE...]', description: 'Concatenate and print files in reverse line order (opposite of cat).' },
+  base64: { synopsis: 'base64 [-d] [-w COLS] [FILE]', description: 'Base64 encode or decode data. -d decode, -w wrap encoded lines at COLS (default 76, 0 disables).' },
+  strings: { synopsis: 'strings [-n MIN] [FILE...]', description: 'Print sequences of printable characters from files. -n sets minimum string length (default 4).' },
+  sha256sum: { synopsis: 'sha256sum [-c FILE] [FILE...]', description: 'Compute or verify SHA-256 checksums. -c reads checksums from FILE and verifies them.' },
+
+  // Fun
+  sl: { synopsis: 'sl', description: 'Steam Locomotive. Displays a train animation. A classic punishment for mistyping ls.' },
+
   // Node.js
   node: { synopsis: 'node [-e CODE] [FILE]', description: 'Execute JavaScript using the Node.js-compatible runtime.' },
   pkg: { synopsis: 'pkg install|remove|list [PACKAGE]', description: 'Package manager for installing and managing packages.' },
