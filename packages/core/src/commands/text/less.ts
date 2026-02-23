@@ -1,4 +1,4 @@
-import type { Command, CommandContext, CommandOutputStream } from '../types.js';
+import type { Command, CommandOutputStream } from '../types.js';
 import { resolve } from '../../utils/path.js';
 import { VFSError } from '../../kernel/vfs/index.js';
 

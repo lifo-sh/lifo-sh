@@ -112,11 +112,16 @@ export function createDefaultRegistry(): CommandRegistry {
   registry.registerLazy('rev', () => import('./text/rev.js'));
   registry.registerLazy('nano', () => import('./text/nano.js'));
   registry.registerLazy('less', () => import('./text/less.js'));
+  registry.registerLazy('tac', () => import('./text/tac.js'));
+  registry.registerLazy('seq', () => import('./text/seq.js'));
+  registry.registerLazy('base64', () => import('./text/base64.js'));
+  registry.registerLazy('strings', () => import('./text/strings.js'));
 
   // System (continued)
   registry.registerLazy('cal', () => import('./system/cal.js'));
   registry.registerLazy('bc', () => import('./system/bc.js'));
   registry.registerLazy('man', () => import('./system/man.js'));
+  registry.registerLazy('sha256sum', () => import('./system/sha256sum.js'));
 
   return registry;
 }
