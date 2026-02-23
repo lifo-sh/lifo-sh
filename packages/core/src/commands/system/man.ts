@@ -14,7 +14,7 @@ const PAGES: Record<string, { synopsis: string; description: string }> = {
   fg: { synopsis: 'fg [JOB_ID]', description: 'Move a background job to the foreground.' },
   bg: { synopsis: 'bg [JOB_ID]', description: 'Resume a stopped background job.' },
   history: { synopsis: 'history', description: 'Display the command history list.' },
-  source: { synopsis: 'source FILE', description: 'Read and execute commands from FILE in the current shell environment.' },
+  source: { synopsis: 'source FILE', description: 'Read and execute commands from FILE in the current shell environment. Shell sources /etc/profile and ~/.liforc on startup.' },
   alias: { synopsis: 'alias [NAME=VALUE...]', description: 'Define or display aliases. Without arguments, lists all aliases.' },
   unalias: { synopsis: 'unalias NAME...', description: 'Remove alias definitions.' },
 
