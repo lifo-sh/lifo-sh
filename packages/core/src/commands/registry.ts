@@ -110,6 +110,7 @@ export function createDefaultRegistry(): CommandRegistry {
   registry.registerLazy('diff', () => import('./text/diff.js'));
   registry.registerLazy('nl', () => import('./text/nl.js'));
   registry.registerLazy('rev', () => import('./text/rev.js'));
+  registry.registerLazy('nano', () => import('./text/nano.js'));
 
   // System (continued)
   registry.registerLazy('cal', () => import('./system/cal.js'));

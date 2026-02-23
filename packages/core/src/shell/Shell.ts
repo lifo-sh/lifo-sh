@@ -240,6 +240,12 @@ export class Shell {
   }
 
   private handleInput(data: string): void {
+    // Raw mode: bypass all shell line editing, deliver keypresses directly
+    if (this.running && this.terminalStdin?.rawMode) {
+      this.terminalStdin.feed(data);
+      return;
+    }
+
     // ESC sequences
     if (data === '\x1b[D') { this.moveCursorLeft(); return; }
     if (data === '\x1b[C') { this.moveCursorRight(); return; }
