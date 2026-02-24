@@ -873,12 +873,17 @@ export class FileExplorer {
       this.renderList();
     });
 
+    const downloadBtn = document.createElement('button');
+    downloadBtn.className = 'lf-viewer-btn';
+    downloadBtn.textContent = 'Download';
+    downloadBtn.addEventListener('click', () => this.downloadFile(path));
+
     const saveBtn = document.createElement('button');
     saveBtn.className = 'lf-viewer-btn primary';
     saveBtn.textContent = 'Save';
     saveBtn.style.display = 'none';
 
-    actions.append(saveBtn, closeBtn);
+    actions.append(downloadBtn, saveBtn, closeBtn);
     header.append(filename, actions);
     viewer.appendChild(header);
 
@@ -1135,6 +1140,7 @@ export class FileExplorer {
         menu.appendChild(this.contextItem('Open', () => this.openEntry(entry)));
       } else {
         menu.appendChild(this.contextItem('View / Edit', () => this.openEntry(entry)));
+        menu.appendChild(this.contextItem('Download', () => this.downloadFile(entry.path)));
       }
       menu.appendChild(this.contextSep());
       menu.appendChild(
@@ -1238,6 +1244,28 @@ export class FileExplorer {
       if (e.key === 'Escape') { e.preventDefault(); this.refresh(); }
     });
     input.addEventListener('blur', commit);
+  }
+
+  private downloadFile(path: string): void {
+    try {
+      const data = this.vfs.readFile(path);
+      const bytes = typeof data === 'string'
+        ? new TextEncoder().encode(data)
+        : data instanceof Uint8Array
+          ? data
+          : new Uint8Array(data as ArrayBuffer);
+      const blob = new Blob([bytes as unknown as BlobPart]);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = basename(path);
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      // Download failed
+    }
   }
 
   private deleteEntry(entry: FileExplorerEntry): void {
