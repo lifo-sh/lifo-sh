@@ -11,6 +11,16 @@ import type { VirtualRequestHandler } from '../../kernel/index.js';
 
 const NODE_VERSION = 'v20.0.0';
 
+/** Strip shebang line (e.g. #!/usr/bin/env node) – replace with blank to preserve line numbers */
+function stripShebang(src: string): string {
+  if (src.charCodeAt(0) === 0x23 /* # */ && src.charCodeAt(1) === 0x21 /* ! */) {
+    const nl = src.indexOf('\n');
+    if (nl === -1) return '';
+    return '\n' + src.slice(nl + 1);
+  }
+  return src;
+}
+
 function createNodeImpl(portRegistry?: Map<number, VirtualRequestHandler>): Command {
   return async (ctx) => {
     // Handle -v/--version
@@ -112,24 +122,27 @@ function createNodeImpl(portRegistry?: Map<number, VirtualRequestHandler>): Comm
           }
 
           const modSource = ctx.vfs.readFileString(resolved.path);
-          const modExports = executeModule(modSource, resolved.path);
-          moduleCache.set(resolved.path, modExports);
-          return modExports;
+          return executeModule(modSource, resolved.path, resolved.path);
         }
 
         throw new Error(`Cannot find module '${name}'`);
       }
 
-      // Installed packages: /usr/share/pkg/node_modules/<name>/index.js
-      const pkgPath = `/usr/share/pkg/node_modules/${name}/index.js`;
-      if (ctx.vfs.exists(pkgPath)) {
-        const cached = moduleCache.get(pkgPath);
+      // Node-modules resolution (walk up node_modules, global, legacy)
+      const nmResolved = resolveNodeModule(name, dir);
+      if (nmResolved) {
+        const cached = moduleCache.get(nmResolved.path);
         if (cached) return cached;
 
-        const modSource = ctx.vfs.readFileString(pkgPath);
-        const modExports = executeModule(modSource, pkgPath);
-        moduleCache.set(pkgPath, modExports);
-        return modExports;
+        if (nmResolved.path.endsWith('.json')) {
+          const content = ctx.vfs.readFileString(nmResolved.path);
+          const parsed = JSON.parse(content);
+          moduleCache.set(nmResolved.path, parsed);
+          return parsed;
+        }
+
+        const modSource = ctx.vfs.readFileString(nmResolved.path);
+        return executeModule(modSource, nmResolved.path, nmResolved.path);
       }
 
       throw new Error(`Cannot find module '${name}'`);
@@ -162,10 +175,91 @@ function createNodeImpl(portRegistry?: Map<number, VirtualRequestHandler>): Comm
       return null;
     }
 
-    function executeModule(modSource: string, modFilename: string): unknown {
+    // ── Node-modules resolution (walk up, global, legacy) ──
+
+    function resolveNodeModule(name: string, fromDir: string): { path: string } | null {
+      // Parse package name and optional subpath
+      let packageName: string;
+      let subpath: string | null = null;
+
+      if (name.startsWith('@')) {
+        const parts = name.split('/');
+        if (parts.length < 2) return null;
+        packageName = parts[0] + '/' + parts[1];
+        if (parts.length > 2) subpath = parts.slice(2).join('/');
+      } else {
+        const slashIdx = name.indexOf('/');
+        if (slashIdx !== -1) {
+          packageName = name.slice(0, slashIdx);
+          subpath = name.slice(slashIdx + 1);
+        } else {
+          packageName = name;
+        }
+      }
+
+      // Walk up from fromDir
+      let current = fromDir;
+      for (;;) {
+        const candidate = join(current, 'node_modules', packageName);
+        if (ctx.vfs.exists(candidate)) {
+          const resolved = resolvePackageEntry(candidate, subpath);
+          if (resolved) return resolved;
+        }
+        const parent = dirname(current);
+        if (parent === current) break;
+        current = parent;
+      }
+
+      // Global modules
+      const globalCandidate = join('/usr/lib/node_modules', packageName);
+      if (ctx.vfs.exists(globalCandidate)) {
+        const resolved = resolvePackageEntry(globalCandidate, subpath);
+        if (resolved) return resolved;
+      }
+
+      // Legacy location (pkg command)
+      const legacyCandidate = join('/usr/share/pkg/node_modules', packageName);
+      if (ctx.vfs.exists(legacyCandidate)) {
+        const resolved = resolvePackageEntry(legacyCandidate, subpath);
+        if (resolved) return resolved;
+      }
+
+      return null;
+    }
+
+    function resolvePackageEntry(pkgDir: string, subpath: string | null): { path: string } | null {
+      if (subpath) {
+        return resolveVfsModule('./' + subpath, pkgDir);
+      }
+
+      // Check package.json main field
+      const pkgJsonPath = join(pkgDir, 'package.json');
+      if (ctx.vfs.exists(pkgJsonPath)) {
+        try {
+          const pkgJson = JSON.parse(ctx.vfs.readFileString(pkgJsonPath));
+          if (pkgJson.main) {
+            const resolved = resolveVfsModule('./' + pkgJson.main, pkgDir);
+            if (resolved) return resolved;
+          }
+        } catch { /* ignore parse errors */ }
+      }
+
+      // Default to index.js
+      const indexPath = join(pkgDir, 'index.js');
+      if (ctx.vfs.exists(indexPath)) return { path: indexPath };
+
+      return null;
+    }
+
+    function executeModule(modSource: string, modFilename: string, cacheAs?: string): unknown {
       const modDir = dirname(modFilename);
       const modModule = { exports: {} as Record<string, unknown> };
       const modExports = modModule.exports;
+
+      // Pre-cache to handle circular dependencies (Node.js behaviour)
+      if (cacheAs) {
+        moduleCache.set(cacheAs, modExports);
+      }
 
       const modNodeCtx: NodeContext = { ...nodeCtx, filename: modFilename, dirname: modDir };
       const modModuleMap = createModuleMap(modNodeCtx);
@@ -202,17 +296,33 @@ function createNodeImpl(portRegistry?: Map<number, VirtualRequestHandler>): Comm
             }
 
             const childSource = ctx.vfs.readFileString(resolved.path);
-            const childExports = executeModule(childSource, resolved.path);
-            moduleCache.set(resolved.path, childExports);
-            return childExports;
+            return executeModule(childSource, resolved.path, resolved.path);
           }
           throw new Error(`Cannot find module '${name}'`);
         }
 
-        return nodeRequire(name);
+        // Node-modules resolution from this module's directory
+        const nmResolved = resolveNodeModule(name, modDir);
+        if (nmResolved) {
+          const cached = moduleCache.get(nmResolved.path);
+          if (cached) return cached;
+
+          if (nmResolved.path.endsWith('.json')) {
+            const content = ctx.vfs.readFileString(nmResolved.path);
+            const parsed = JSON.parse(content);
+            moduleCache.set(nmResolved.path, parsed);
+            return parsed;
+          }
+
+          const childSource = ctx.vfs.readFileString(nmResolved.path);
+          return executeModule(childSource, nmResolved.path, nmResolved.path);
+        }
+
+        throw new Error(`Cannot find module '${name}'`);
       }
 
-      const wrapped = `(function(exports, require, module, __filename, __dirname, console, process, Buffer, setTimeout, setInterval, clearTimeout, clearInterval, global) {\n${modSource}\n})`;
+      const cleanSource = stripShebang(modSource);
+      const wrapped = `(function(exports, require, module, __filename, __dirname, console, process, Buffer, setTimeout, setInterval, clearTimeout, clearInterval, global) {\n${cleanSource}\n})`;
 
       const fn = new Function('return ' + wrapped)();
       const global = {};
@@ -223,6 +333,11 @@ function createNodeImpl(portRegistry?: Map<number, VirtualRequestHandler>): Comm
         globalThis.clearTimeout, globalThis.clearInterval,
         global,
       );
+
+      // Update cache if module.exports was reassigned (not just mutated)
+      if (cacheAs && modModule.exports !== modExports) {
+        moduleCache.set(cacheAs, modModule.exports);
+      }
 
       return modModule.exports;
     }
@@ -241,7 +356,8 @@ function createNodeImpl(portRegistry?: Map<number, VirtualRequestHandler>): Comm
     const exports = module.exports;
     const global = {};
 
-    const wrapped = `(function(exports, require, module, __filename, __dirname, console, process, Buffer, setTimeout, setInterval, clearTimeout, clearInterval, global) {\n${source}\n})`;
+    const cleanMainSource = stripShebang(source);
+    const wrapped = `(function(exports, require, module, __filename, __dirname, console, process, Buffer, setTimeout, setInterval, clearTimeout, clearInterval, global) {\n${cleanMainSource}\n})`;
 
     try {
       const fn = new Function('return ' + wrapped)();

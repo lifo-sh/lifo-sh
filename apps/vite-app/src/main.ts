@@ -207,6 +207,33 @@ const CODE_GIT = `\
 <span class="code-comment">// Or run the example script:</span>
 <span class="code-string">source examples/scripts/13-git-basics.sh</span>`;
 
+const CODE_NPM = `\
+<span class="code-keyword">import</span> { Sandbox } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/core'</span>
+
+<span class="code-comment">// One line to get a shell with npm support</span>
+<span class="code-keyword">const</span> sandbox = <span class="code-keyword">await</span> Sandbox.<span class="code-fn">create</span>({
+  <span class="code-const">terminal</span>: <span class="code-string">'#terminal'</span>,
+})
+
+<span class="code-comment">// Try these in the terminal:</span>
+
+<span class="code-comment">// Install a package globally</span>
+<span class="code-string">npm install cowsay -g</span>
+
+<span class="code-comment">// Run it!</span>
+<span class="code-string">cowsay "Hello from Lifo!"</span>
+
+<span class="code-comment">// Or create a project</span>
+<span class="code-string">mkdir /tmp/my-app && cd /tmp/my-app</span>
+<span class="code-string">npm init -y</span>
+<span class="code-string">npm install cowsay</span>
+<span class="code-string">cat node_modules/cowsay/package.json</span>
+
+<span class="code-comment">// Packages are fetched from the real</span>
+<span class="code-comment">// npm registry, extracted, and installed</span>
+<span class="code-comment">// into the virtual filesystem.</span>
+<span class="code-comment">// Dependencies are resolved recursively.</span>`;
+
 const CODE_CLI = `\
 <span class="code-comment">// Run Lifo as a CLI in your terminal</span>
 <span class="code-comment">// Install: npm i -g lifo-sh</span>
@@ -253,12 +280,13 @@ const codeSnippets: Record<string, string> = {
   http: CODE_HTTP,
   explorer: CODE_EXPLORER,
   git: CODE_GIT,
+  npm: CODE_NPM,
   cli: CODE_CLI,
 };
 
 // ─── State ───
 
-type ExampleId = 'interactive' | 'headless' | 'multi' | 'http' | 'explorer' | 'git' | 'cli';
+type ExampleId = 'interactive' | 'headless' | 'multi' | 'http' | 'explorer' | 'git' | 'npm' | 'cli';
 
 const examples: Record<ExampleId, { booted: boolean; boot: () => Promise<void> }> = {
   interactive: { booted: false, boot: bootInteractive },
@@ -267,6 +295,7 @@ const examples: Record<ExampleId, { booted: boolean; boot: () => Promise<void> }
   http:        { booted: false, boot: bootHttp },
   explorer:    { booted: false, boot: bootExplorer },
   git:         { booted: false, boot: bootGit },
+  npm:         { booted: false, boot: bootNpm },
   cli:         { booted: false, boot: bootCli },
 };
 
@@ -780,7 +809,15 @@ async function bootGit() {
   await sandbox.commands.run('cd /tmp/my-project');
 }
 
-// ─── 7. CLI (Node.js) ───
+// ─── 7. npm ───
+
+async function bootNpm() {
+  await Sandbox.create({
+    terminal: '#terminal-npm',
+  });
+}
+
+// ─── 8. CLI (Node.js) ───
 
 async function bootCli() {
   const outputEl = document.getElementById('cli-output')!;

@@ -11,6 +11,7 @@ import { createWatchCommand } from '../commands/system/watch.js';
 import { createHelpCommand } from '../commands/system/help.js';
 import { createNodeCommand } from '../commands/system/node.js';
 import { createCurlCommand } from '../commands/net/curl.js';
+import { createNpmCommand } from '../commands/system/npm.js';
 import { loadInstalledPackages } from '../pkg/loader.js';
 import type { VFS } from '../kernel/vfs/index.js';
 import { NativeFsProvider } from '../kernel/vfs/providers/NativeFsProvider.js';
@@ -123,6 +124,18 @@ export class Sandbox {
     registry.register('help', createHelpCommand(registry));
     registry.register('node', createNodeCommand(kernel.portRegistry));
     registry.register('curl', createCurlCommand(kernel.portRegistry));
+
+    // Register npm with shell execution support
+    const npmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
+      const result = await shell.execute(cmd, {
+        cwd: cmdCtx.cwd,
+        env: cmdCtx.env,
+        onStdout: (data: string) => cmdCtx.stdout.write(data),
+        onStderr: (data: string) => cmdCtx.stderr.write(data),
+      });
+      return result.exitCode;
+    };
+    registry.register('npm', createNpmCommand(registry, npmShellExecute));
 
     // 8. Source config files
     await shell.sourceFile('/etc/profile');

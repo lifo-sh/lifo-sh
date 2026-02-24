@@ -37,6 +37,7 @@
         <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="http">HTTP Server</button>
         <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="explorer">File Explorer</button>
         <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="git">Git</button>
+        <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="npm">npm</button>
         <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="cli">CLI (Node.js)</button>
       </div>
     </nav>
@@ -114,6 +115,15 @@
           <div class="text-[11px] text-tokyo-comment mb-3.5">Built-in git powered by isomorphic-git -- try <code>git init</code>, <code>git add</code>, <code>git commit</code>, branching, and more</div>
           <div class="w-full rounded-lg overflow-hidden border border-tokyo-border p-2 bg-tokyo-bg flex-1">
             <div id="terminal-git" class="w-full h-full"></div>
+          </div>
+        </div>
+
+        <!-- npm -->
+        <div id="out-npm" class="output-panel">
+          <div class="text-[13px] font-semibold text-tokyo-fg-bright mb-0.5">npm</div>
+          <div class="text-[11px] text-tokyo-comment mb-3.5">Install real packages from the npm registry -- try <code>npm install cowsay -g && cowsay hello</code></div>
+          <div class="w-full rounded-lg overflow-hidden border border-tokyo-border p-2 bg-tokyo-bg flex-1">
+            <div id="terminal-npm" class="w-full h-full"></div>
           </div>
         </div>
 

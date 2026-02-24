@@ -14,6 +14,8 @@ import * as streamModule from './stream.js';
 import * as urlModule from './url.js';
 import * as timersModule from './timers.js';
 import * as cryptoModule from './crypto.js';
+import * as zlibModule from './zlib.js';
+import * as stringDecoderModule from './string_decoder.js';
 
 export interface NodeContext {
   vfs: VFS;
@@ -52,6 +54,8 @@ export function createModuleMap(ctx: NodeContext): Record<string, () => unknown>
     url: () => urlModule,
     timers: () => timersModule,
     crypto: () => cryptoModule,
+    zlib: () => zlibModule,
+    string_decoder: () => stringDecoderModule,
     querystring: () => ({
       parse: (str: string) => Object.fromEntries(new URLSearchParams(str)),
       stringify: (obj: Record<string, string>) => new URLSearchParams(obj).toString(),

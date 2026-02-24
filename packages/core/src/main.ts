@@ -9,6 +9,7 @@ import { createTopCommand } from './commands/system/top.js';
 import { createKillCommand } from './commands/system/kill.js';
 import { createWatchCommand } from './commands/system/watch.js';
 import { createHelpCommand } from './commands/system/help.js';
+import { createNpmCommand } from './commands/system/npm.js';
 
 async function boot(): Promise<void> {
   // 1. Kernel & filesystem (async -- loads persisted data)
@@ -43,6 +44,18 @@ async function boot(): Promise<void> {
   registry.register('kill', createKillCommand(jobTable));
   registry.register('watch', createWatchCommand(registry));
   registry.register('help', createHelpCommand(registry));
+
+  // 5c. Register npm with shell execution support
+  const npmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
+    const result = await shell.execute(cmd, {
+      cwd: cmdCtx.cwd,
+      env: cmdCtx.env,
+      onStdout: (data: string) => cmdCtx.stdout.write(data),
+      onStderr: (data: string) => cmdCtx.stderr.write(data),
+    });
+    return result.exitCode;
+  };
+  registry.register('npm', createNpmCommand(registry, npmShellExecute));
 
   // 6. Source config files before showing prompt
   await shell.sourceFile('/etc/profile');
