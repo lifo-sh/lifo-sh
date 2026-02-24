@@ -37,6 +37,7 @@
         <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="http">HTTP Server</button>
         <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="explorer">File Explorer</button>
         <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="git">Git</button>
+        <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="ffmpeg">FFmpeg</button>
         <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="npm">npm</button>
         <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="cli">CLI (Node.js)</button>
       </div>
@@ -120,6 +121,16 @@
           <div class="text-[11px] text-tokyo-comment mb-3.5">Git via <code>lifo-pkg-git</code> -- powered by isomorphic-git. Try <code>git init</code>, <code>git add</code>, <code>git commit</code>, branching, and more</div>
           <div class="w-full rounded-lg overflow-hidden border border-tokyo-border p-2 bg-tokyo-bg flex-1">
             <div id="terminal-git" class="w-full h-full"></div>
+          </div>
+        </div>
+
+        <!-- FFmpeg -->
+        <div id="out-ffmpeg" class="output-panel">
+          <div class="text-[13px] font-semibold text-tokyo-fg-bright mb-0.5">FFmpeg</div>
+          <div class="text-[11px] text-tokyo-comment mb-3.5">Video/audio processing with ffmpeg.wasm -- upload media, run ffmpeg commands, download results</div>
+          <div class="flex flex-col flex-1 min-h-0 gap-2">
+            <div class="flex-1 rounded-lg overflow-hidden border border-tokyo-border min-h-0" id="ffmpeg-explorer-panel"></div>
+            <div class="h-[200px] shrink-0 rounded-lg overflow-hidden border border-tokyo-border p-2 bg-tokyo-bg" id="ffmpeg-terminal"></div>
           </div>
         </div>
 

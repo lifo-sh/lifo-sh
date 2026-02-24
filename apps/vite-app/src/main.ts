@@ -204,6 +204,29 @@ registry.<span class="code-fn">register</span>(<span class="code-string">'git'</
 <span class="code-string">git add . && git commit -m "Add feature"</span>
 <span class="code-string">git log --oneline</span>`;
 
+const CODE_FFMPEG = `\
+<span class="code-keyword">import</span> { Kernel, Shell, <span class="code-comment">...</span> } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/core'</span>
+<span class="code-keyword">import</span> { FileExplorer } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/ui'</span>
+<span class="code-keyword">import</span> ffmpegCommand <span class="code-keyword">from</span> <span class="code-string">'lifo-pkg-ffmpeg'</span>
+
+<span class="code-keyword">const</span> kernel = <span class="code-keyword">new</span> <span class="code-fn">Kernel</span>()
+<span class="code-keyword">await</span> kernel.<span class="code-fn">boot</span>()
+
+<span class="code-keyword">const</span> registry = <span class="code-fn">createDefaultRegistry</span>()
+registry.<span class="code-fn">register</span>(<span class="code-string">'ffmpeg'</span>, ffmpegCommand)
+
+<span class="code-comment">// File Explorer for upload/download</span>
+<span class="code-keyword">new</span> <span class="code-fn">FileExplorer</span>(el, kernel.vfs, {
+  <span class="code-const">cwd</span>: <span class="code-string">'/home/user/media'</span>,
+})
+
+<span class="code-comment">// Try these commands:</span>
+<span class="code-string">ffmpeg -i sample.mp4 audio.mp3</span>
+<span class="code-string">ffmpeg -i sample.mp4 -ss 0 -t 3 clip.mp4</span>
+<span class="code-string">ffmpeg -i sample.mp4 -vf scale=320:-1 small.mp4</span>
+<span class="code-string">ffmpeg -version</span>
+<span class="code-string">ffmpeg -formats</span>`;
+
 const CODE_NPM = `\
 <span class="code-keyword">import</span> { Sandbox } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/core'</span>
 
@@ -357,6 +380,7 @@ const codeSnippets: Record<string, string> = {
   http: CODE_HTTP,
   explorer: CODE_EXPLORER,
   git: CODE_GIT,
+  ffmpeg: CODE_FFMPEG,
   npm: CODE_NPM,
   cli: CODE_CLI,
   'lifo-pkg': CODE_LIFO_PKG,
@@ -365,7 +389,7 @@ const codeSnippets: Record<string, string> = {
 
 // ─── State ───
 
-type ExampleId = 'interactive' | 'headless' | 'multi' | 'http' | 'explorer' | 'git' | 'npm' | 'cli' | 'lifo-pkg' | 'build-pkg';
+type ExampleId = 'interactive' | 'headless' | 'multi' | 'http' | 'explorer' | 'git' | 'ffmpeg' | 'npm' | 'cli' | 'lifo-pkg' | 'build-pkg';
 
 const examples: Record<ExampleId, { booted: boolean; boot: () => Promise<void> }> = {
   interactive:  { booted: false, boot: bootInteractive },
@@ -374,6 +398,7 @@ const examples: Record<ExampleId, { booted: boolean; boot: () => Promise<void> }
   http:         { booted: false, boot: bootHttp },
   explorer:     { booted: false, boot: bootExplorer },
   git:          { booted: false, boot: bootGit },
+  ffmpeg:       { booted: false, boot: bootFfmpeg },
   npm:          { booted: false, boot: bootNpm },
   cli:          { booted: false, boot: bootCli },
   'lifo-pkg':   { booted: false, boot: bootLifoPkg },
@@ -953,7 +978,71 @@ async function bootGit() {
   shell.start();
 }
 
-// ─── 7. npm ───
+// ─── 7. FFmpeg ───
+
+let ffmpegKernel: Kernel | null = null;
+
+async function bootFfmpeg() {
+  ffmpegKernel = new Kernel();
+  await ffmpegKernel.boot({ persist: false });
+
+  const vfs = ffmpegKernel.vfs;
+
+  // Create media directory and load sample video
+  vfs.mkdir('/home/user/media', { recursive: true });
+
+  try {
+    const resp = await fetch('/sample.mp4');
+    if (resp.ok) {
+      const buf = await resp.arrayBuffer();
+      vfs.writeFile('/home/user/media/sample.mp4', new Uint8Array(buf));
+    }
+  } catch {
+    // Sample not available, user can upload via explorer
+  }
+
+  // Mount file explorer
+  const explorerContainer = document.getElementById('ffmpeg-explorer-panel')!;
+  new FileExplorer(explorerContainer, vfs, {
+    cwd: '/home/user/media',
+    editorProvider: createMonacoProvider(),
+  });
+
+  // Mount terminal sharing same kernel
+  const termContainer = document.getElementById('ffmpeg-terminal')!;
+  const terminal = new Terminal(termContainer);
+  const registry = createDefaultRegistry();
+  registry.register('ffmpeg', ffmpegCommand);
+  bootLifoPackages(vfs, registry);
+
+  const env = ffmpegKernel.getDefaultEnv();
+  const shell = new Shell(terminal, vfs, registry, env);
+
+  const jobTable = shell.getJobTable();
+  registry.register('ps', createPsCommand(jobTable));
+  registry.register('top', createTopCommand(jobTable));
+  registry.register('kill', createKillCommand(jobTable));
+  registry.register('watch', createWatchCommand(registry));
+  registry.register('help', createHelpCommand(registry));
+
+  const ffmpegNpmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
+    const result = await shell.execute(cmd, {
+      cwd: cmdCtx.cwd,
+      env: cmdCtx.env,
+      onStdout: (data: string) => cmdCtx.stdout.write(data),
+      onStderr: (data: string) => cmdCtx.stderr.write(data),
+    });
+    return result.exitCode;
+  };
+  registry.register('npm', createNpmCommand(registry, ffmpegNpmShellExecute));
+  registry.register('lifo', createLifoPkgCommand(registry, ffmpegNpmShellExecute));
+
+  await shell.sourceFile('/etc/profile');
+  await shell.sourceFile(env.HOME + '/.bashrc');
+  shell.start();
+}
+
+// ─── 8. npm ───
 
 async function bootNpm() {
   await Sandbox.create({
