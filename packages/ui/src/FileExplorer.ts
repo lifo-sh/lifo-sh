@@ -344,6 +344,29 @@ const STYLES = `
   position: relative;
 }
 
+/* ── Media viewer ── */
+.lf-media-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+  background: #1a1b26;
+}
+.lf-media-container video,
+.lf-media-container audio,
+.lf-media-container img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 4px;
+}
+.lf-media-container audio {
+  width: 100%;
+  max-width: 400px;
+}
+
 /* ── Drag-and-drop overlay ── */
 .lf-drop-overlay {
   position: absolute;
@@ -501,6 +524,39 @@ function getLanguageFromPath(path: string): string {
   const name = basename(path);
   const ext = name.includes('.') ? name.split('.').pop()!.toLowerCase() : '';
   return LANGUAGE_MAP[ext] || 'plaintext';
+}
+
+// ─── Media type detection ───
+
+const MEDIA_TYPES: Record<string, { tag: 'video' | 'audio' | 'img'; mime: string }> = {
+  // Video
+  mp4: { tag: 'video', mime: 'video/mp4' },
+  webm: { tag: 'video', mime: 'video/webm' },
+  ogv: { tag: 'video', mime: 'video/ogg' },
+  mov: { tag: 'video', mime: 'video/quicktime' },
+  avi: { tag: 'video', mime: 'video/x-msvideo' },
+  // Audio
+  mp3: { tag: 'audio', mime: 'audio/mpeg' },
+  wav: { tag: 'audio', mime: 'audio/wav' },
+  ogg: { tag: 'audio', mime: 'audio/ogg' },
+  flac: { tag: 'audio', mime: 'audio/flac' },
+  aac: { tag: 'audio', mime: 'audio/aac' },
+  m4a: { tag: 'audio', mime: 'audio/mp4' },
+  // Image
+  png: { tag: 'img', mime: 'image/png' },
+  jpg: { tag: 'img', mime: 'image/jpeg' },
+  jpeg: { tag: 'img', mime: 'image/jpeg' },
+  gif: { tag: 'img', mime: 'image/gif' },
+  webp: { tag: 'img', mime: 'image/webp' },
+  svg: { tag: 'img', mime: 'image/svg+xml' },
+  bmp: { tag: 'img', mime: 'image/bmp' },
+  ico: { tag: 'img', mime: 'image/x-icon' },
+};
+
+function getMediaType(path: string): { tag: 'video' | 'audio' | 'img'; mime: string } | null {
+  const name = basename(path);
+  const ext = name.includes('.') ? name.split('.').pop()!.toLowerCase() : '';
+  return MEDIA_TYPES[ext] || null;
 }
 
 // ─── Tree Node State ───
@@ -887,57 +943,102 @@ export class FileExplorer {
     header.append(filename, actions);
     viewer.appendChild(header);
 
-    // Content
-    let content: string;
-    try {
-      content = this.vfs.readFileString(path);
-    } catch {
-      content = '(Unable to read file)';
-    }
+    // Check if this is a media file
+    const mediaType = getMediaType(path);
 
-    const language = getLanguageFromPath(path);
+    if (mediaType) {
+      // Render media preview (video / audio / image)
+      saveBtn.style.display = 'none'; // no save for media
+      const mediaContainer = document.createElement('div');
+      mediaContainer.className = 'lf-media-container';
 
-    if (this.editorProvider) {
-      // Use provided editor (e.g. Monaco)
-      const editorContainer = document.createElement('div');
-      editorContainer.className = 'lf-editor-container';
-      viewer.appendChild(editorContainer);
+      try {
+        const data = this.vfs.readFile(path);
+        const bytes = typeof data === 'string'
+          ? new TextEncoder().encode(data)
+          : data instanceof Uint8Array
+            ? data
+            : new Uint8Array(data as ArrayBuffer);
+        const blob = new Blob([bytes as unknown as BlobPart], { type: mediaType.mime });
+        const blobUrl = URL.createObjectURL(blob);
+
+        const el = document.createElement(mediaType.tag);
+        el.src = blobUrl;
+        if (mediaType.tag === 'video') {
+          (el as HTMLVideoElement).controls = true;
+          (el as HTMLVideoElement).autoplay = false;
+        } else if (mediaType.tag === 'audio') {
+          (el as HTMLAudioElement).controls = true;
+        }
+        mediaContainer.appendChild(el);
+
+        // Clean up blob URL when viewer is closed
+        const origDispose = this.disposeEditor.bind(this);
+        this.disposeEditor = () => {
+          URL.revokeObjectURL(blobUrl);
+          origDispose();
+          this.disposeEditor = origDispose;
+        };
+      } catch {
+        mediaContainer.textContent = '(Unable to read media file)';
+        mediaContainer.style.color = '#565f89';
+      }
+
+      viewer.appendChild(mediaContainer);
       this.listEl.appendChild(viewer);
+    } else {
+      // Text content -- editor or textarea
+      let content: string;
+      try {
+        content = this.vfs.readFileString(path);
+      } catch {
+        content = '(Unable to read file)';
+      }
 
-      // Create editor after DOM is attached so it can measure size
-      requestAnimationFrame(() => {
-        const editor = this.editorProvider!.create(editorContainer, content, language);
-        this.activeEditor = editor;
+      const language = getLanguageFromPath(path);
 
-        editor.onDidChangeContent(() => {
+      if (this.editorProvider) {
+        // Use provided editor (e.g. Monaco)
+        const editorContainer = document.createElement('div');
+        editorContainer.className = 'lf-editor-container';
+        viewer.appendChild(editorContainer);
+        this.listEl.appendChild(viewer);
+
+        // Create editor after DOM is attached so it can measure size
+        requestAnimationFrame(() => {
+          const editor = this.editorProvider!.create(editorContainer, content, language);
+          this.activeEditor = editor;
+
+          editor.onDidChangeContent(() => {
+            saveBtn.style.display = '';
+          });
+
+          saveBtn.addEventListener('click', () => {
+            this.vfs.writeFile(path, editor.getValue());
+            saveBtn.style.display = 'none';
+          });
+        });
+      } else {
+        // Textarea fallback
+        const textarea = document.createElement('textarea');
+        textarea.className = 'lf-viewer-textarea';
+        textarea.value = content;
+        textarea.spellcheck = false;
+
+        textarea.addEventListener('input', () => {
           saveBtn.style.display = '';
         });
 
         saveBtn.addEventListener('click', () => {
-          this.vfs.writeFile(path, editor.getValue());
+          this.vfs.writeFile(path, textarea.value);
           saveBtn.style.display = 'none';
         });
-      });
-    } else {
-      // Textarea fallback
-      const textarea = document.createElement('textarea');
-      textarea.className = 'lf-viewer-textarea';
-      textarea.value = content;
-      textarea.spellcheck = false;
 
-      textarea.addEventListener('input', () => {
-        saveBtn.style.display = '';
-      });
+        viewer.appendChild(textarea);
+        this.listEl.appendChild(viewer);
 
-      saveBtn.addEventListener('click', () => {
-        this.vfs.writeFile(path, textarea.value);
-        saveBtn.style.display = 'none';
-      });
-
-      viewer.appendChild(textarea);
-      this.listEl.appendChild(viewer);
-
-      requestAnimationFrame(() => textarea.focus());
+        requestAnimationFrame(() => textarea.focus());
+      }
     }
   }
 

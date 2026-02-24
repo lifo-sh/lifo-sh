@@ -2,7 +2,7 @@
  * lifo -- lifo package manager command.
  *
  * Subcommands:
- *   install <name>       install a lifo-pkg-* package (sugar over npm -g)
+ *   install|add <name>   install a lifo-pkg-* package (sugar over npm -g)
  *   remove  <name>       remove a lifo package
  *   list                 list installed lifo packages + dev links
  *   search  <term>       search npm for lifo-pkg-* packages
@@ -35,7 +35,7 @@ const GLOBAL_MODULES = '/usr/lib/node_modules';
 function printHelp(stdout: CommandOutputStream): void {
   stdout.write('Usage: lifo <command> [args]\n\n');
   stdout.write('Commands:\n');
-  stdout.write('  install <name>         install lifo-pkg-<name> from npm\n');
+  stdout.write('  install|add <name>     install lifo-pkg-<name> from npm\n');
   stdout.write('  remove <name>          remove a lifo package\n');
   stdout.write('  list                   list lifo packages & dev links\n');
   stdout.write('  search <term>          search npm for lifo-pkg-* packages\n');
@@ -421,6 +421,7 @@ export function createLifoPkgCommand(
     switch (subcommand) {
       case 'install':
       case 'i':
+      case 'add':
         return lifoInstall(ctx, registry);
       case 'remove':
       case 'rm':

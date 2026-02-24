@@ -178,21 +178,18 @@ shell.<span class="code-fn">start</span>()
 <span class="code-comment">// Drag &amp; drop files to upload.</span>`;
 
 const CODE_GIT = `\
-<span class="code-keyword">import</span> { Kernel, Shell, createDefaultRegistry }
-  <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/core'</span>
+<span class="code-comment">// ── Option 1: Install in host app ──</span>
 <span class="code-keyword">import</span> gitCommand <span class="code-keyword">from</span> <span class="code-string">'lifo-pkg-git'</span>
-
-<span class="code-comment">// Boot kernel + register git from package</span>
-<span class="code-keyword">const</span> kernel = <span class="code-keyword">new</span> <span class="code-fn">Kernel</span>()
-<span class="code-keyword">await</span> kernel.<span class="code-fn">boot</span>()
 
 <span class="code-keyword">const</span> registry = <span class="code-fn">createDefaultRegistry</span>()
 registry.<span class="code-fn">register</span>(<span class="code-string">'git'</span>, gitCommand)
 
-<span class="code-comment">// Or install at runtime:</span>
-<span class="code-comment">//   lifo install git</span>
+<span class="code-comment">// ── Option 2: Install inside sandbox ──</span>
+<span class="code-comment">// In the terminal, run:</span>
+<span class="code-string">lifo add git</span>
 
-<span class="code-comment">// Try these commands:</span>
+<span class="code-comment">// Both give you the same git command.</span>
+<span class="code-comment">// Try these:</span>
 <span class="code-string">mkdir /tmp/my-project && cd /tmp/my-project</span>
 <span class="code-string">git init</span>
 <span class="code-string">echo "# My App" > README.md</span>
@@ -205,27 +202,24 @@ registry.<span class="code-fn">register</span>(<span class="code-string">'git'</
 <span class="code-string">git log --oneline</span>`;
 
 const CODE_FFMPEG = `\
-<span class="code-keyword">import</span> { Kernel, Shell, <span class="code-comment">...</span> } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/core'</span>
-<span class="code-keyword">import</span> { FileExplorer } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/ui'</span>
+<span class="code-comment">// ── Option 1: Install in host app ──</span>
 <span class="code-keyword">import</span> ffmpegCommand <span class="code-keyword">from</span> <span class="code-string">'lifo-pkg-ffmpeg'</span>
-
-<span class="code-keyword">const</span> kernel = <span class="code-keyword">new</span> <span class="code-fn">Kernel</span>()
-<span class="code-keyword">await</span> kernel.<span class="code-fn">boot</span>()
 
 <span class="code-keyword">const</span> registry = <span class="code-fn">createDefaultRegistry</span>()
 registry.<span class="code-fn">register</span>(<span class="code-string">'ffmpeg'</span>, ffmpegCommand)
 
-<span class="code-comment">// File Explorer for upload/download</span>
-<span class="code-keyword">new</span> <span class="code-fn">FileExplorer</span>(el, kernel.vfs, {
-  <span class="code-const">cwd</span>: <span class="code-string">'/home/user/media'</span>,
-})
+<span class="code-comment">// ── Option 2: Install inside sandbox ──</span>
+<span class="code-comment">// In the terminal, run:</span>
+<span class="code-string">lifo add ffmpeg</span>
 
+<span class="code-comment">// Upload files via drag &amp; drop or terminal.</span>
+<span class="code-comment">// Right-click to download results.</span>
 <span class="code-comment">// Try these commands:</span>
+<span class="code-string">cd media</span>
 <span class="code-string">ffmpeg -i sample.mp4 audio.mp3</span>
 <span class="code-string">ffmpeg -i sample.mp4 -ss 0 -t 3 clip.mp4</span>
-<span class="code-string">ffmpeg -i sample.mp4 -vf scale=320:-1 small.mp4</span>
-<span class="code-string">ffmpeg -version</span>
-<span class="code-string">ffmpeg -formats</span>`;
+<span class="code-string">ffmpeg -i sample.mp4 -vf scale=320:-1 sm.mp4</span>
+<span class="code-string">ffmpeg -version</span>`;
 
 const CODE_NPM = `\
 <span class="code-keyword">import</span> { Sandbox } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/core'</span>
