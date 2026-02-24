@@ -16,7 +16,10 @@
 import type { Command, CommandContext } from '@lifo-sh/core';
 import type { FFmpeg as FFmpegType } from '@ffmpeg/ffmpeg';
 
-// CDN base for loading the ffmpeg WASM core
+// CDN URLs -- load @ffmpeg/ffmpeg and @ffmpeg/util from CDN to avoid
+// bundler issues with ffmpeg.wasm's internal Web Worker creation.
+const FFMPEG_CDN = 'https://esm.sh/@ffmpeg/ffmpeg@0.12.10';
+const UTIL_CDN = 'https://esm.sh/@ffmpeg/util@0.12.1';
 const CORE_VERSION = '0.12.10';
 const CORE_BASE_URL = `https://cdn.jsdelivr.net/npm/@ffmpeg/core@${CORE_VERSION}/dist/esm`;
 
@@ -32,8 +35,9 @@ async function getFFmpeg(
   if (_loading) return _loading;
 
   _loading = (async () => {
-    const { FFmpeg } = await import('@ffmpeg/ffmpeg');
-    const { toBlobURL } = await import('@ffmpeg/util');
+    // Load from CDN to avoid Vite bundling issues with ffmpeg.wasm's Worker
+    const { FFmpeg } = await import(/* @vite-ignore */ FFMPEG_CDN);
+    const { toBlobURL } = await import(/* @vite-ignore */ UTIL_CDN);
 
     const ffmpeg = new FFmpeg();
 

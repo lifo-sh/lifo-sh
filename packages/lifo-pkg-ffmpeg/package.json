@@ -1,6 +1,6 @@
 {
   "name": "lifo-pkg-ffmpeg",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "FFmpeg command for Lifo, powered by ffmpeg.wasm",
   "license": "MIT",
   "author": "Sanket Sahu",
@@ -36,10 +36,7 @@
   "scripts": {
     "build": "vite build"
   },
-  "dependencies": {
-    "@ffmpeg/ffmpeg": "^0.12.10",
-    "@ffmpeg/util": "^0.12.1"
-  },
+  "dependencies": {},
   "peerDependencies": {
     "@lifo-sh/core": "workspace:*"
   },
@@ -49,6 +46,8 @@
     }
   },
   "devDependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.10",
+    "@ffmpeg/util": "^0.12.1",
     "@lifo-sh/core": "workspace:*",
     "typescript": "^5.7.0",
     "vite": "^6.0.0",
