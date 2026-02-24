@@ -27,6 +27,7 @@ import {
   createLifoPkgCommand,
 } from '@lifo-sh/core';
 import gitCommand from 'lifo-pkg-git';
+import ffmpegCommand from 'lifo-pkg-ffmpeg';
 
 // ─── Code snippets for each example ───
 
@@ -884,7 +885,8 @@ async function bootGit() {
   const terminal = new Terminal(container);
 
   const registry = createDefaultRegistry();
-  registry.register('git', gitCommand);  // register from lifo-pkg-git
+  registry.register('git', gitCommand);      // register from lifo-pkg-git
+  registry.register('ffmpeg', ffmpegCommand); // register from lifo-pkg-ffmpeg
   bootLifoPackages(kernel.vfs, registry);
 
   const env = kernel.getDefaultEnv();

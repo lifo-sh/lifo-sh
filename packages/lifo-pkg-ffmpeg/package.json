@@ -1,0 +1,57 @@
+{
+  "name": "lifo-pkg-ffmpeg",
+  "version": "0.4.3",
+  "description": "FFmpeg command for Lifo, powered by ffmpeg.wasm",
+  "license": "MIT",
+  "author": "Sanket Sahu",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "lifo": {
+    "commands": {
+      "ffmpeg": "./dist/index.js"
+    }
+  },
+  "keywords": [
+    "lifo-pkg",
+    "ffmpeg",
+    "ffmpeg-wasm",
+    "video",
+    "audio",
+    "transcode"
+  ],
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.10",
+    "@ffmpeg/util": "^0.12.1"
+  },
+  "peerDependencies": {
+    "@lifo-sh/core": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@lifo-sh/core": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@lifo-sh/core": "workspace:*",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0",
+    "vite-plugin-dts": "^4.5.0"
+  }
+}
