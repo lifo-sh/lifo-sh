@@ -598,6 +598,18 @@ async function addMultiTab(): Promise<MultiTab> {
   registry.register('watch', createWatchCommand(registry));
   registry.register('help', createHelpCommand(registry));
 
+  const multiNpmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
+    const result = await shell.execute(cmd, {
+      cwd: cmdCtx.cwd,
+      env: cmdCtx.env,
+      onStdout: (data: string) => cmdCtx.stdout.write(data),
+      onStderr: (data: string) => cmdCtx.stderr.write(data),
+    });
+    return result.exitCode;
+  };
+  registry.register('npm', createNpmCommand(registry, multiNpmShellExecute));
+  registry.register('lifo', createLifoPkgCommand(registry, multiNpmShellExecute));
+
   await shell.sourceFile('/etc/profile');
   await shell.sourceFile(env.HOME + '/.bashrc');
   shell.start();
@@ -691,6 +703,18 @@ async function addHttpTab(label: string): Promise<HttpTab> {
   registry.register('kill', createKillCommand(jobTable));
   registry.register('watch', createWatchCommand(registry));
   registry.register('help', createHelpCommand(registry));
+
+  const httpNpmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
+    const result = await shell.execute(cmd, {
+      cwd: cmdCtx.cwd,
+      env: cmdCtx.env,
+      onStdout: (data: string) => cmdCtx.stdout.write(data),
+      onStderr: (data: string) => cmdCtx.stderr.write(data),
+    });
+    return result.exitCode;
+  };
+  registry.register('npm', createNpmCommand(registry, httpNpmShellExecute));
+  registry.register('lifo', createLifoPkgCommand(registry, httpNpmShellExecute));
 
   await shell.sourceFile('/etc/profile');
   await shell.sourceFile(env.HOME + '/.bashrc');
@@ -869,6 +893,18 @@ async function bootExplorer() {
   registry.register('kill', createKillCommand(jobTable));
   registry.register('watch', createWatchCommand(registry));
   registry.register('help', createHelpCommand(registry));
+
+  const explorerNpmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
+    const result = await shell.execute(cmd, {
+      cwd: cmdCtx.cwd,
+      env: cmdCtx.env,
+      onStdout: (data: string) => cmdCtx.stdout.write(data),
+      onStderr: (data: string) => cmdCtx.stderr.write(data),
+    });
+    return result.exitCode;
+  };
+  registry.register('npm', createNpmCommand(registry, explorerNpmShellExecute));
+  registry.register('lifo', createLifoPkgCommand(registry, explorerNpmShellExecute));
 
   await shell.sourceFile('/etc/profile');
   await shell.sourceFile(env.HOME + '/.bashrc');
