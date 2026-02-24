@@ -165,6 +165,61 @@ const isNode = typeof _g['process'] !== 'undefined'
   && typeof (_g['process'] as Record<string, unknown>)?.['versions'] !== 'undefined'
   && typeof ((_g['process'] as Record<string, unknown>)?.['versions'] as Record<string, unknown>)?.['node'] === 'string';
 
+// ─── Node.js HTTPS loader ───
+// Node.js doesn't support import() from https: URLs. We register a custom
+// ESM loader (via module.register) that intercepts https: imports, fetches
+// the source with fetch(), and returns it as a module.
+
+let _loaderRegistered = false;
+
+async function ensureHttpsLoader(): Promise<void> {
+  if (_loaderRegistered || !isNode) return;
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const modId = 'node:' + 'module'; // prevent static analysis
+    const nodeModule: { register?: (specifier: string) => void } =
+      await import(/* @vite-ignore */ modId);
+    if (typeof nodeModule.register !== 'function') {
+      // Node.js < 20.6 -- module.register() not available
+      return;
+    }
+
+    // The loader code runs in a separate thread. It handles:
+    // 1. Absolute https/http URLs as import specifiers
+    // 2. Relative imports (./foo, ../bar) from an https parent
+    const loaderCode = [
+      'export async function resolve(specifier, context, nextResolve) {',
+      '  if (specifier.startsWith("https://") || specifier.startsWith("http://")) {',
+      '    return { url: specifier, shortCircuit: true };',
+      '  }',
+      '  if (context.parentURL && (context.parentURL.startsWith("https://") || context.parentURL.startsWith("http://"))',
+      '      && (specifier.startsWith("./") || specifier.startsWith("../"))) {',
+      '    return { url: new URL(specifier, context.parentURL).href, shortCircuit: true };',
+      '  }',
+      '  return nextResolve(specifier, context);',
+      '}',
+      '',
+      'export async function load(url, context, nextLoad) {',
+      '  if (url.startsWith("https://") || url.startsWith("http://")) {',
+      '    const response = await fetch(url);',
+      '    if (!response.ok) throw new Error("Failed to fetch " + url + ": " + response.status);',
+      '    const source = await response.text();',
+      '    return { format: "module", source, shortCircuit: true };',
+      '  }',
+      '  return nextLoad(url, context);',
+      '}',
+    ].join('\n');
+
+    const NodeBuffer = (_g['Buffer'] as { from(s: string, e: string): { toString(e: string): string } });
+    const encoded = NodeBuffer.from(loaderCode, 'utf-8').toString('base64');
+    nodeModule.register(`data:text/javascript;base64,${encoded}`);
+    _loaderRegistered = true;
+  } catch {
+    // Silently fail -- will surface as import errors later
+  }
+}
+
 async function executeEsmCommand(
   source: string,
   ctx: CommandContext,
@@ -173,13 +228,16 @@ async function executeEsmCommand(
   const cdn = getCdn(ctx.env);
   const rewritten = rewriteImportsToCdn(source, cdn);
 
-  // Node.js only supports file:, data:, and node: URL schemes for import().
-  // Browsers support blob: URLs. Use the appropriate method for each env.
+  // In Node.js, register an HTTPS loader so CDN imports work,
+  // and use data: URLs (Node doesn't support blob: for import).
+  if (isNode) {
+    await ensureHttpsLoader();
+  }
+
   let url: string;
   let needsRevoke = false;
 
   if (isNode) {
-    // data: URL with base64-encoded source
     const encoded = typeof btoa === 'function'
       ? btoa(unescape(encodeURIComponent(rewritten)))
       : (_g['Buffer'] as { from(s: string, e: string): { toString(e: string): string } }).from(rewritten, 'utf-8').toString('base64');
