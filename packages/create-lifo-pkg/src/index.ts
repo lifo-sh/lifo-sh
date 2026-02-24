@@ -44,6 +44,8 @@ for (const file of files) {
 console.log(`\nDone! Next steps:\n`);
 console.log(`  cd ${npmName}`);
 console.log(`  npm install`);
+console.log(`  cd example && npm install && cd ..`);
 console.log(`  npm run build`);
-console.log(`  npm run test:browser   # test in browser`);
-console.log(`  npm run test:cli       # test in terminal\n`);
+console.log(`  npm run dev              # watch mode (rebuild on changes)`);
+console.log(`  npm run test:browser     # test in browser`);
+console.log(`  npm run test:cli         # test in terminal\n`);

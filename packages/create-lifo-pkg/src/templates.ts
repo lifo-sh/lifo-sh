@@ -206,6 +206,7 @@ import {
   Shell,
   createDefaultRegistry,
   createHelpCommand,
+  createLifoPkgCommand,
 } from '@lifo-sh/core';
 import ${camelCase(name)}Command from '${npmName}';
 
@@ -218,6 +219,7 @@ async function main() {
   const registry = createDefaultRegistry();
   registry.register('${name}', ${camelCase(name)}Command);
   registry.register('help', createHelpCommand(registry));
+  registry.register('lifo', createLifoPkgCommand(registry));
 
   // 3. Create terminal + shell
   const terminal = new Terminal(document.getElementById('terminal')!);
@@ -267,6 +269,7 @@ import {
   Shell,
   createDefaultRegistry,
   createHelpCommand,
+  createLifoPkgCommand,
 } from '@lifo-sh/core';
 import ${camelCase(name)}Command from './dist/index.js';
 
@@ -311,6 +314,7 @@ async function main() {
   const registry = createDefaultRegistry();
   registry.register('${name}', ${camelCase(name)}Command);
   registry.register('help', createHelpCommand(registry));
+  registry.register('lifo', createLifoPkgCommand(registry));
 
   // Create shell
   const env = kernel.getDefaultEnv();
