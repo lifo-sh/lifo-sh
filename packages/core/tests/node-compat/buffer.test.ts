@@ -90,6 +90,36 @@ describe('Buffer', () => {
     expect(buf[1]).toBe(105);
   });
 
+  it('write with hex encoding', () => {
+    // This is how isomorphic-git writes OIDs to the git index
+    const oid = 'da39a3ee5e6b4b0d3255bfef95601890afd80709';
+    const buf = Buffer.alloc(20);
+    buf.write(oid, 0, 20, 'hex');
+    // Should write actual byte values, not ASCII of hex chars
+    expect(buf[0]).toBe(0xda);
+    expect(buf[1]).toBe(0x39);
+    expect(buf[2]).toBe(0xa3);
+    expect(buf[19]).toBe(0x09);
+    // Round-trip: reading back as hex should produce the original string
+    expect(buf.toString('hex')).toBe(oid);
+  });
+
+  it('write with hex encoding partial', () => {
+    const buf = Buffer.alloc(4);
+    buf.write('deadbeef', 0, 4, 'hex');
+    expect(buf[0]).toBe(0xde);
+    expect(buf[1]).toBe(0xad);
+    expect(buf[2]).toBe(0xbe);
+    expect(buf[3]).toBe(0xef);
+    expect(buf.toString('hex')).toBe('deadbeef');
+  });
+
+  it('write with base64 encoding', () => {
+    const buf = Buffer.alloc(5);
+    buf.write('aGVsbG8=', 0, 5, 'base64');
+    expect(buf.toString()).toBe('hello');
+  });
+
   it('slice returns Buffer', () => {
     const buf = Buffer.from('hello');
     const sliced = buf.slice(1, 3);

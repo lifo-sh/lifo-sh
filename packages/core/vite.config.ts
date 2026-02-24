@@ -17,6 +17,7 @@ export default defineConfig({
         '@xterm/addon-fit',
         '@xterm/addon-webgl',
         '@xterm/xterm/css/xterm.css',
+        'isomorphic-git',
       ],
     },
   },

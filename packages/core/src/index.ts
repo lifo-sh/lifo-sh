@@ -21,6 +21,9 @@ export type {
   FileType,
   ErrorCodeType,
   VirtualProvider,
+  VFSWatchEvent,
+  VFSWatchListener,
+  VFSEventType,
 } from './kernel/vfs/index.js';
 
 // Commands

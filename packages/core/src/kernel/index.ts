@@ -74,10 +74,10 @@ export class Kernel {
     this.vfs.registerProvider('/dev', new DevProvider());
 
     if (persist) {
-      // 4. Hook persistence
-      this.vfs.onChange = () => {
+      // 4. Hook persistence via watch events
+      this.vfs.watch(() => {
         this.persistence.scheduleSave(this.vfs.getRoot());
-      };
+      });
     }
   }
 

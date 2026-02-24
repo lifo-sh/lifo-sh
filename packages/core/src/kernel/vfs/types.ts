@@ -1,5 +1,16 @@
 export type FileType = 'file' | 'directory';
 
+export type VFSEventType = 'create' | 'modify' | 'delete' | 'rename';
+
+export interface VFSWatchEvent {
+  type: VFSEventType;
+  path: string;
+  oldPath?: string; // only for 'rename'
+  fileType: FileType;
+}
+
+export type VFSWatchListener = (event: VFSWatchEvent) => void;
+
 export interface INode {
   type: FileType;
   name: string;

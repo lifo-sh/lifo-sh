@@ -48,6 +48,10 @@ export class Buffer extends Uint8Array {
     return buf;
   }
 
+  static allocUnsafe(size: number): Buffer {
+    return new Buffer(size);
+  }
+
   static isBuffer(obj: unknown): obj is Buffer {
     return obj instanceof Buffer;
   }
@@ -65,25 +69,57 @@ export class Buffer extends Uint8Array {
     return result;
   }
 
-  toString(encoding?: string): string {
+  static byteLength(str: string, encoding?: string): number {
+    if (encoding === 'base64') {
+      // Remove padding and compute
+      const cleaned = str.replace(/[^A-Za-z0-9+/]/g, '');
+      return Math.floor(cleaned.length * 3 / 4);
+    }
+    if (encoding === 'hex') {
+      return str.length / 2;
+    }
+    return encoder.encode(str).length;
+  }
+
+  toString(encoding?: string, start?: number, end?: number): string {
+    const slice = (start !== undefined || end !== undefined)
+      ? this.subarray(start ?? 0, end ?? this.length)
+      : this;
     if (encoding === 'base64') {
       let binary = '';
-      for (let i = 0; i < this.length; i++) binary += String.fromCharCode(this[i]);
+      for (let i = 0; i < slice.length; i++) binary += String.fromCharCode(slice[i]);
       return btoa(binary);
     }
     if (encoding === 'hex') {
       let hex = '';
-      for (let i = 0; i < this.length; i++) hex += this[i].toString(16).padStart(2, '0');
+      for (let i = 0; i < slice.length; i++) hex += slice[i].toString(16).padStart(2, '0');
       return hex;
     }
     // utf-8 default
-    return decoder.decode(this);
+    return decoder.decode(slice);
   }
 
-  write(str: string, offset?: number, length?: number, _encoding?: string): number {
-    const bytes = encoder.encode(str);
+  write(str: string, offset?: number, length?: number, encoding?: string): number {
     const start = offset ?? 0;
     const maxLen = length ?? this.length - start;
+
+    let bytes: Uint8Array;
+    if (encoding === 'hex') {
+      // Each pair of hex chars = 1 byte
+      const byteLen = Math.min(Math.floor(str.length / 2), maxLen);
+      bytes = new Uint8Array(byteLen);
+      for (let i = 0; i < byteLen; i++) {
+        bytes[i] = parseInt(str.substring(i * 2, i * 2 + 2), 16);
+      }
+    } else if (encoding === 'base64') {
+      const binary = atob(str);
+      const byteLen = Math.min(binary.length, maxLen);
+      bytes = new Uint8Array(byteLen);
+      for (let i = 0; i < byteLen; i++) bytes[i] = binary.charCodeAt(i);
+    } else {
+      bytes = encoder.encode(str);
+    }
+
     const toWrite = Math.min(bytes.length, maxLen);
     this.set(bytes.subarray(0, toWrite), start);
     return toWrite;
@@ -108,9 +144,213 @@ export class Buffer extends Uint8Array {
     return true;
   }
 
+  compare(other: Uint8Array): number {
+    const len = Math.min(this.length, other.length);
+    for (let i = 0; i < len; i++) {
+      if (this[i] < other[i]) return -1;
+      if (this[i] > other[i]) return 1;
+    }
+    if (this.length < other.length) return -1;
+    if (this.length > other.length) return 1;
+    return 0;
+  }
+
   slice(start?: number, end?: number): Buffer {
     const sliced = super.slice(start, end);
     return Buffer.from(sliced);
+  }
+
+  subarray(start?: number, end?: number): Buffer {
+    const sub = super.subarray(start, end);
+    return Buffer.from(sub);
+  }
+
+  // ─── Integer read methods (big-endian) ───
+
+  readUInt8(offset = 0): number {
+    return this[offset];
+  }
+
+  readUInt16BE(offset = 0): number {
+    return (this[offset] << 8) | this[offset + 1];
+  }
+
+  readUInt32BE(offset = 0): number {
+    return (
+      (this[offset] * 0x1000000) +
+      ((this[offset + 1] << 16) |
+       (this[offset + 2] << 8) |
+        this[offset + 3])
+    );
+  }
+
+  readInt8(offset = 0): number {
+    const val = this[offset];
+    return val & 0x80 ? val - 0x100 : val;
+  }
+
+  readInt16BE(offset = 0): number {
+    const val = (this[offset] << 8) | this[offset + 1];
+    return val & 0x8000 ? val - 0x10000 : val;
+  }
+
+  readInt32BE(offset = 0): number {
+    return (
+      (this[offset] << 24) |
+      (this[offset + 1] << 16) |
+      (this[offset + 2] << 8) |
+       this[offset + 3]
+    );
+  }
+
+  // ─── Integer read methods (little-endian) ───
+
+  readUInt16LE(offset = 0): number {
+    return this[offset] | (this[offset + 1] << 8);
+  }
+
+  readUInt32LE(offset = 0): number {
+    return (
+      this[offset] +
+      (this[offset + 1] << 8) +
+      (this[offset + 2] << 16) +
+      (this[offset + 3] * 0x1000000)
+    );
+  }
+
+  readInt16LE(offset = 0): number {
+    const val = this[offset] | (this[offset + 1] << 8);
+    return val & 0x8000 ? val - 0x10000 : val;
+  }
+
+  readInt32LE(offset = 0): number {
+    return (
+      this[offset] |
+      (this[offset + 1] << 8) |
+      (this[offset + 2] << 16) |
+      (this[offset + 3] << 24)
+    );
+  }
+
+  // ─── Integer write methods (big-endian) ───
+
+  writeUInt8(value: number, offset = 0): number {
+    this[offset] = value & 0xff;
+    return offset + 1;
+  }
+
+  writeUInt16BE(value: number, offset = 0): number {
+    this[offset] = (value >>> 8) & 0xff;
+    this[offset + 1] = value & 0xff;
+    return offset + 2;
+  }
+
+  writeUInt32BE(value: number, offset = 0): number {
+    this[offset] = (value >>> 24) & 0xff;
+    this[offset + 1] = (value >>> 16) & 0xff;
+    this[offset + 2] = (value >>> 8) & 0xff;
+    this[offset + 3] = value & 0xff;
+    return offset + 4;
+  }
+
+  writeInt8(value: number, offset = 0): number {
+    this[offset] = value & 0xff;
+    return offset + 1;
+  }
+
+  writeInt16BE(value: number, offset = 0): number {
+    this[offset] = (value >>> 8) & 0xff;
+    this[offset + 1] = value & 0xff;
+    return offset + 2;
+  }
+
+  writeInt32BE(value: number, offset = 0): number {
+    this[offset] = (value >>> 24) & 0xff;
+    this[offset + 1] = (value >>> 16) & 0xff;
+    this[offset + 2] = (value >>> 8) & 0xff;
+    this[offset + 3] = value & 0xff;
+    return offset + 4;
+  }
+
+  // ─── Integer write methods (little-endian) ───
+
+  writeUInt16LE(value: number, offset = 0): number {
+    this[offset] = value & 0xff;
+    this[offset + 1] = (value >>> 8) & 0xff;
+    return offset + 2;
+  }
+
+  writeUInt32LE(value: number, offset = 0): number {
+    this[offset] = value & 0xff;
+    this[offset + 1] = (value >>> 8) & 0xff;
+    this[offset + 2] = (value >>> 16) & 0xff;
+    this[offset + 3] = (value >>> 24) & 0xff;
+    return offset + 4;
+  }
+
+  writeInt16LE(value: number, offset = 0): number {
+    this[offset] = value & 0xff;
+    this[offset + 1] = (value >>> 8) & 0xff;
+    return offset + 2;
+  }
+
+  writeInt32LE(value: number, offset = 0): number {
+    this[offset] = value & 0xff;
+    this[offset + 1] = (value >>> 8) & 0xff;
+    this[offset + 2] = (value >>> 16) & 0xff;
+    this[offset + 3] = (value >>> 24) & 0xff;
+    return offset + 4;
+  }
+
+  // ─── Search methods ───
+
+  indexOf(value: number | Uint8Array | string, byteOffset?: number, encoding?: string): number {
+    const start = byteOffset ?? 0;
+    if (typeof value === 'number') {
+      for (let i = start; i < this.length; i++) {
+        if (this[i] === value) return i;
+      }
+      return -1;
+    }
+    const needle = typeof value === 'string'
+      ? Buffer.from(value, encoding)
+      : value;
+    if (needle.length === 0) return start;
+    for (let i = start; i <= this.length - needle.length; i++) {
+      let match = true;
+      for (let j = 0; j < needle.length; j++) {
+        if (this[i + j] !== needle[j]) { match = false; break; }
+      }
+      if (match) return i;
+    }
+    return -1;
+  }
+
+  lastIndexOf(value: number | Uint8Array | string, byteOffset?: number, encoding?: string): number {
+    if (typeof value === 'number') {
+      const start = byteOffset ?? this.length - 1;
+      for (let i = start; i >= 0; i--) {
+        if (this[i] === value) return i;
+      }
+      return -1;
+    }
+    const needle = typeof value === 'string'
+      ? Buffer.from(value, encoding)
+      : value;
+    if (needle.length === 0) return byteOffset ?? this.length;
+    const start = byteOffset != null ? Math.min(byteOffset, this.length - needle.length) : this.length - needle.length;
+    for (let i = start; i >= 0; i--) {
+      let match = true;
+      for (let j = 0; j < needle.length; j++) {
+        if (this[i + j] !== needle[j]) { match = false; break; }
+      }
+      if (match) return i;
+    }
+    return -1;
+  }
+
+  includes(value: number | Uint8Array | string, byteOffset?: number, encoding?: string): boolean {
+    return this.indexOf(value, byteOffset, encoding) !== -1;
   }
 }
 

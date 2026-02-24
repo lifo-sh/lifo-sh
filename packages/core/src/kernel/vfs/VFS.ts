@@ -1,14 +1,49 @@
 import { resolve, dirname, basename } from '../../utils/path.js';
 import { encode, decode } from '../../utils/encoding.js';
 import { INode, Stat, Dirent, VFSError, ErrorCode, VirtualProvider } from './types.js';
+import type { VFSWatchEvent, VFSWatchListener } from './types.js';
+import { EventEmitter } from '../../node-compat/events.js';
 
 export class VFS {
   private root: INode;
   private virtualProviders = new Map<string, VirtualProvider>();
+  private emitter = new EventEmitter();
   onChange?: () => void;
 
   constructor() {
     this.root = this.createNode('directory', '');
+  }
+
+  // ─── Watch API ───
+
+  watch(listener: VFSWatchListener): () => void;
+  watch(path: string, listener: VFSWatchListener): () => void;
+  watch(pathOrListener: string | VFSWatchListener, maybeListener?: VFSWatchListener): () => void {
+    if (typeof pathOrListener === 'function') {
+      // watch(listener) — global watch
+      const listener = pathOrListener;
+      this.emitter.on('change', listener as (...args: unknown[]) => void);
+      return () => this.emitter.off('change', listener as (...args: unknown[]) => void);
+    }
+
+    // watch(path, listener) — scoped watch
+    const prefix = this.toAbsolute(pathOrListener);
+    const listener = maybeListener!;
+    const scoped = (event: VFSWatchEvent) => {
+      if (event.path === prefix || event.path.startsWith(prefix + '/')) {
+        listener(event);
+      }
+      if (event.oldPath && (event.oldPath === prefix || event.oldPath.startsWith(prefix + '/'))) {
+        listener(event);
+      }
+    };
+    this.emitter.on('change', scoped as (...args: unknown[]) => void);
+    return () => this.emitter.off('change', scoped as (...args: unknown[]) => void);
+  }
+
+  private notify(event: VFSWatchEvent): void {
+    this.emitter.emit('change', event);
+    this.onChange?.();
   }
 
   registerProvider(prefix: string, provider: VirtualProvider): void {
@@ -118,6 +153,7 @@ export class VFS {
     }
 
     const data = typeof content === 'string' ? encode(content) : content;
+    const abs = this.toAbsolute(path);
     const { parent, name } = this.resolveParent(path);
     const existing = parent.children.get(name);
 
@@ -127,13 +163,13 @@ export class VFS {
       }
       existing.data = data;
       existing.mtime = Date.now();
+      this.notify({ type: 'modify', path: abs, fileType: 'file' });
     } else {
       const node = this.createNode('file', name);
       node.data = data;
       parent.children.set(name, node);
+      this.notify({ type: 'create', path: abs, fileType: 'file' });
     }
-
-    this.onChange?.();
   }
 
   appendFile(path: string, content: string | Uint8Array): void {
@@ -148,7 +184,7 @@ export class VFS {
       merged.set(data, node.data.length);
       node.data = merged;
       node.mtime = Date.now();
-      this.onChange?.();
+      this.notify({ type: 'modify', path: this.toAbsolute(path), fileType: 'file' });
     } catch (e) {
       if (e instanceof VFSError && e.code === 'ENOENT') {
         this.writeFile(path, data);
@@ -185,6 +221,7 @@ export class VFS {
   }
 
   unlink(path: string): void {
+    const abs = this.toAbsolute(path);
     const { parent, name } = this.resolveParent(path);
     const node = parent.children.get(name);
 
@@ -196,10 +233,12 @@ export class VFS {
     }
 
     parent.children.delete(name);
-    this.onChange?.();
+    this.notify({ type: 'delete', path: abs, fileType: 'file' });
   }
 
   rename(oldPath: string, newPath: string): void {
+    const oldAbs = this.toAbsolute(oldPath);
+    const newAbs = this.toAbsolute(newPath);
     const { parent: oldParent, name: oldName } = this.resolveParent(oldPath);
     const node = oldParent.children.get(oldName);
 
@@ -212,7 +251,7 @@ export class VFS {
     node.mtime = Date.now();
     newParent.children.set(newName, node);
     oldParent.children.delete(oldName);
-    this.onChange?.();
+    this.notify({ type: 'rename', path: newAbs, oldPath: oldAbs, fileType: node.type });
   }
 
   copyFile(src: string, dest: string): void {
@@ -222,17 +261,17 @@ export class VFS {
     }
 
     const data = new Uint8Array(srcNode.data);
-    this.writeFile(dest, data); // writeFile already calls onChange
+    this.writeFile(dest, data); // writeFile already calls notify
   }
 
   touch(path: string): void {
     try {
       const node = this.resolveNode(path);
       node.mtime = Date.now();
-      this.onChange?.();
+      this.notify({ type: 'modify', path: this.toAbsolute(path), fileType: node.type });
     } catch (e) {
       if (e instanceof VFSError && e.code === 'ENOENT') {
-        this.writeFile(path, ''); // writeFile already calls onChange
+        this.writeFile(path, ''); // writeFile already calls notify
       } else {
         throw e;
       }
@@ -246,21 +285,24 @@ export class VFS {
       const abs = this.toAbsolute(path);
       const parts = abs.split('/').filter(Boolean);
       let current = this.root;
+      let currentPath = '';
 
       for (const part of parts) {
+        currentPath += '/' + part;
         let child = current.children.get(part);
         if (!child) {
           child = this.createNode('directory', part);
           current.children.set(part, child);
+          this.notify({ type: 'create', path: currentPath, fileType: 'directory' });
         } else if (child.type !== 'directory') {
           throw new VFSError(ErrorCode.ENOTDIR, `'${part}': not a directory`);
         }
         current = child;
       }
-      this.onChange?.();
       return;
     }
 
+    const abs = this.toAbsolute(path);
     const { parent, name } = this.resolveParent(path);
 
     if (parent.children.has(name)) {
@@ -269,10 +311,11 @@ export class VFS {
 
     const node = this.createNode('directory', name);
     parent.children.set(name, node);
-    this.onChange?.();
+    this.notify({ type: 'create', path: abs, fileType: 'directory' });
   }
 
   rmdir(path: string): void {
+    const abs = this.toAbsolute(path);
     const { parent, name } = this.resolveParent(path);
     const node = parent.children.get(name);
 
@@ -287,7 +330,7 @@ export class VFS {
     }
 
     parent.children.delete(name);
-    this.onChange?.();
+    this.notify({ type: 'delete', path: abs, fileType: 'directory' });
   }
 
   readdir(path: string): Dirent[] {
