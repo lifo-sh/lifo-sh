@@ -35,6 +35,7 @@
         <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="headless">Headless / AI Agent</button>
         <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="multi">Multi Terminal</button>
         <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="http">HTTP Server</button>
+        <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="explorer">File Explorer</button>
       </div>
     </nav>
 
@@ -92,6 +93,16 @@
           <div class="flex flex-col h-full flex-1">
             <div class="flex items-center gap-0.5 bg-tokyo-bg-dark border border-tokyo-border border-b-0 rounded-t-lg px-1 min-h-[34px] shrink-0" id="http-tab-bar"></div>
             <div class="flex-1 relative border border-tokyo-border border-t-0 rounded-b-lg overflow-hidden" id="http-tab-panels"></div>
+          </div>
+        </div>
+
+        <!-- File Explorer -->
+        <div id="out-explorer" class="output-panel">
+          <div class="text-[13px] font-semibold text-tokyo-fg-bright mb-0.5">File Explorer</div>
+          <div class="text-[11px] text-tokyo-comment mb-3.5">Visual file manager with Monaco editor -- drag &amp; drop to upload, right-click for actions, changes sync live with terminal</div>
+          <div class="flex flex-col h-full flex-1 gap-2">
+            <div class="flex-1 rounded-lg overflow-hidden border border-tokyo-border min-h-0" id="explorer-panel"></div>
+            <div class="h-[200px] shrink-0 rounded-lg overflow-hidden border border-tokyo-border p-2 bg-tokyo-bg" id="explorer-terminal"></div>
           </div>
         </div>
       </div>
