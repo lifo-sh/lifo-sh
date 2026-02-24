@@ -3,7 +3,7 @@ import dts from 'vite-plugin-dts';
 
 export default defineConfig({
   plugins: [
-    dts({ tsconfigPath: './tsconfig.build.json' }),
+    dts({ tsconfigPath: './tsconfig.json' }),
   ],
   build: {
     lib: {
@@ -13,12 +13,11 @@ export default defineConfig({
     },
     rollupOptions: {
       external: [
-        '@lifo-sh/ui',
+        '@lifo-sh/core',
+        '@xterm/xterm',
+        '@xterm/addon-fit',
+        '@xterm/addon-webgl',
       ],
     },
-  },
-  test: {
-    globals: true,
-    environment: 'node',
   },
 });

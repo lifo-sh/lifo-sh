@@ -1,8 +1,10 @@
+import type { ITerminal } from '../terminal/ITerminal.js';
+
 /**
  * A Terminal-shaped class that captures output without xterm.js.
  * Used for headless/programmatic Sandbox usage (AI agents, tests, etc.)
  */
-export class HeadlessTerminal {
+export class HeadlessTerminal implements ITerminal {
   private dataCallback: ((data: string) => void) | null = null;
 
   write(_data: string): void {

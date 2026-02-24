@@ -2,9 +2,19 @@
   "name": "rapidos",
   "private": true,
   "scripts": {
-    "build": "pnpm --filter @lifo-sh/core build",
+    "build": "pnpm --filter @lifo-sh/core build && pnpm --filter @lifo-sh/ui build && pnpm --filter lifo-sh build",
+    "build:core": "pnpm --filter @lifo-sh/core build",
+    "build:ui": "pnpm --filter @lifo-sh/ui build",
+    "build:cli": "pnpm --filter lifo-sh build",
     "typecheck": "pnpm --filter @lifo-sh/core typecheck",
     "test": "pnpm --filter @lifo-sh/core test",
-    "dev": "pnpm --filter @lifo-sh/example-vite dev"
+    "dev": "pnpm --filter @lifo-sh/example-vite dev",
+    "dev:cli": "pnpm --filter lifo-sh dev",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "pnpm build && pnpm changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.29.8"
   }
 }

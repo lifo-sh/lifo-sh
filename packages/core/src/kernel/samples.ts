@@ -699,6 +699,65 @@ for (const user of data.users.filter(u => u.role === "admin")) {
 }
 `,
 
+  'node/http-server.js': `// Run with: node examples/node/http-server.js
+// Then in another terminal: curl localhost:3000
+// Or run: node examples/node/http-client.js
+
+const http = require("http");
+
+const server = http.createServer((req, res) => {
+  const body = JSON.stringify({
+    message: "Hello from Lifo!",
+    method: req.method,
+    url: req.url,
+    time: new Date().toISOString(),
+  }, null, 2);
+
+  res.writeHead(200, {
+    "Content-Type": "application/json",
+    "Content-Length": Buffer.byteLength(body),
+  });
+  res.end(body);
+});
+
+server.listen(3000, () => {
+  console.log("Server running on http://localhost:3000");
+  console.log("Try: curl localhost:3000");
+  console.log("Press Ctrl+C to stop");
+});
+`,
+
+  'node/http-client.js': `// Run with: node examples/node/http-client.js
+// Make sure http-server.js is running first!
+
+const http = require("http");
+
+function request(path) {
+  return new Promise((resolve, reject) => {
+    http.get("http://localhost:3000" + path, (res) => {
+      let data = "";
+      res.on("data", (chunk) => data += chunk);
+      res.on("end", () => {
+        console.log("GET " + path);
+        console.log("Status:", res.statusCode);
+        console.log("Response:", data);
+        console.log();
+        resolve(data);
+      });
+    });
+  });
+}
+
+async function main() {
+  await request("/");
+  await request("/api/users");
+  await request("/health");
+  console.log("Done!");
+}
+
+main();
+`,
+
   // ─── Text processing cheatsheet ───
 
   'scripts/11-text-processing.sh': '#!/bin/sh\n\

@@ -1,6 +1,7 @@
 import type { Command } from '../commands/types.js';
 import type { Kernel } from '../kernel/index.js';
 import type { Shell } from '../shell/Shell.js';
+import type { ITerminal } from '../terminal/ITerminal.js';
 
 // ─── Sandbox Options ───
 
@@ -13,8 +14,8 @@ export interface SandboxOptions {
   cwd?: string;
   /** Pre-populate files: path → content */
   files?: Record<string, string | Uint8Array>;
-  /** Attach to a DOM element for visual mode (CSS selector or element) */
-  terminal?: string | HTMLElement;
+  /** Attach to a DOM element for visual mode (CSS selector or element), or pass a pre-created ITerminal */
+  terminal?: string | HTMLElement | ITerminal;
 }
 
 // ─── Command Execution ───

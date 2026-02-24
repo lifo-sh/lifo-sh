@@ -1,6 +1,8 @@
 import { Terminal as XTerminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebglAddon } from '@xterm/addon-webgl';
+import type { ITerminal } from '@lifo-sh/core';
+
 // Tokyo Night theme
 const THEME = {
   background: '#1a1b26',
@@ -26,7 +28,7 @@ const THEME = {
   brightWhite: '#c0caf5',
 };
 
-export class Terminal {
+export class Terminal implements ITerminal {
   private xterm: XTerminal;
   private fitAddon: FitAddon;
 

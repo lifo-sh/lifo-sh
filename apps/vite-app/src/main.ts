@@ -1,8 +1,8 @@
 import './app.css';
 import '@xterm/xterm/css/xterm.css';
+import { Terminal } from '@lifo-sh/ui';
 import {
   Sandbox,
-  Terminal,
   Kernel,
   Shell,
   createDefaultRegistry,
@@ -21,6 +21,7 @@ import {
 
 const CODE_INTERACTIVE = `\
 <span class="code-keyword">import</span> { Sandbox } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/core'</span>
+<span class="code-comment">// @lifo-sh/ui is auto-imported for visual mode</span>
 
 <span class="code-comment">// One line to get a full interactive shell</span>
 <span class="code-keyword">const</span> sandbox = <span class="code-keyword">await</span> Sandbox.<span class="code-fn">create</span>({
@@ -72,8 +73,9 @@ console.<span class="code-fn">log</span>(r1.exitCode) <span class="code-comment"
 sandbox.<span class="code-fn">destroy</span>()`;
 
 const CODE_MULTI = `\
+<span class="code-keyword">import</span> { Terminal } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/ui'</span>
 <span class="code-keyword">import</span> {
-  Kernel, Terminal, Shell,
+  Kernel, Shell,
   createDefaultRegistry, <span class="code-comment">...</span>
 } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/core'</span>
 
@@ -104,8 +106,9 @@ const CODE_MULTI = `\
 <span class="code-comment">// then "ls /tmp" in tab 2.</span>`;
 
 const CODE_HTTP = `\
+<span class="code-keyword">import</span> { Terminal } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/ui'</span>
 <span class="code-keyword">import</span> {
-  Kernel, Terminal, Shell,
+  Kernel, Shell,
   createDefaultRegistry,
   createNodeCommand, createCurlCommand, <span class="code-comment">...</span>
 } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/core'</span>
@@ -356,7 +359,7 @@ async function addMultiTab(): Promise<MultiTab> {
   loadInstalledPackages(kernel.vfs, registry);
 
   const env = kernel.getDefaultEnv();
-  const shell = new Shell(terminal as never, kernel.vfs, registry, env);
+  const shell = new Shell(terminal, kernel.vfs, registry, env);
 
   const jobTable = shell.getJobTable();
   registry.register('ps', createPsCommand(jobTable));
@@ -451,7 +454,7 @@ async function addHttpTab(label: string): Promise<HttpTab> {
   registry.register('curl', createCurlCommand(kernel.portRegistry));
 
   const env = kernel.getDefaultEnv();
-  const shell = new Shell(terminal as never, kernel.vfs, registry, env);
+  const shell = new Shell(terminal, kernel.vfs, registry, env);
 
   const jobTable = shell.getJobTable();
   registry.register('ps', createPsCommand(jobTable));
