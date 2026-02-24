@@ -1,6 +1,7 @@
 import type { Command } from '../types.js';
 import { resolve } from '../../utils/path.js';
 import { VFSError } from '../../kernel/vfs/index.js';
+import { getMimeType, isBinaryMime } from '../../utils/mime.js';
 
 interface SedExpr {
   type: 's' | 'd' | 'p';
@@ -133,6 +134,11 @@ const command: Command = async (ctx) => {
   for (const file of files) {
     const path = resolve(ctx.cwd, file);
     try {
+      ctx.vfs.stat(path);
+      if (isBinaryMime(getMimeType(path))) {
+        ctx.stderr.write(`sed: ${file}: binary file, skipping\n`);
+        continue;
+      }
       const content = ctx.vfs.readFileString(path);
       const result = processText(content);
       if (inPlace) {

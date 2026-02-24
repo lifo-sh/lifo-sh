@@ -1,6 +1,7 @@
 import type { Command } from '../types.js';
 import { resolve } from '../../utils/path.js';
 import { VFSError } from '../../kernel/vfs/index.js';
+import { getMimeType, isBinaryMime } from '../../utils/mime.js';
 
 const command: Command = async (ctx) => {
   let showCount = false;
@@ -32,6 +33,11 @@ const command: Command = async (ctx) => {
     }
   } else {
     const path = resolve(ctx.cwd, files[0]);
+    if (isBinaryMime(getMimeType(path))) {
+      ctx.stderr.write(`uniq: ${files[0]}: binary file, skipping
+`);
+      return 1;
+    }
     try {
       text = ctx.vfs.readFileString(path);
     } catch (e) {

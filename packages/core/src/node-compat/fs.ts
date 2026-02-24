@@ -1,7 +1,12 @@
 import type { VFS } from '../kernel/vfs/index.js';
 import { VFSError } from '../kernel/vfs/index.js';
 import type { Stat as VfsStat } from '../kernel/vfs/types.js';
-import { resolve } from '../utils/path.js';
+import { resolve, basename } from '../utils/path.js';
+import { encode, decode } from '../utils/encoding.js';
+import { Readable, Writable } from './stream.js';
+import { EventEmitter } from './events.js';
+
+// ─── Stat conversion ───
 
 interface NodeStat {
   dev: number;
@@ -63,6 +68,8 @@ function toNodeStat(stat: VfsStat): NodeStat {
   };
 }
 
+// ─── Error helpers ───
+
 interface NodeError extends Error {
   code: string;
   errno: number;
@@ -80,6 +87,24 @@ function toNodeError(e: VFSError, syscall: string, path: string): NodeError {
   return err;
 }
 
+function makeEnoent(syscall: string, path: string): NodeError {
+  const err = new Error(`ENOENT: no such file or directory, ${syscall} '${path}'`) as NodeError;
+  err.code = 'ENOENT';
+  err.errno = -2;
+  err.syscall = syscall;
+  err.path = path;
+  return err;
+}
+
+function makeEbadf(syscall: string): NodeError {
+  const err = new Error(`EBADF: bad file descriptor, ${syscall}`) as NodeError;
+  err.code = 'EBADF';
+  err.errno = -9;
+  err.syscall = syscall;
+  err.path = '';
+  return err;
+}
+
 type Callback<T> = (err: NodeError | null, result?: T) => void;
 
 function resolvePath(cwd: string, p: string | URL): string {
@@ -87,7 +112,50 @@ function resolvePath(cwd: string, p: string | URL): string {
   return resolve(cwd, str);
 }
 
+// ─── File descriptor entry ───
+
+interface FdEntry {
+  path: string;
+  position: number;
+  flags: string;
+  closed: boolean;
+}
+
+// ─── Open flags ───
+
+const O_RDONLY = 0;
+const O_WRONLY = 1;
+const O_RDWR = 2;
+const O_CREAT = 64;
+const O_TRUNC = 512;
+const O_APPEND = 1024;
+
+function parseFlags(flags: string | number): number {
+  if (typeof flags === 'number') return flags;
+  switch (flags) {
+    case 'r': return O_RDONLY;
+    case 'r+': return O_RDWR;
+    case 'w': return O_WRONLY | O_CREAT | O_TRUNC;
+    case 'w+': return O_RDWR | O_CREAT | O_TRUNC;
+    case 'a': return O_WRONLY | O_CREAT | O_APPEND;
+    case 'a+': return O_RDWR | O_CREAT | O_APPEND;
+    case 'ax': return O_WRONLY | O_CREAT | O_APPEND;
+    default: return O_RDONLY;
+  }
+}
+
 export function createFs(vfs: VFS, cwd: string) {
+  // ─── File descriptor table ───
+
+  const fdTable = new Map<number, FdEntry>();
+  let nextFd = 10; // start above stdin/stdout/stderr
+
+  function getFd(fd: number): FdEntry {
+    const entry = fdTable.get(fd);
+    if (!entry || entry.closed) throw makeEbadf('fd');
+    return entry;
+  }
+
   // ─── Sync API ───
 
   function readFileSync(path: string | URL, options?: string | { encoding?: string; flag?: string }): string | Uint8Array {
@@ -165,16 +233,146 @@ export function createFs(vfs: VFS, cwd: string) {
     // No-op in VFS
   }
 
+  function chownSync(_path: string | URL, _uid: number, _gid: number): void {
+    // No-op in VFS
+  }
+
   function accessSync(path: string | URL, _mode?: number): void {
     const abs = resolvePath(cwd, path);
     if (!vfs.exists(abs)) {
-      const err = new Error(`ENOENT: no such file or directory, access '${abs}'`) as NodeError;
-      err.code = 'ENOENT';
-      err.errno = -2;
-      err.syscall = 'access';
-      err.path = abs;
-      throw err;
+      throw makeEnoent('access', abs);
     }
+  }
+
+  function realpathSync(path: string | URL): string {
+    const abs = resolvePath(cwd, path);
+    if (!vfs.exists(abs)) {
+      throw makeEnoent('realpath', abs);
+    }
+    return abs;
+  }
+
+  function truncateSync(path: string | URL, len?: number): void {
+    const abs = resolvePath(cwd, path);
+    const data = vfs.readFile(abs);
+    const newLen = len ?? 0;
+    if (newLen >= data.length) return;
+    vfs.writeFile(abs, data.slice(0, newLen));
+  }
+
+  // ─── File descriptor sync API ───
+  // NOTE: File descriptor operations work with mounted native filesystems via VFS
+  // delegation. The fd table maps fds to VFS paths. When operations like readSync/
+  // writeSync call vfs.readFile()/vfs.writeFile() on those paths, the VFS mount system
+  // automatically delegates to the appropriate provider (e.g. NativeFsProvider).
+
+  function openSync(path: string | URL, flags?: string | number, _mode?: number): number {
+    const abs = resolvePath(cwd, path);
+    const numFlags = parseFlags(flags ?? 'r');
+
+    if (numFlags & O_CREAT) {
+      if (!vfs.exists(abs)) {
+        vfs.writeFile(abs, '');
+      }
+    }
+
+    if (numFlags & O_TRUNC) {
+      vfs.writeFile(abs, '');
+    }
+
+    if (!vfs.exists(abs)) {
+      throw makeEnoent('open', abs);
+    }
+
+    const fd = nextFd++;
+    fdTable.set(fd, {
+      path: abs,
+      position: (numFlags & O_APPEND) ? vfs.readFile(abs).length : 0,
+      flags: typeof flags === 'string' ? flags : 'r',
+      closed: false,
+    });
+    return fd;
+  }
+
+  function closeSync(fd: number): void {
+    const entry = getFd(fd);
+    entry.closed = true;
+    fdTable.delete(fd);
+  }
+
+  function readSync(fd: number, buffer: Uint8Array, offset: number, length: number, position: number | null): number {
+    const entry = getFd(fd);
+    const data = vfs.readFile(entry.path);
+    const pos = position !== null ? position : entry.position;
+    const available = Math.max(0, data.length - pos);
+    const bytesToRead = Math.min(length, available);
+    if (bytesToRead === 0) return 0;
+    buffer.set(data.subarray(pos, pos + bytesToRead), offset);
+    if (position === null) {
+      entry.position = pos + bytesToRead;
+    }
+    return bytesToRead;
+  }
+
+  function writeSync(fd: number, bufferOrString: Uint8Array | string, offsetOrPosition?: number, lengthOrEncoding?: number | string, position?: number | null): number {
+    const entry = getFd(fd);
+
+    let data: Uint8Array;
+    let pos: number;
+
+    if (typeof bufferOrString === 'string') {
+      data = encode(bufferOrString);
+      pos = typeof offsetOrPosition === 'number' ? offsetOrPosition : entry.position;
+    } else {
+      const offset = (offsetOrPosition as number) ?? 0;
+      const length = (typeof lengthOrEncoding === 'number' ? lengthOrEncoding : bufferOrString.length - offset);
+      data = bufferOrString.subarray(offset, offset + length);
+      pos = position !== null && position !== undefined ? position : entry.position;
+    }
+
+    const fileData = vfs.readFile(entry.path);
+    const endPos = pos + data.length;
+    const newSize = Math.max(fileData.length, endPos);
+    const newData = new Uint8Array(newSize);
+    newData.set(fileData, 0);
+    newData.set(data, pos);
+    vfs.writeFile(entry.path, newData);
+
+    entry.position = endPos;
+    return data.length;
+  }
+
+  function fstatSync(fd: number): NodeStat {
+    const entry = getFd(fd);
+    return toNodeStat(vfs.stat(entry.path));
+  }
+
+  function ftruncateSync(fd: number, len?: number): void {
+    const entry = getFd(fd);
+    truncateSync(entry.path, len);
+  }
+
+  function fsyncSync(_fd: number): void {
+    // No-op - VFS is always in sync
+  }
+
+  function fdatasyncSync(_fd: number): void {
+    // No-op
+  }
+
+  // ─── Symlink stubs ───
+
+  function symlinkSync(_target: string, _path: string, _type?: string): void {
+    // No-op - VFS has no symlink support yet
+  }
+
+  function linkSync(_existingPath: string, _newPath: string): void {
+    // No-op
+  }
+
+  function readlinkSync(path: string | URL): string {
+    // Return the path itself since we have no symlinks
+    return resolvePath(cwd, path);
   }
 
   // ─── Callback API ───
@@ -187,6 +385,8 @@ export function createFs(vfs: VFS, cwd: string) {
       } catch (e) {
         if (e instanceof VFSError) {
           cb(toNodeError(e, '', ''));
+        } else if ((e as NodeError).code) {
+          cb(e as NodeError);
         } else {
           throw e;
         }
@@ -207,6 +407,10 @@ export function createFs(vfs: VFS, cwd: string) {
 
   function stat(path: string | URL, cb: Callback<NodeStat>): void {
     wrapCallback(() => statSync(path), cb);
+  }
+
+  function lstat(path: string | URL, cb: Callback<NodeStat>): void {
+    wrapCallback(() => lstatSync(path), cb);
   }
 
   function mkdir(path: string | URL, optionsOrCb: { recursive?: boolean } | Callback<void>, cb?: Callback<void>): void {
@@ -240,6 +444,135 @@ export function createFs(vfs: VFS, cwd: string) {
     });
   }
 
+  function open(path: string | URL, flagsOrCb: string | number | Callback<number>, modeOrCb?: number | Callback<number>, cb?: Callback<number>): void {
+    let callback: Callback<number>;
+    let flags: string | number;
+    let mode: number | undefined;
+
+    if (typeof flagsOrCb === 'function') {
+      callback = flagsOrCb;
+      flags = 'r';
+    } else if (typeof modeOrCb === 'function') {
+      callback = modeOrCb;
+      flags = flagsOrCb;
+    } else {
+      callback = cb!;
+      flags = flagsOrCb;
+      mode = modeOrCb;
+    }
+
+    wrapCallback(() => openSync(path, flags, mode), callback);
+  }
+
+  function close(fd: number, cb: Callback<void>): void {
+    wrapCallback(() => closeSync(fd), cb);
+  }
+
+  function read(fd: number, buffer: Uint8Array, offset: number, length: number, position: number | null, cb: Callback<number>): void {
+    wrapCallback(() => readSync(fd, buffer, offset, length, position), cb);
+  }
+
+  function fstat(fd: number, cb: Callback<NodeStat>): void {
+    wrapCallback(() => fstatSync(fd), cb);
+  }
+
+  // ─── Stream API ───
+
+  // NOTE: createReadStream works with mounted native filesystems via VFS delegation.
+  // When the path is under a NativeFsProvider mount, vfs.readFile() delegates to the
+  // mount provider, which reads from the real host filesystem. The data is still buffered
+  // in memory before being pushed to the stream.
+  function createReadStream(path: string | URL, options?: { encoding?: string; start?: number; end?: number; highWaterMark?: number }): Readable {
+    const abs = resolvePath(cwd, path);
+    const stream = new Readable();
+
+    queueMicrotask(() => {
+      try {
+        const data = vfs.readFile(abs);
+        const start = options?.start ?? 0;
+        const end = options?.end !== undefined ? options.end + 1 : data.length;
+        const slice = data.subarray(start, end);
+
+        if (options?.encoding) {
+          stream.push(decode(slice));
+        } else {
+          // Push as string since our Readable works with strings
+          stream.push(decode(slice));
+        }
+        stream.push(null);
+      } catch (e) {
+        stream.emit('error', e);
+      }
+    });
+
+    return stream;
+  }
+
+  // NOTE: createWriteStream works with mounted native filesystems via VFS delegation.
+  // When the path is under a NativeFsProvider mount, vfs.writeFile() and vfs.appendFile()
+  // delegate to the mount provider, which writes to the real host filesystem.
+  function createWriteStream(path: string | URL, options?: { flags?: string; encoding?: string }): Writable {
+    const abs = resolvePath(cwd, path);
+    const flags = options?.flags ?? 'w';
+    const chunks: string[] = [];
+
+    if (flags.includes('w')) {
+      // Truncate on open
+      try { vfs.writeFile(abs, ''); } catch { /* parent may not exist yet */ }
+    }
+
+    const stream = new Writable();
+
+    stream.write = (chunk: string, _encoding?: string, cb?: () => void): boolean => {
+      chunks.push(chunk);
+      try {
+        if (flags.includes('a')) {
+          vfs.appendFile(abs, chunk);
+        } else {
+          vfs.writeFile(abs, chunks.join(''));
+        }
+      } catch (e) {
+        stream.emit('error', e);
+        return false;
+      }
+      if (cb) cb();
+      return true;
+    };
+
+    stream.end = (chunk?: string): void => {
+      if (chunk) stream.write(chunk);
+      stream.emit('finish');
+      stream.emit('close');
+    };
+
+    return stream;
+  }
+
+  // ─── Watch API ───
+
+  function watch(filename: string | URL, optionsOrListener?: { persistent?: boolean; recursive?: boolean; encoding?: string } | ((eventType: string, filename: string) => void), listener?: (eventType: string, filename: string) => void): EventEmitter {
+    const abs = resolvePath(cwd, filename);
+    const cb = typeof optionsOrListener === 'function' ? optionsOrListener : listener;
+
+    const watcher = new EventEmitter();
+
+    // Use VFS onChange to detect changes (coarse-grained)
+    const origOnChange = vfs.onChange;
+    vfs.onChange = () => {
+      origOnChange?.();
+      const eventType = 'change';
+      const name = basename(abs);
+      if (cb) cb(eventType, name);
+      watcher.emit('change', eventType, name);
+    };
+
+    (watcher as unknown as Record<string, unknown>).close = () => {
+      vfs.onChange = origOnChange;
+    };
+
+    return watcher;
+  }
+
   // ─── Promises API ───
 
   const promises = {
@@ -255,6 +588,26 @@ export function createFs(vfs: VFS, cwd: string) {
     rename: async (oldPath: string | URL, newPath: string | URL) => renameSync(oldPath, newPath),
     copyFile: async (src: string | URL, dest: string | URL) => copyFileSync(src, dest),
     access: async (path: string | URL, mode?: number) => accessSync(path, mode),
+    realpath: async (path: string | URL) => realpathSync(path),
+    truncate: async (path: string | URL, len?: number) => truncateSync(path, len),
+    chmod: async (_path: string | URL, _mode: number) => {},
+    chown: async (_path: string | URL, _uid: number, _gid: number) => {},
+    open: async (path: string | URL, flags?: string | number, mode?: number) => {
+      const fd = openSync(path, flags, mode);
+      return {
+        fd,
+        close: async () => closeSync(fd),
+        read: async (buffer: Uint8Array, offset: number, length: number, position: number | null) => ({
+          bytesRead: readSync(fd, buffer, offset, length, position),
+          buffer,
+        }),
+        write: async (data: Uint8Array | string) => ({
+          bytesWritten: writeSync(fd, data),
+        }),
+        stat: async () => fstatSync(fd),
+        truncate: async (len?: number) => ftruncateSync(fd, len),
+      };
+    },
     rm: async (path: string | URL, options?: { recursive?: boolean; force?: boolean }) => {
       const abs = resolvePath(cwd, path);
       try {
@@ -282,6 +635,15 @@ export function createFs(vfs: VFS, cwd: string) {
     R_OK: 4,
     W_OK: 2,
     X_OK: 1,
+    O_RDONLY,
+    O_WRONLY,
+    O_RDWR,
+    O_CREAT,
+    O_TRUNC,
+    O_APPEND,
+    COPYFILE_EXCL: 1,
+    COPYFILE_FICLONE: 2,
+    COPYFILE_FICLONE_FORCE: 4,
   };
 
   return {
@@ -299,17 +661,41 @@ export function createFs(vfs: VFS, cwd: string) {
     renameSync,
     copyFileSync,
     chmodSync,
+    chownSync,
     accessSync,
+    realpathSync,
+    truncateSync,
+    openSync,
+    closeSync,
+    readSync,
+    writeSync,
+    fstatSync,
+    ftruncateSync,
+    fsyncSync,
+    fdatasyncSync,
+    symlinkSync,
+    linkSync,
+    readlinkSync,
     // Callback
     readFile,
     writeFile,
     stat,
+    lstat,
     mkdir,
     readdir,
     unlink,
     rename,
     access,
     exists,
+    open,
+    close,
+    read,
+    fstat,
+    // Streams
+    createReadStream,
+    createWriteStream,
+    // Watch
+    watch,
     // Promises
     promises,
     // Constants

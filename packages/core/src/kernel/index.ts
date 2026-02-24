@@ -2,6 +2,8 @@ import { VFS } from './vfs/index.js';
 import { ProcProvider } from './vfs/providers/ProcProvider.js';
 import { DevProvider } from './vfs/providers/DevProvider.js';
 import { PersistenceManager } from './persistence/PersistenceManager.js';
+import { IndexedDBPersistenceBackend } from './persistence/backends.js';
+import type { PersistenceBackend } from './persistence/backends.js';
 import { installSamples } from './samples.js';
 
 const MOTD = `\x1b[1;36m
@@ -49,9 +51,11 @@ export class Kernel {
   portRegistry: Map<number, VirtualRequestHandler> = new Map();
   private persistence: PersistenceManager;
 
-  constructor() {
+  constructor(backend?: PersistenceBackend) {
     this.vfs = new VFS();
-    this.persistence = new PersistenceManager();
+    this.persistence = new PersistenceManager(
+      backend ?? new IndexedDBPersistenceBackend(),
+    );
   }
 
   async boot(options?: { persist?: boolean }): Promise<void> {

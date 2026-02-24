@@ -40,6 +40,7 @@ Quick start:
   cat examples/README.txt        # You're reading this!
   ls examples/scripts/            # See available scripts
   source examples/scripts/01-if-elif-else.sh
+  source examples/scripts/13-git-basics.sh
   node examples/node/hello.js
 `,
 
@@ -756,6 +757,102 @@ async function main() {
 }
 
 main();
+`,
+
+  // ─── Git examples ───
+
+  'scripts/13-git-basics.sh': `#!/bin/sh
+# Demonstrates: git init, add, commit, status, log
+# Lifo includes a built-in git powered by isomorphic-git
+
+echo "=== Git Basics ==="
+
+# Initialize a repo
+mkdir -p /tmp/my-project
+cd /tmp/my-project
+git init
+echo "  Initialized repo in /tmp/my-project"
+
+# Create some files
+echo "# My Project" > README.md
+echo "console.log('hello')" > index.js
+echo "node_modules/" > .gitignore
+
+echo ""
+echo "--- Status (untracked files) ---"
+git status
+
+echo ""
+echo "--- Add and commit ---"
+git add .
+git commit -m "Initial commit"
+
+echo ""
+echo "--- Log ---"
+git log
+
+echo ""
+echo "--- Make a change ---"
+echo "console.log('updated')" > index.js
+git status
+
+echo ""
+echo "--- Diff ---"
+git diff
+
+echo ""
+echo "--- Commit the change ---"
+git add index.js
+git commit -m "Update index.js"
+
+echo ""
+echo "--- Full log ---"
+git log
+
+echo "Done."
+`,
+
+  'scripts/14-git-branches.sh': `#!/bin/sh
+# Demonstrates: git branch, checkout, merge workflow
+
+echo "=== Git Branching ==="
+
+# Set up a repo with an initial commit
+mkdir -p /tmp/branching-demo
+cd /tmp/branching-demo
+git init
+echo "# App" > README.md
+git add .
+git commit -m "Initial commit"
+
+echo "--- Create a feature branch ---"
+git branch feature
+git branch
+
+echo ""
+echo "--- Switch to feature branch ---"
+git checkout feature
+
+echo ""
+echo "--- Add a feature ---"
+echo "function hello() { return 'hi' }" > feature.js
+git add feature.js
+git commit -m "Add feature"
+
+echo ""
+echo "--- Switch back to main ---"
+git checkout main
+
+echo ""
+echo "--- Log on main (no feature.js) ---"
+git log --oneline
+
+echo ""
+echo "--- Log on feature ---"
+git checkout feature
+git log --oneline
+
+echo "Done."
 `,
 
   // ─── Text processing cheatsheet ───

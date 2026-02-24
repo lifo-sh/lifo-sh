@@ -14,6 +14,8 @@ export type { VirtualRequest, VirtualResponse, VirtualRequestHandler } from './k
 
 // VFS
 export { VFS, VFSError, ErrorCode } from './kernel/vfs/index.js';
+export { getMimeType, getFileCategory, isBinaryMime } from './kernel/vfs/index.js';
+export { NativeFsProvider } from './kernel/vfs/index.js';
 export type {
   INode,
   Stat,
@@ -21,10 +23,22 @@ export type {
   FileType,
   ErrorCodeType,
   VirtualProvider,
+  MountProvider,
+  NativeFsModule,
   VFSWatchEvent,
   VFSWatchListener,
   VFSEventType,
 } from './kernel/vfs/index.js';
+
+// Blob storage & content store
+export { MemoryBlobStore, IndexedDBBlobStore, hashBytes } from './kernel/storage/index.js';
+export { ContentStore, CHUNK_THRESHOLD, CHUNK_SIZE } from './kernel/storage/index.js';
+export type { BlobStore } from './kernel/storage/index.js';
+
+// Persistence
+export { PersistenceManager } from './kernel/persistence/index.js';
+export { IndexedDBPersistenceBackend, MemoryPersistenceBackend } from './kernel/persistence/index.js';
+export type { PersistenceBackend } from './kernel/persistence/index.js';
 
 // Commands
 export { CommandRegistry, createDefaultRegistry } from './commands/registry.js';

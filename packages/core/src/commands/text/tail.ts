@@ -1,6 +1,7 @@
 import type { Command } from '../types.js';
 import { resolve } from '../../utils/path.js';
 import { VFSError } from '../../kernel/vfs/index.js';
+import { getMimeType, isBinaryMime } from '../../utils/mime.js';
 
 const command: Command = async (ctx) => {
   let count = 10;
@@ -38,6 +39,11 @@ const command: Command = async (ctx) => {
   for (const file of files) {
     const path = resolve(ctx.cwd, file);
     try {
+      ctx.vfs.stat(path);
+      if (isBinaryMime(getMimeType(path))) {
+        ctx.stderr.write(`tail: ${file}: binary file, skipping\n`);
+        continue;
+      }
       const content = ctx.vfs.readFileString(path);
       if (files.length > 1) ctx.stdout.write(`==> ${file} <==\n`);
       await tailText(content);

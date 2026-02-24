@@ -2,6 +2,7 @@ import type { Command } from '../commands/types.js';
 import type { Kernel } from '../kernel/index.js';
 import type { Shell } from '../shell/Shell.js';
 import type { ITerminal } from '../terminal/ITerminal.js';
+import type { NativeFsModule } from '../kernel/vfs/providers/NativeFsProvider.js';
 
 // ─── Sandbox Options ───
 
@@ -16,6 +17,20 @@ export interface SandboxOptions {
   files?: Record<string, string | Uint8Array>;
   /** Attach to a DOM element for visual mode (CSS selector or element), or pass a pre-created ITerminal */
   terminal?: string | HTMLElement | ITerminal;
+  /**
+   * Mount native filesystem directories into the virtual filesystem at boot time.
+   * Only works in Node.js environments (or when a custom fsModule is provided).
+   */
+  mounts?: Array<{
+    /** Path inside the virtual filesystem where the mount will appear */
+    virtualPath: string;
+    /** Host filesystem path to mount */
+    hostPath: string;
+    /** If true, the mount is read-only (default: false) */
+    readOnly?: boolean;
+    /** Custom fs module implementing NativeFsModule. If omitted, node:fs is used. */
+    fsModule?: NativeFsModule;
+  }>;
 }
 
 // ─── Command Execution ───
@@ -64,6 +79,10 @@ export interface SandboxFs {
   rename(oldPath: string, newPath: string): Promise<void>;
   cp(src: string, dest: string): Promise<void>;
   writeFiles(files: Array<{ path: string; content: string | Uint8Array }>): Promise<void>;
+  /** Export entire VFS as a tar.gz snapshot */
+  exportSnapshot(): Promise<Uint8Array>;
+  /** Restore VFS from a tar.gz snapshot */
+  importSnapshot(data: Uint8Array): Promise<void>;
 }
 
 // ─── Internal types for Sandbox internals ───

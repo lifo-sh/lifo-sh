@@ -174,17 +174,91 @@ shell.<span class="code-fn">start</span>()
 <span class="code-comment">// terminal and explorer.</span>
 <span class="code-comment">// Drag &amp; drop files to upload.</span>`;
 
+const CODE_GIT = `\
+<span class="code-comment">// Built-in git -- powered by isomorphic-git</span>
+<span class="code-comment">// Works entirely in the browser VFS</span>
+
+<span class="code-keyword">const</span> sandbox = <span class="code-keyword">await</span> Sandbox.<span class="code-fn">create</span>({
+  <span class="code-const">terminal</span>: <span class="code-string">'#terminal'</span>,
+})
+
+<span class="code-comment">// Try these commands in the terminal:</span>
+
+<span class="code-comment">// Initialize a repo</span>
+<span class="code-string">mkdir /tmp/my-project && cd /tmp/my-project</span>
+<span class="code-string">git init</span>
+
+<span class="code-comment">// Create files and commit</span>
+<span class="code-string">echo "# My App" > README.md</span>
+<span class="code-string">git add .</span>
+<span class="code-string">git commit -m "Initial commit"</span>
+
+<span class="code-comment">// Branching</span>
+<span class="code-string">git branch feature</span>
+<span class="code-string">git checkout feature</span>
+<span class="code-string">echo "new feature" > feature.js</span>
+<span class="code-string">git add . && git commit -m "Add feature"</span>
+
+<span class="code-comment">// Check status, log, diff</span>
+<span class="code-string">git status</span>
+<span class="code-string">git log --oneline</span>
+<span class="code-string">git diff</span>
+
+<span class="code-comment">// Or run the example script:</span>
+<span class="code-string">source examples/scripts/13-git-basics.sh</span>`;
+
+const CODE_CLI = `\
+<span class="code-comment">// Run Lifo as a CLI in your terminal</span>
+<span class="code-comment">// Install: npm i -g lifo-sh</span>
+
+<span class="code-comment">// Temp session (files cleaned up on exit)</span>
+$ <span class="code-fn">npx</span> <span class="code-string">lifo-sh</span>
+
+<span class="code-comment">// Mount a host directory for real file I/O</span>
+$ <span class="code-fn">npx</span> <span class="code-string">lifo-sh</span> <span class="code-keyword">--mount</span> <span class="code-string">~/projects/my-app</span>
+
+<span class="code-comment">// Files are accessible at /mnt/host</span>
+<span class="code-comment">// Your PWD starts there automatically</span>
+user@lifo:/mnt/host$ <span class="code-fn">ls</span>
+  package.json  src/  README.md
+
+<span class="code-comment">// All changes go directly to disk</span>
+user@lifo:/mnt/host$ <span class="code-fn">echo</span> <span class="code-string">"hello"</span> > test.txt
+<span class="code-comment">// test.txt now exists on your real FS!</span>
+
+<span class="code-comment">// Programmatic usage (Node.js)</span>
+<span class="code-keyword">import</span> { Sandbox } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/core'</span>
+<span class="code-keyword">import</span> { NativeFsProvider } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/core'</span>
+<span class="code-keyword">import</span> * <span class="code-keyword">as</span> fs <span class="code-keyword">from</span> <span class="code-string">'node:fs'</span>
+
+<span class="code-keyword">const</span> sandbox = <span class="code-keyword">await</span> Sandbox.<span class="code-fn">create</span>()
+
+<span class="code-comment">// Mount your project directory</span>
+<span class="code-keyword">const</span> provider = <span class="code-keyword">new</span> <span class="code-fn">NativeFsProvider</span>(
+  <span class="code-string">'/home/user/project'</span>, fs
+)
+sandbox.kernel.vfs.<span class="code-fn">mount</span>(
+  <span class="code-string">'/mnt/host'</span>, provider
+)
+
+<span class="code-comment">// Now VFS reads/writes hit real disk</span>
+<span class="code-keyword">await</span> sandbox.commands.<span class="code-fn">run</span>(
+  <span class="code-string">'ls /mnt/host'</span>
+)`;
+
 const codeSnippets: Record<string, string> = {
   interactive: CODE_INTERACTIVE,
   headless: CODE_HEADLESS,
   multi: CODE_MULTI,
   http: CODE_HTTP,
   explorer: CODE_EXPLORER,
+  git: CODE_GIT,
+  cli: CODE_CLI,
 };
 
 // ─── State ───
 
-type ExampleId = 'interactive' | 'headless' | 'multi' | 'http' | 'explorer';
+type ExampleId = 'interactive' | 'headless' | 'multi' | 'http' | 'explorer' | 'git' | 'cli';
 
 const examples: Record<ExampleId, { booted: boolean; boot: () => Promise<void> }> = {
   interactive: { booted: false, boot: bootInteractive },
@@ -192,6 +266,8 @@ const examples: Record<ExampleId, { booted: boolean; boot: () => Promise<void> }
   multi:       { booted: false, boot: bootMulti },
   http:        { booted: false, boot: bootHttp },
   explorer:    { booted: false, boot: bootExplorer },
+  git:         { booted: false, boot: bootGit },
+  cli:         { booted: false, boot: bootCli },
 };
 
 let activeExample: ExampleId = 'interactive';
@@ -252,8 +328,15 @@ function switchExample(id: ExampleId) {
   document.querySelectorAll('.sidebar-item').forEach((el) => el.classList.remove('active'));
   document.querySelector(`[data-example="${id}"]`)?.classList.add('active');
 
-  // Code column
-  codeBlockEl.innerHTML = codeSnippets[id];
+  // Code column -- hide for examples that don't need it
+  if (id === 'cli') {
+    colCode.classList.remove('lg:flex');
+    colCode.classList.add('lg:hidden');
+  } else {
+    colCode.classList.remove('lg:hidden');
+    colCode.classList.add('lg:flex');
+    codeBlockEl.innerHTML = codeSnippets[id];
+  }
 
   // Output column
   document.querySelectorAll('.output-panel').forEach((el) => el.classList.remove('active'));
@@ -683,6 +766,75 @@ async function bootExplorer() {
   await shell.sourceFile('/etc/profile');
   await shell.sourceFile(env.HOME + '/.bashrc');
   shell.start();
+}
+
+// ─── 6. Git ───
+
+async function bootGit() {
+  const sandbox = await Sandbox.create({
+    terminal: '#terminal-git',
+  });
+
+  // Pre-run the git example setup so users see it in action
+  await sandbox.commands.run('mkdir -p /tmp/my-project');
+  await sandbox.commands.run('cd /tmp/my-project');
+}
+
+// ─── 7. CLI (Node.js) ───
+
+async function bootCli() {
+  const outputEl = document.getElementById('cli-output')!;
+
+  outputEl.innerHTML = `\
+<span style="color:#7aa2f7;font-weight:bold">Lifo CLI</span> <span style="color:#565f89">-- run a Linux-like shell in your terminal</span>
+
+<span style="color:#bb9af7">Install:</span>
+  <span style="color:#9ece6a">npm install -g lifo-sh</span>
+
+<span style="color:#bb9af7">Usage:</span>
+
+  <span style="color:#c0caf5">$ </span><span style="color:#7aa2f7">lifo-sh</span>
+  <span style="color:#565f89">  Starts a temp session. Files are stored in a temporary</span>
+  <span style="color:#565f89">  directory and cleaned up when you exit.</span>
+
+  <span style="color:#c0caf5">$ </span><span style="color:#7aa2f7">lifo-sh</span> <span style="color:#ff9e64">--mount</span> <span style="color:#9ece6a">~/projects/my-app</span>
+  <span style="color:#565f89">  Mounts a host directory at /mnt/host. Your PWD starts</span>
+  <span style="color:#565f89">  there. All file operations go directly to disk via</span>
+  <span style="color:#565f89">  NativeFsProvider -- no memory limits on file size.</span>
+
+  <span style="color:#c0caf5">$ </span><span style="color:#7aa2f7">lifo-sh</span> <span style="color:#ff9e64">-m</span> <span style="color:#9ece6a">/tmp</span>
+  <span style="color:#565f89">  Short form of --mount.</span>
+
+<span style="color:#bb9af7">What you get:</span>
+  <span style="color:#9ece6a">60+</span> built-in commands (ls, grep, git, node, curl...)
+  Shell scripting (if/for/while/case/functions/pipes)
+  Node.js compatibility (require, fs, path, http...)
+  <span style="color:#9ece6a">Real filesystem</span> access via --mount
+
+<span style="color:#bb9af7">Example session:</span>
+<span style="color:#3b4261">  ┌─────────────────────────────────────────────┐</span>
+<span style="color:#3b4261">  │</span> <span style="color:#c0caf5">$ npx lifo-sh --mount ~/projects/my-app</span>     <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span>                                              <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span> <span style="color:#565f89">Mounted: ~/projects/my-app -> /mnt/host</span>     <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span> <span style="color:#9ece6a">user@lifo</span>:<span style="color:#7aa2f7">/mnt/host</span>$ ls                     <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span>   package.json  src/  README.md              <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span> <span style="color:#9ece6a">user@lifo</span>:<span style="color:#7aa2f7">/mnt/host</span>$ cat package.json       <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span>   { "name": "my-app", ... }                  <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span> <span style="color:#9ece6a">user@lifo</span>:<span style="color:#7aa2f7">/mnt/host</span>$ echo "test" > new.txt  <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span> <span style="color:#9ece6a">user@lifo</span>:<span style="color:#7aa2f7">/mnt/host</span>$ exit                  <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span> logout                                       <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span>                                              <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span> <span style="color:#c0caf5">$ cat ~/projects/my-app/new.txt</span>             <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span> test  <span style="color:#565f89"># file persisted to real disk!</span>        <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  └─────────────────────────────────────────────┘</span>
+
+<span style="color:#bb9af7">Programmatic mounting (Node.js API):</span>
+<span style="color:#565f89">  import { Sandbox, NativeFsProvider } from '@lifo-sh/core'</span>
+<span style="color:#565f89">  import * as fs from 'node:fs'</span>
+<span style="color:#565f89"></span>
+<span style="color:#565f89">  const sandbox = await Sandbox.create()</span>
+<span style="color:#565f89">  const provider = new NativeFsProvider('/my/dir', fs)</span>
+<span style="color:#565f89">  sandbox.kernel.vfs.mount('/mnt/host', provider)</span>`;
 }
 
 // ─── Boot ───

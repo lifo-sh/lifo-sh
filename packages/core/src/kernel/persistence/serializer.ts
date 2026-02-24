@@ -1,13 +1,22 @@
 import type { INode } from '../vfs/types.js';
 
+export interface SerializedChunkRef {
+  h: string;  // hash
+  s: number;  // size
+}
+
 export interface SerializedNode {
   t: 'f' | 'd';
   n: string;
-  d?: string;           // base64 data (files only)
-  c?: SerializedNode[];  // children (dirs only)
+  d?: string;              // base64 data (small files only)
+  c?: SerializedNode[];     // children (dirs only)
   ct: number;
   mt: number;
   m: number;
+  mi?: string;             // MIME type (files only)
+  br?: string;             // blob store ref (content hash)
+  ch?: SerializedChunkRef[]; // chunk manifest (large files)
+  sz?: number;             // stored size (when chunked)
 }
 
 const EXCLUDED_PREFIXES = ['proc', 'dev'];
@@ -42,8 +51,20 @@ function serializeNode(node: INode, isRoot: boolean): SerializedNode {
       mt: node.mtime,
       m: node.mode,
     };
-    if (node.data.length > 0) {
+    if (node.chunks && node.chunks.length > 0) {
+      // Chunked large file: store manifest, not data
+      s.ch = node.chunks.map((c) => ({ h: c.hash, s: c.size }));
+      if (node.storedSize !== undefined) {
+        s.sz = node.storedSize;
+      }
+    } else if (node.data.length > 0) {
       s.d = toBase64(node.data);
+    }
+    if (node.mime) {
+      s.mi = node.mime;
+    }
+    if (node.blobRef) {
+      s.br = node.blobRef;
     }
     return s;
   }
@@ -81,7 +102,7 @@ function deserializeNode(data: SerializedNode): INode {
     }
   }
 
-  return {
+  const node: INode = {
     type: data.t === 'f' ? 'file' : 'directory',
     name: data.n,
     data: data.d ? fromBase64(data.d) : new Uint8Array(0),
@@ -90,4 +111,17 @@ function deserializeNode(data: SerializedNode): INode {
     mtime: data.mt,
     mode: data.m,
   };
+  if (data.mi) {
+    node.mime = data.mi;
+  }
+  if (data.br) {
+    node.blobRef = data.br;
+  }
+  if (data.ch) {
+    node.chunks = data.ch.map((c) => ({ hash: c.h, size: c.s }));
+  }
+  if (data.sz !== undefined) {
+    node.storedSize = data.sz;
+  }
+  return node;
 }

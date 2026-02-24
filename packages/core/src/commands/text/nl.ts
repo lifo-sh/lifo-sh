@@ -2,6 +2,7 @@ import type { Command } from '../types.js';
 import { parseArgs } from '../../utils/args.js';
 import { resolve } from '../../utils/path.js';
 import { VFSError } from '../../kernel/vfs/index.js';
+import { getMimeType, isBinaryMime } from '../../utils/mime.js';
 
 const spec = {
   'body-numbering': { type: 'string' as const, short: 'b' },
@@ -25,6 +26,11 @@ const command: Command = async (ctx) => {
     }
   } else {
     const path = resolve(ctx.cwd, positional[0]);
+    if (isBinaryMime(getMimeType(path))) {
+      ctx.stderr.write(`nl: ${positional[0]}: binary file, skipping
+`);
+      return 1;
+    }
     try {
       content = ctx.vfs.readFileString(path);
     } catch (e) {

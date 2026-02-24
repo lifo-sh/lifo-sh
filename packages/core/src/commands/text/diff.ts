@@ -2,6 +2,7 @@ import type { Command } from '../types.js';
 import { parseArgs } from '../../utils/args.js';
 import { resolve } from '../../utils/path.js';
 import { VFSError } from '../../kernel/vfs/index.js';
+import { getMimeType, isBinaryMime } from '../../utils/mime.js';
 
 const spec = {
   unified: { type: 'boolean' as const, short: 'u' },
@@ -239,6 +240,34 @@ const command: Command = async (ctx) => {
 
   let content1: string;
   let content2: string;
+
+  const path1 = resolve(ctx.cwd, file1);
+  const path2 = resolve(ctx.cwd, file2);
+  const binary1 = isBinaryMime(getMimeType(path1));
+  const binary2 = isBinaryMime(getMimeType(path2));
+
+  if (binary1 || binary2) {
+    // Verify files exist before reporting binary diff
+    try { ctx.vfs.stat(path1); } catch (e) {
+      if (e instanceof VFSError) {
+        ctx.stderr.write(`diff: ${file1}: ${e.message}
+`);
+        return 2;
+      }
+      throw e;
+    }
+    try { ctx.vfs.stat(path2); } catch (e) {
+      if (e instanceof VFSError) {
+        ctx.stderr.write(`diff: ${file2}: ${e.message}
+`);
+        return 2;
+      }
+      throw e;
+    }
+    ctx.stdout.write(`Binary files ${file1} and ${file2} differ
+`);
+    return 2;
+  }
 
   try {
     content1 = ctx.vfs.readFileString(resolve(ctx.cwd, file1));

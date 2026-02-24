@@ -13,6 +13,8 @@ import { createNodeCommand } from '../commands/system/node.js';
 import { createCurlCommand } from '../commands/net/curl.js';
 import { loadInstalledPackages } from '../pkg/loader.js';
 import type { VFS } from '../kernel/vfs/index.js';
+import { NativeFsProvider } from '../kernel/vfs/providers/NativeFsProvider.js';
+import type { NativeFsModule } from '../kernel/vfs/providers/NativeFsProvider.js';
 import type { ITerminal } from '../terminal/ITerminal.js';
 import type { SandboxOptions, SandboxCommands, SandboxFs } from './types.js';
 import { SandboxFsImpl } from './SandboxFs.js';
@@ -142,7 +144,73 @@ export class Sandbox {
     const sandboxFs = new SandboxFsImpl(kernel.vfs, getCwd);
     const sandboxCommands = new SandboxCommandsImpl(shell, registry);
 
-    return new Sandbox(kernel, shell, sandboxCommands, sandboxFs, env);
+    const sandbox = new Sandbox(kernel, shell, sandboxCommands, sandboxFs, env);
+
+    // 12. Mount native filesystems if specified in options
+    if (options?.mounts) {
+      for (const mount of options.mounts) {
+        sandbox.mountNative(mount.virtualPath, mount.hostPath, {
+          readOnly: mount.readOnly,
+          fsModule: mount.fsModule,
+        });
+      }
+    }
+
+    return sandbox;
+  }
+
+  /**
+   * Mount a native filesystem directory into the virtual filesystem.
+   * Only works in Node.js environments (or when a custom fsModule is provided).
+   *
+   * Once mounted, all VFS operations (and therefore the node-compat fs shim)
+   * on paths under `virtualPath` will be delegated through the VFS mount system
+   * to the NativeFsProvider, which in turn delegates to the real node:fs module.
+   *
+   * @param virtualPath - Path inside the virtual filesystem (e.g. "/mnt/project")
+   * @param hostPath - Host filesystem path to mount (e.g. "/home/user/my-project")
+   * @param options - Optional settings: readOnly, fsModule
+   */
+  mountNative(virtualPath: string, hostPath: string, options?: { readOnly?: boolean; fsModule?: NativeFsModule }): void {
+    if (this._destroyed) throw new Error('Sandbox is destroyed');
+
+    let fsModule = options?.fsModule;
+
+    if (!fsModule) {
+      // Try to get the native fs module. This only works in Node.js environments.
+      // We use a dynamic require pattern that works at runtime but avoids
+      // static analysis by bundlers.
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const mod = 'node:fs';
+        fsModule = (globalThis as unknown as Record<string, Function>).require?.(mod) as NativeFsModule | undefined;
+      } catch {
+        // globalThis.require may not exist
+      }
+
+      if (!fsModule) {
+        throw new Error(
+          'mountNative requires a Node.js environment or a custom fsModule. ' +
+          'Pass { fsModule: require("node:fs") } in a Node.js environment, ' +
+          'or provide a compatible NativeFsModule implementation.'
+        );
+      }
+    }
+
+    const provider = new NativeFsProvider(hostPath, fsModule, {
+      readOnly: options?.readOnly ?? false,
+    });
+    this.kernel.vfs.mount(virtualPath, provider);
+  }
+
+  /**
+   * Unmount a previously mounted filesystem.
+   *
+   * @param virtualPath - The virtual path that was passed to mountNative()
+   */
+  unmountNative(virtualPath: string): void {
+    if (this._destroyed) throw new Error('Sandbox is destroyed');
+    this.kernel.vfs.unmount(virtualPath);
   }
 
   /**
@@ -163,6 +231,20 @@ export class Sandbox {
    */
   detach(): void {
     // v1: no-op placeholder
+  }
+
+  /**
+   * Export the entire VFS as a tar.gz snapshot.
+   */
+  async exportSnapshot(): Promise<Uint8Array> {
+    return this.fs.exportSnapshot();
+  }
+
+  /**
+   * Restore VFS from a tar.gz snapshot.
+   */
+  async importSnapshot(data: Uint8Array): Promise<void> {
+    return this.fs.importSnapshot(data);
   }
 
   /**

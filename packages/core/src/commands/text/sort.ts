@@ -1,6 +1,7 @@
 import type { Command } from '../types.js';
 import { resolve } from '../../utils/path.js';
 import { VFSError } from '../../kernel/vfs/index.js';
+import { getMimeType, isBinaryMime } from '../../utils/mime.js';
 
 const command: Command = async (ctx) => {
   let reverse = false;
@@ -38,6 +39,11 @@ const command: Command = async (ctx) => {
     for (const file of files) {
       const path = resolve(ctx.cwd, file);
       try {
+        ctx.vfs.stat(path);
+        if (isBinaryMime(getMimeType(path))) {
+          ctx.stderr.write(`sort: ${file}: binary file, skipping\n`);
+          continue;
+        }
         text += ctx.vfs.readFileString(path);
       } catch (e) {
         if (e instanceof VFSError) {
