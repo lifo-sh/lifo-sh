@@ -97,14 +97,13 @@ importers:
         version: 5.9.3
 
   packages/lifo-pkg-ffmpeg:
-    dependencies:
+    devDependencies:
       '@ffmpeg/ffmpeg':
         specifier: ^0.12.10
         version: 0.12.15
       '@ffmpeg/util':
         specifier: ^0.12.1
         version: 0.12.2
-    devDependencies:
       '@lifo-sh/core':
         specifier: workspace:*
         version: link:../core

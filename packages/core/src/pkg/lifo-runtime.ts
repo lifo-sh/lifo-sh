@@ -159,6 +159,12 @@ export function createLifoCommand(
   };
 }
 
+/** Detect if we're running in Node.js (vs browser). */
+const _g = globalThis as Record<string, unknown>;
+const isNode = typeof _g['process'] !== 'undefined'
+  && typeof (_g['process'] as Record<string, unknown>)?.['versions'] !== 'undefined'
+  && typeof ((_g['process'] as Record<string, unknown>)?.['versions'] as Record<string, unknown>)?.['node'] === 'string';
+
 async function executeEsmCommand(
   source: string,
   ctx: CommandContext,
@@ -167,8 +173,22 @@ async function executeEsmCommand(
   const cdn = getCdn(ctx.env);
   const rewritten = rewriteImportsToCdn(source, cdn);
 
-  const blob = new Blob([rewritten], { type: 'application/javascript' });
-  const url = URL.createObjectURL(blob);
+  // Node.js only supports file:, data:, and node: URL schemes for import().
+  // Browsers support blob: URLs. Use the appropriate method for each env.
+  let url: string;
+  let needsRevoke = false;
+
+  if (isNode) {
+    // data: URL with base64-encoded source
+    const encoded = typeof btoa === 'function'
+      ? btoa(unescape(encodeURIComponent(rewritten)))
+      : (_g['Buffer'] as { from(s: string, e: string): { toString(e: string): string } }).from(rewritten, 'utf-8').toString('base64');
+    url = `data:text/javascript;base64,${encoded}`;
+  } else {
+    const blob = new Blob([rewritten], { type: 'application/javascript' });
+    url = URL.createObjectURL(blob);
+    needsRevoke = true;
+  }
 
   try {
     const mod = await import(/* @vite-ignore */ url);
@@ -189,7 +209,9 @@ async function executeEsmCommand(
     }
     return 1;
   } finally {
-    URL.revokeObjectURL(url);
+    if (needsRevoke) {
+      URL.revokeObjectURL(url);
+    }
   }
 }
 
