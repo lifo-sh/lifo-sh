@@ -1,6 +1,15 @@
 import './app.css';
 import '@xterm/xterm/css/xterm.css';
-import { Terminal } from '@lifo-sh/ui';
+import { Terminal, FileExplorer } from '@lifo-sh/ui';
+import type { EditorProvider, EditorInstance } from '@lifo-sh/ui';
+
+declare global {
+  interface Window {
+    MonacoEnvironment?: {
+      getWorker(workerId: string, label: string): Worker;
+    };
+  }
+}
 import {
   Sandbox,
   Kernel,
@@ -138,22 +147,51 @@ registry.<span class="code-fn">register</span>(<span class="code-string">'curl'<
 <span class="code-comment">// Tab 1: node server.js</span>
 <span class="code-comment">// Tab 2: curl localhost:3000</span>`;
 
+const CODE_EXPLORER = `\
+<span class="code-keyword">import</span> { Terminal, FileExplorer } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/ui'</span>
+<span class="code-keyword">import</span> { Kernel, Shell, <span class="code-comment">...</span> } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/core'</span>
+
+<span class="code-keyword">const</span> kernel = <span class="code-keyword">new</span> <span class="code-fn">Kernel</span>()
+<span class="code-keyword">await</span> kernel.<span class="code-fn">boot</span>()
+
+<span class="code-comment">// File Explorer with Monaco editor</span>
+<span class="code-keyword">const</span> explorer = <span class="code-keyword">new</span> <span class="code-fn">FileExplorer</span>(
+  document.<span class="code-fn">getElementById</span>(<span class="code-string">'explorer'</span>),
+  kernel.vfs,
+  {
+    <span class="code-const">cwd</span>: <span class="code-string">'/home/user'</span>,
+    <span class="code-const">editorProvider</span>: monacoProvider,
+  }
+)
+
+<span class="code-comment">// Terminal sharing the same VFS</span>
+<span class="code-keyword">const</span> shell = <span class="code-keyword">new</span> <span class="code-fn">Shell</span>(
+  term, kernel.vfs, registry, env
+)
+shell.<span class="code-fn">start</span>()
+
+<span class="code-comment">// Changes sync live between</span>
+<span class="code-comment">// terminal and explorer.</span>
+<span class="code-comment">// Drag &amp; drop files to upload.</span>`;
+
 const codeSnippets: Record<string, string> = {
   interactive: CODE_INTERACTIVE,
   headless: CODE_HEADLESS,
   multi: CODE_MULTI,
   http: CODE_HTTP,
+  explorer: CODE_EXPLORER,
 };
 
 // ─── State ───
 
-type ExampleId = 'interactive' | 'headless' | 'multi' | 'http';
+type ExampleId = 'interactive' | 'headless' | 'multi' | 'http' | 'explorer';
 
 const examples: Record<ExampleId, { booted: boolean; boot: () => Promise<void> }> = {
   interactive: { booted: false, boot: bootInteractive },
   headless:    { booted: false, boot: bootHeadless },
   multi:       { booted: false, boot: bootMulti },
   http:        { booted: false, boot: bootHttp },
+  explorer:    { booted: false, boot: bootExplorer },
 };
 
 let activeExample: ExampleId = 'interactive';
@@ -484,6 +522,167 @@ function switchHttpTab(id: string) {
     tab.panel.classList.toggle('active', isActive);
     if (isActive) tab.terminal.focus();
   }
+}
+
+// ─── 5. File Explorer (split pane: explorer + terminal) ───
+
+let explorerKernel: Kernel | null = null;
+
+function createMonacoProvider(): EditorProvider {
+  return {
+    create(container: HTMLElement, content: string, language: string): EditorInstance {
+      // Lazy-load Monaco
+      let editor: import('monaco-editor').editor.IStandaloneCodeEditor | null = null;
+      let disposed = false;
+      const changeCallbacks: (() => void)[] = [];
+
+      import('monaco-editor').then((monaco) => {
+        if (disposed) return;
+
+        // Configure Monaco workers
+        window.MonacoEnvironment = {
+          getWorker(_workerId: string, label: string) {
+            if (label === 'json') {
+              return new Worker(
+                new URL('monaco-editor/esm/vs/language/json/json.worker.js', import.meta.url),
+                { type: 'module' },
+              );
+            }
+            if (label === 'css' || label === 'scss' || label === 'less') {
+              return new Worker(
+                new URL('monaco-editor/esm/vs/language/css/css.worker.js', import.meta.url),
+                { type: 'module' },
+              );
+            }
+            if (label === 'html' || label === 'handlebars' || label === 'razor') {
+              return new Worker(
+                new URL('monaco-editor/esm/vs/language/html/html.worker.js', import.meta.url),
+                { type: 'module' },
+              );
+            }
+            if (label === 'typescript' || label === 'javascript') {
+              return new Worker(
+                new URL('monaco-editor/esm/vs/language/typescript/ts.worker.js', import.meta.url),
+                { type: 'module' },
+              );
+            }
+            return new Worker(
+              new URL('monaco-editor/esm/vs/editor/editor.worker.js', import.meta.url),
+              { type: 'module' },
+            );
+          },
+        };
+
+        // Define Tokyo Night theme
+        monaco.editor.defineTheme('tokyo-night', {
+          base: 'vs-dark',
+          inherit: true,
+          rules: [
+            { token: 'comment', foreground: '565f89', fontStyle: 'italic' },
+            { token: 'keyword', foreground: 'bb9af7' },
+            { token: 'string', foreground: '9ece6a' },
+            { token: 'number', foreground: 'ff9e64' },
+            { token: 'type', foreground: '2ac3de' },
+            { token: 'identifier', foreground: 'c0caf5' },
+            { token: 'delimiter', foreground: '89ddff' },
+          ],
+          colors: {
+            'editor.background': '#1a1b26',
+            'editor.foreground': '#a9b1d6',
+            'editor.selectionBackground': '#33467c',
+            'editor.lineHighlightBackground': '#1e2030',
+            'editorCursor.foreground': '#c0caf5',
+            'editorLineNumber.foreground': '#3b4261',
+            'editorLineNumber.activeForeground': '#737aa2',
+          },
+        });
+
+        editor = monaco.editor.create(container, {
+          value: content,
+          language,
+          theme: 'tokyo-night',
+          fontSize: 13,
+          fontFamily: '"Cascadia Code", "Fira Code", "JetBrains Mono", Menlo, monospace',
+          lineHeight: 20,
+          minimap: { enabled: false },
+          scrollBeyondLastLine: false,
+          automaticLayout: true,
+          padding: { top: 8, bottom: 8 },
+          renderLineHighlight: 'line',
+          overviewRulerLanes: 0,
+          hideCursorInOverviewRuler: true,
+          overviewRulerBorder: false,
+          scrollbar: {
+            verticalScrollbarSize: 6,
+            horizontalScrollbarSize: 6,
+          },
+        });
+
+        editor.onDidChangeModelContent(() => {
+          for (const cb of changeCallbacks) cb();
+        });
+      });
+
+      return {
+        getValue(): string {
+          return editor?.getValue() ?? content;
+        },
+        onDidChangeContent(callback: () => void): void {
+          changeCallbacks.push(callback);
+        },
+        dispose(): void {
+          disposed = true;
+          editor?.dispose();
+          editor = null;
+        },
+      };
+    },
+  };
+}
+
+async function bootExplorer() {
+  explorerKernel = new Kernel();
+  await explorerKernel.boot({ persist: false });
+
+  // Create some sample files so the explorer isn't empty
+  const vfs = explorerKernel.vfs;
+  vfs.mkdir('/home/user/projects', { recursive: true });
+  vfs.mkdir('/home/user/projects/my-app/src', { recursive: true });
+  vfs.writeFile('/home/user/projects/my-app/package.json', JSON.stringify({ name: 'my-app', version: '1.0.0' }, null, 2));
+  vfs.writeFile('/home/user/projects/my-app/src/index.ts', 'console.log("Hello from my-app!");\n');
+  vfs.writeFile('/home/user/projects/my-app/src/utils.ts', 'export function add(a: number, b: number) {\n  return a + b;\n}\n');
+  vfs.writeFile('/home/user/projects/my-app/README.md', '# My App\n\nA sample project.\n');
+  vfs.mkdir('/home/user/notes');
+  vfs.writeFile('/home/user/notes/todo.txt', '- Try the file explorer\n- Edit some files\n- Create new folders\n');
+  vfs.writeFile('/home/user/hello.sh', '#!/bin/sh\necho "Hello, world!"\n');
+
+  // Mount file explorer with Monaco editor
+  const explorerContainer = document.getElementById('explorer-panel')!;
+  new FileExplorer(explorerContainer, vfs, {
+    cwd: '/home/user',
+    editorProvider: createMonacoProvider(),
+  });
+
+  // Mount terminal sharing the same kernel
+  const termContainer = document.getElementById('explorer-terminal')!;
+  const terminal = new Terminal(termContainer);
+  const registry = createDefaultRegistry();
+  registry.register('pkg', createPkgCommand(registry));
+  loadInstalledPackages(vfs, registry);
+
+  const env = explorerKernel.getDefaultEnv();
+  const shell = new Shell(terminal, vfs, registry, env);
+
+  const jobTable = shell.getJobTable();
+  registry.register('ps', createPsCommand(jobTable));
+  registry.register('top', createTopCommand(jobTable));
+  registry.register('kill', createKillCommand(jobTable));
+  registry.register('watch', createWatchCommand(registry));
+  registry.register('help', createHelpCommand(registry));
+
+  await shell.sourceFile('/etc/profile');
+  await shell.sourceFile(env.HOME + '/.bashrc');
+  shell.start();
 }
 
 // ─── Boot ───
