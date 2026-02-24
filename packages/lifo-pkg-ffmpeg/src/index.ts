@@ -16,12 +16,12 @@
 import type { Command, CommandContext } from '@lifo-sh/core';
 import type { FFmpeg as FFmpegType } from '@ffmpeg/ffmpeg';
 
-// CDN URLs -- load @ffmpeg/ffmpeg and @ffmpeg/util from CDN to avoid
-// bundler issues with ffmpeg.wasm's internal Web Worker creation.
-const FFMPEG_CDN = 'https://esm.sh/@ffmpeg/ffmpeg@0.12.10';
-const UTIL_CDN = 'https://esm.sh/@ffmpeg/util@0.12.1';
-const CORE_VERSION = '0.12.10';
-const CORE_BASE_URL = `https://cdn.jsdelivr.net/npm/@ffmpeg/core@${CORE_VERSION}/dist/esm`;
+// Load @ffmpeg/* from jsdelivr CDN (original ESM files, no rebundling)
+// to avoid Vite/esm.sh breaking ffmpeg.wasm's internal Worker creation.
+const CDN_BASE = 'https://cdn.jsdelivr.net/npm';
+const FFMPEG_CDN = `${CDN_BASE}/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js`;
+const UTIL_CDN = `${CDN_BASE}/@ffmpeg/util@0.12.1/dist/esm/index.js`;
+const CORE_BASE_URL = `${CDN_BASE}/@ffmpeg/core@0.12.10/dist/esm`;
 
 // Singleton FFmpeg instance (persists across command invocations)
 let _ffmpeg: FFmpegType | null = null;
