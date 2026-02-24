@@ -12,6 +12,11 @@ export class CommandRegistry {
     this.lazy.set(name, loader);
   }
 
+  unregister(name: string): void {
+    this.commands.delete(name);
+    this.lazy.delete(name);
+  }
+
   async resolve(name: string): Promise<Command | undefined> {
     const cmd = this.commands.get(name);
     if (cmd) return cmd;

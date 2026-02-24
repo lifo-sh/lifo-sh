@@ -806,3 +806,42 @@ export function createNpmCommand(registry: CommandRegistry, shellExecute?: Shell
     }
   };
 }
+
+/**
+ * Install a single npm package globally into the VFS.
+ *
+ * Called directly by `lifo install` to avoid the shell.execute()
+ * round-trip which can silently swallow output and errors.
+ */
+export async function npmInstallGlobal(
+  packageName: string,
+  ctx: CommandContext,
+  registry: CommandRegistry,
+): Promise<number> {
+  const npmRegistry = getRegistry(ctx.env);
+  const startTime = Date.now();
+  const seen = new Set<string>();
+
+  try { ctx.vfs.mkdir(GLOBAL_MODULES, { recursive: true }); } catch { /* exists */ }
+  try { ctx.vfs.mkdir(GLOBAL_BIN, { recursive: true }); } catch { /* exists */ }
+
+  try {
+    const installed = await installSinglePackage(
+      packageName, null, GLOBAL_MODULES, ctx.vfs, npmRegistry, ctx.signal,
+      ctx.stdout, ctx.stderr, true, registry, seen,
+    );
+
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    ctx.stdout.write(`\nadded ${installed} package${installed !== 1 ? 's' : ''} in ${elapsed}s\n`);
+    return 0;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('CORS')) {
+      ctx.stderr.write(`npm ERR! network error fetching ${packageName}\n`);
+      ctx.stderr.write('This may be a CORS restriction. Try: export NPM_REGISTRY=<proxy-url>\n');
+    } else {
+      ctx.stderr.write(`npm ERR! ${msg}\n`);
+    }
+    return 1;
+  }
+}

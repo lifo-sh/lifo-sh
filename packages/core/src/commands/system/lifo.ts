@@ -15,6 +15,7 @@ import type { Command, CommandContext, CommandOutputStream } from '../types.js';
 import type { CommandRegistry } from '../registry.js';
 import type { VFS } from '../../kernel/vfs/index.js';
 import type { ShellExecuteFn } from './npm.js';
+import { npmInstallGlobal } from './npm.js';
 import { resolve, join } from '../../utils/path.js';
 import {
   linkPackage,
@@ -50,7 +51,6 @@ function printHelp(stdout: CommandOutputStream): void {
 async function lifoInstall(
   ctx: CommandContext,
   registry: CommandRegistry,
-  shellExecute?: ShellExecuteFn,
 ): Promise<number> {
   const name = ctx.args[1];
   if (!name) {
@@ -63,14 +63,9 @@ async function lifoInstall(
 
   ctx.stdout.write(`Installing ${npmName} globally...\n`);
 
-  // Delegate to npm install -g
-  if (shellExecute) {
-    const exitCode = await shellExecute(`npm install -g ${npmName}`, ctx);
-    if (exitCode !== 0) return exitCode;
-  } else {
-    ctx.stderr.write('lifo: shell integration unavailable, run: npm install -g ' + npmName + '\n');
-    return 1;
-  }
+  // Install directly (no shell.execute round-trip)
+  const exitCode = await npmInstallGlobal(npmName, ctx, registry);
+  if (exitCode !== 0) return exitCode;
 
   // After npm install, check for lifo manifest and re-register with lifo runtime
   const pkgDir = join(GLOBAL_MODULES, npmName);
@@ -95,7 +90,7 @@ async function lifoInstall(
 
 async function lifoRemove(
   ctx: CommandContext,
-  shellExecute?: ShellExecuteFn,
+  registry: CommandRegistry,
 ): Promise<number> {
   const name = ctx.args[1];
   if (!name) {
@@ -104,13 +99,30 @@ async function lifoRemove(
   }
 
   const npmName = name.startsWith('lifo-pkg-') ? name : `lifo-pkg-${name}`;
+  const pkgDir = join(GLOBAL_MODULES, npmName);
 
-  if (shellExecute) {
-    return shellExecute(`npm uninstall -g ${npmName}`, ctx);
+  if (!ctx.vfs.exists(pkgDir)) {
+    ctx.stderr.write(`lifo: ${npmName} is not installed\n`);
+    return 1;
   }
 
-  ctx.stderr.write('lifo: shell integration unavailable, run: npm uninstall -g ' + npmName + '\n');
-  return 1;
+  // Unregister commands from manifest before removing
+  const manifest = readLifoManifest(ctx.vfs, pkgDir);
+  if (manifest) {
+    for (const cmdName of Object.keys(manifest.commands)) {
+      registry.unregister(cmdName);
+    }
+  }
+
+  try {
+    ctx.vfs.rmdirRecursive(pkgDir);
+  } catch (e) {
+    ctx.stderr.write(`lifo: could not remove ${npmName}: ${e instanceof Error ? e.message : String(e)}\n`);
+    return 1;
+  }
+
+  ctx.stdout.write(`removed ${npmName}\n`);
+  return 0;
 }
 
 // ─── list ───
@@ -396,7 +408,7 @@ function lifoUnlink(ctx: CommandContext): number {
 
 export function createLifoPkgCommand(
   registry: CommandRegistry,
-  shellExecute?: ShellExecuteFn,
+  _shellExecute?: ShellExecuteFn,
 ): Command {
   return async (ctx) => {
     const subcommand = ctx.args[0];
@@ -409,11 +421,11 @@ export function createLifoPkgCommand(
     switch (subcommand) {
       case 'install':
       case 'i':
-        return lifoInstall(ctx, registry, shellExecute);
+        return lifoInstall(ctx, registry);
       case 'remove':
       case 'rm':
       case 'uninstall':
-        return lifoRemove(ctx, shellExecute);
+        return lifoRemove(ctx, registry);
       case 'list':
       case 'ls':
         return lifoList(ctx);
