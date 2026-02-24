@@ -116,8 +116,5 @@ export function createDefaultRegistry(): CommandRegistry {
   registry.registerLazy('bc', () => import('./system/bc.js'));
   registry.registerLazy('man', () => import('./system/man.js'));
 
-  // Version control
-  registry.registerLazy('git', () => import('./vcs/git.js'));
-
   return registry;
 }

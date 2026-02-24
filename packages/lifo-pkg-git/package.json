@@ -1,24 +1,9 @@
 {
-  "name": "@lifo-sh/core",
+  "name": "lifo-pkg-git",
   "version": "0.4.0",
-  "description": "Linux-like OS engine for JavaScript -- kernel, shell, VFS, and 60+ commands",
+  "description": "Git command for Lifo, powered by isomorphic-git",
   "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/lifo-sh/lifo.git",
-    "directory": "packages/core"
-  },
-  "homepage": "https://github.com/lifo-sh/lifo#readme",
   "author": "Sanket Sahu",
-  "keywords": [
-    "shell",
-    "terminal",
-    "filesystem",
-    "vfs",
-    "linux",
-    "sandbox",
-    "wasm"
-  ],
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.js",
@@ -35,22 +20,35 @@
   "publishConfig": {
     "access": "public"
   },
+  "lifo": {
+    "commands": {
+      "git": "./dist/index.js"
+    }
+  },
+  "keywords": [
+    "lifo-pkg",
+    "git",
+    "isomorphic-git",
+    "browser-git"
+  ],
   "scripts": {
     "build": "vite build",
-    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
   },
-  "dependencies": {},
+  "dependencies": {
+    "isomorphic-git": "^1.37.2"
+  },
   "peerDependencies": {
-    "@lifo-sh/ui": "workspace:*"
+    "@lifo-sh/core": "workspace:*"
   },
   "peerDependenciesMeta": {
-    "@lifo-sh/ui": {
+    "@lifo-sh/core": {
       "optional": true
     }
   },
   "devDependencies": {
+    "@lifo-sh/core": "workspace:*",
     "typescript": "^5.7.0",
     "vite": "^6.0.0",
     "vite-plugin-dts": "^4.5.0",

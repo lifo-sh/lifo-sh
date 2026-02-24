@@ -3,7 +3,6 @@ import { Shell } from '../shell/Shell.js';
 import {
   createDefaultRegistry,
 } from '../commands/registry.js';
-import { createPkgCommand } from '../commands/system/pkg.js';
 import { createPsCommand } from '../commands/system/ps.js';
 import { createTopCommand } from '../commands/system/top.js';
 import { createKillCommand } from '../commands/system/kill.js';
@@ -12,7 +11,7 @@ import { createHelpCommand } from '../commands/system/help.js';
 import { createNodeCommand } from '../commands/system/node.js';
 import { createCurlCommand } from '../commands/net/curl.js';
 import { createNpmCommand } from '../commands/system/npm.js';
-import { loadInstalledPackages } from '../pkg/loader.js';
+import { createLifoPkgCommand, bootLifoPackages } from '../commands/system/lifo.js';
 import type { VFS } from '../kernel/vfs/index.js';
 import { NativeFsProvider } from '../kernel/vfs/providers/NativeFsProvider.js';
 import type { NativeFsModule } from '../kernel/vfs/providers/NativeFsProvider.js';
@@ -70,8 +69,7 @@ export class Sandbox {
 
     // 2. Create command registry
     const registry = createDefaultRegistry();
-    registry.register('pkg', createPkgCommand(registry));
-    loadInstalledPackages(kernel.vfs, registry);
+    bootLifoPackages(kernel.vfs, registry);
 
     // 3. Pre-populate files if provided
     if (options?.files) {
@@ -136,6 +134,7 @@ export class Sandbox {
       return result.exitCode;
     };
     registry.register('npm', createNpmCommand(registry, npmShellExecute));
+    registry.register('lifo', createLifoPkgCommand(registry, npmShellExecute));
 
     // 8. Source config files
     await shell.sourceFile('/etc/profile');

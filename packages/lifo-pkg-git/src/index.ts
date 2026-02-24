@@ -1,8 +1,6 @@
-import type { Command, CommandContext } from '../types.js';
+import type { Command, CommandContext, VFS } from '@lifo-sh/core';
+import { Buffer, resolve, dirname } from '@lifo-sh/core';
 import type { HttpClient } from 'isomorphic-git';
-import { Buffer } from '../../node-compat/buffer.js';
-import { resolve, dirname } from '../../utils/path.js';
-import type { VFS } from '../../kernel/vfs/index.js';
 
 // isomorphic-git checks `typeof Buffer` at module load time.
 // Polyfill it on globalThis before the dynamic import.

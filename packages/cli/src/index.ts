@@ -6,8 +6,9 @@ import {
   Shell,
   NativeFsProvider,
   createDefaultRegistry,
-  loadInstalledPackages,
-  createPkgCommand,
+  bootLifoPackages,
+  createLifoPkgCommand,
+  createNpmCommand,
   createPsCommand,
   createTopCommand,
   createKillCommand,
@@ -74,8 +75,7 @@ async function main() {
 
   // 3. Create command registry
   const registry = createDefaultRegistry();
-  registry.register('pkg', createPkgCommand(registry));
-  loadInstalledPackages(kernel.vfs, registry);
+  bootLifoPackages(kernel.vfs, registry);
 
   // 4. Set up environment -- HOME and PWD point to the mounted directory
   const env = kernel.getDefaultEnv();
@@ -94,6 +94,19 @@ async function main() {
   registry.register('help', createHelpCommand(registry));
   registry.register('node', createNodeCommand(kernel.portRegistry));
   registry.register('curl', createCurlCommand(kernel.portRegistry));
+
+  // npm + lifo package manager (need shell for npm install)
+  const npmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
+    const result = await shell.execute(cmd, {
+      cwd: cmdCtx.cwd,
+      env: cmdCtx.env,
+      onStdout: (data: string) => cmdCtx.stdout.write(data),
+      onStderr: (data: string) => cmdCtx.stderr.write(data),
+    });
+    return result.exitCode;
+  };
+  registry.register('npm', createNpmCommand(registry, npmShellExecute));
+  registry.register('lifo', createLifoPkgCommand(registry, npmShellExecute));
 
   // 7. Source config files
   await shell.sourceFile('/etc/profile');

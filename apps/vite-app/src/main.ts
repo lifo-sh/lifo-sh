@@ -15,8 +15,7 @@ import {
   Kernel,
   Shell,
   createDefaultRegistry,
-  loadInstalledPackages,
-  createPkgCommand,
+  bootLifoPackages,
   createPsCommand,
   createTopCommand,
   createKillCommand,
@@ -24,7 +23,10 @@ import {
   createHelpCommand,
   createNodeCommand,
   createCurlCommand,
+  createNpmCommand,
+  createLifoPkgCommand,
 } from '@lifo-sh/core';
+import gitCommand from 'lifo-pkg-git';
 
 // ─── Code snippets for each example ───
 
@@ -175,37 +177,31 @@ shell.<span class="code-fn">start</span>()
 <span class="code-comment">// Drag &amp; drop files to upload.</span>`;
 
 const CODE_GIT = `\
-<span class="code-comment">// Built-in git -- powered by isomorphic-git</span>
-<span class="code-comment">// Works entirely in the browser VFS</span>
+<span class="code-keyword">import</span> { Kernel, Shell, createDefaultRegistry }
+  <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/core'</span>
+<span class="code-keyword">import</span> gitCommand <span class="code-keyword">from</span> <span class="code-string">'lifo-pkg-git'</span>
 
-<span class="code-keyword">const</span> sandbox = <span class="code-keyword">await</span> Sandbox.<span class="code-fn">create</span>({
-  <span class="code-const">terminal</span>: <span class="code-string">'#terminal'</span>,
-})
+<span class="code-comment">// Boot kernel + register git from package</span>
+<span class="code-keyword">const</span> kernel = <span class="code-keyword">new</span> <span class="code-fn">Kernel</span>()
+<span class="code-keyword">await</span> kernel.<span class="code-fn">boot</span>()
 
-<span class="code-comment">// Try these commands in the terminal:</span>
+<span class="code-keyword">const</span> registry = <span class="code-fn">createDefaultRegistry</span>()
+registry.<span class="code-fn">register</span>(<span class="code-string">'git'</span>, gitCommand)
 
-<span class="code-comment">// Initialize a repo</span>
+<span class="code-comment">// Or install at runtime:</span>
+<span class="code-comment">//   lifo install git</span>
+
+<span class="code-comment">// Try these commands:</span>
 <span class="code-string">mkdir /tmp/my-project && cd /tmp/my-project</span>
 <span class="code-string">git init</span>
-
-<span class="code-comment">// Create files and commit</span>
 <span class="code-string">echo "# My App" > README.md</span>
 <span class="code-string">git add .</span>
 <span class="code-string">git commit -m "Initial commit"</span>
-
-<span class="code-comment">// Branching</span>
 <span class="code-string">git branch feature</span>
 <span class="code-string">git checkout feature</span>
 <span class="code-string">echo "new feature" > feature.js</span>
 <span class="code-string">git add . && git commit -m "Add feature"</span>
-
-<span class="code-comment">// Check status, log, diff</span>
-<span class="code-string">git status</span>
-<span class="code-string">git log --oneline</span>
-<span class="code-string">git diff</span>
-
-<span class="code-comment">// Or run the example script:</span>
-<span class="code-string">source examples/scripts/13-git-basics.sh</span>`;
+<span class="code-string">git log --oneline</span>`;
 
 const CODE_NPM = `\
 <span class="code-keyword">import</span> { Sandbox } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/core'</span>
@@ -233,6 +229,86 @@ const CODE_NPM = `\
 <span class="code-comment">// npm registry, extracted, and installed</span>
 <span class="code-comment">// into the virtual filesystem.</span>
 <span class="code-comment">// Dependencies are resolved recursively.</span>`;
+
+const CODE_LIFO_PKG = `\
+<span class="code-comment">// The lifo command manages packages</span>
+<span class="code-comment">// that extend the OS with new commands</span>
+
+<span class="code-comment">// Install a package (from npm: lifo-pkg-*)</span>
+<span class="code-string">lifo install git</span>
+<span class="code-string">lifo install ffmpeg</span>
+
+<span class="code-comment">// Use it immediately</span>
+<span class="code-string">git init</span>
+
+<span class="code-comment">// List installed lifo packages</span>
+<span class="code-string">lifo list</span>
+
+<span class="code-comment">// Search npm for lifo packages</span>
+<span class="code-string">lifo search postgres</span>
+
+<span class="code-comment">// Remove a package</span>
+<span class="code-string">lifo remove git</span>
+
+<span class="code-comment">// How it works:</span>
+<span class="code-comment">//   lifo install git</span>
+<span class="code-comment">//   -> npm install -g lifo-pkg-git</span>
+<span class="code-comment">//   -> reads "lifo" field from package.json</span>
+<span class="code-comment">//   -> registers commands with lifo runtime</span>
+<span class="code-comment">//</span>
+<span class="code-comment">// Packages get access to:</span>
+<span class="code-comment">//   ctx  - CommandContext (args, vfs, stdout...)</span>
+<span class="code-comment">//   lifo - LifoAPI (import(), loadWasm()...)</span>
+
+<span class="code-comment">// Configure CDN for ESM imports</span>
+<span class="code-string">export LIFO_CDN=https://esm.sh</span>`;
+
+const CODE_BUILD_PKG = `\
+<span class="code-comment">// Create a new lifo package</span>
+<span class="code-string">lifo init my-tool</span>
+<span class="code-comment">// Creates:</span>
+<span class="code-comment">//   my-tool/package.json     (with lifo field)</span>
+<span class="code-comment">//   my-tool/commands/my-tool.js</span>
+<span class="code-comment">//   my-tool/README.md</span>
+
+<span class="code-comment">// The package.json lifo field:</span>
+{
+  <span class="code-string">"name"</span>: <span class="code-string">"lifo-pkg-my-tool"</span>,
+  <span class="code-string">"lifo"</span>: {
+    <span class="code-string">"commands"</span>: {
+      <span class="code-string">"my-tool"</span>: <span class="code-string">"./commands/my-tool.js"</span>
+    }
+  }
+}
+
+<span class="code-comment">// Command entry (CJS module):</span>
+module.exports = <span class="code-keyword">async function</span>(ctx, lifo) {
+  <span class="code-comment">// ctx.args   - command arguments</span>
+  <span class="code-comment">// ctx.vfs    - virtual filesystem</span>
+  <span class="code-comment">// ctx.stdout - write output</span>
+  <span class="code-comment">// ctx.stderr - write errors</span>
+  <span class="code-comment">// ctx.cwd    - current directory</span>
+  <span class="code-comment">// ctx.env    - environment variables</span>
+  <span class="code-comment">// ctx.signal - AbortSignal</span>
+
+  <span class="code-comment">// lifo.import() loads ESM from CDN</span>
+  <span class="code-keyword">const</span> lib = <span class="code-keyword">await</span> lifo.<span class="code-fn">import</span>(<span class="code-string">'lodash-es'</span>)
+
+  <span class="code-comment">// lifo.loadWasm() fetches + caches WASM</span>
+  <span class="code-keyword">const</span> mod = <span class="code-keyword">await</span> lifo.<span class="code-fn">loadWasm</span>(url)
+
+  ctx.stdout.<span class="code-fn">write</span>(<span class="code-string">'Hello!\\n'</span>)
+  <span class="code-keyword">return</span> <span class="code-const">0</span>  <span class="code-comment">// exit code</span>
+}
+
+<span class="code-comment">// Dev workflow:</span>
+<span class="code-string">lifo link ./my-tool</span>    <span class="code-comment"># register locally</span>
+<span class="code-string">my-tool --help</span>         <span class="code-comment"># test it</span>
+<span class="code-string">lifo unlink my-tool</span>    <span class="code-comment"># remove link</span>
+
+<span class="code-comment">// Publish to npm:</span>
+<span class="code-string">cd my-tool && npm publish</span>
+<span class="code-comment">// Users install with: lifo install my-tool</span>`;
 
 const CODE_CLI = `\
 <span class="code-comment">// Run Lifo as a CLI in your terminal</span>
@@ -282,21 +358,25 @@ const codeSnippets: Record<string, string> = {
   git: CODE_GIT,
   npm: CODE_NPM,
   cli: CODE_CLI,
+  'lifo-pkg': CODE_LIFO_PKG,
+  'build-pkg': CODE_BUILD_PKG,
 };
 
 // ─── State ───
 
-type ExampleId = 'interactive' | 'headless' | 'multi' | 'http' | 'explorer' | 'git' | 'npm' | 'cli';
+type ExampleId = 'interactive' | 'headless' | 'multi' | 'http' | 'explorer' | 'git' | 'npm' | 'cli' | 'lifo-pkg' | 'build-pkg';
 
 const examples: Record<ExampleId, { booted: boolean; boot: () => Promise<void> }> = {
-  interactive: { booted: false, boot: bootInteractive },
-  headless:    { booted: false, boot: bootHeadless },
-  multi:       { booted: false, boot: bootMulti },
-  http:        { booted: false, boot: bootHttp },
-  explorer:    { booted: false, boot: bootExplorer },
-  git:         { booted: false, boot: bootGit },
-  npm:         { booted: false, boot: bootNpm },
-  cli:         { booted: false, boot: bootCli },
+  interactive:  { booted: false, boot: bootInteractive },
+  headless:     { booted: false, boot: bootHeadless },
+  multi:        { booted: false, boot: bootMulti },
+  http:         { booted: false, boot: bootHttp },
+  explorer:     { booted: false, boot: bootExplorer },
+  git:          { booted: false, boot: bootGit },
+  npm:          { booted: false, boot: bootNpm },
+  cli:          { booted: false, boot: bootCli },
+  'lifo-pkg':   { booted: false, boot: bootLifoPkg },
+  'build-pkg':  { booted: false, boot: bootBuildPkg },
 };
 
 let activeExample: ExampleId = 'interactive';
@@ -358,7 +438,7 @@ function switchExample(id: ExampleId) {
   document.querySelector(`[data-example="${id}"]`)?.classList.add('active');
 
   // Code column -- hide for examples that don't need it
-  if (id === 'cli') {
+  if (id === 'cli' || id === 'lifo-pkg' || id === 'build-pkg') {
     colCode.classList.remove('lg:flex');
     colCode.classList.add('lg:hidden');
   } else {
@@ -505,8 +585,7 @@ async function addMultiTab(): Promise<MultiTab> {
 
   const terminal = new Terminal(container);
   const registry = createDefaultRegistry();
-  registry.register('pkg', createPkgCommand(registry));
-  loadInstalledPackages(kernel.vfs, registry);
+  bootLifoPackages(kernel.vfs, registry);
 
   const env = kernel.getDefaultEnv();
   const shell = new Shell(terminal, kernel.vfs, registry, env);
@@ -596,8 +675,7 @@ async function addHttpTab(label: string): Promise<HttpTab> {
 
   const terminal = new Terminal(container);
   const registry = createDefaultRegistry();
-  registry.register('pkg', createPkgCommand(registry));
-  loadInstalledPackages(kernel.vfs, registry);
+  bootLifoPackages(kernel.vfs, registry);
 
   // Register node and curl with the shared portRegistry
   registry.register('node', createNodeCommand(kernel.portRegistry));
@@ -779,8 +857,7 @@ async function bootExplorer() {
   const termContainer = document.getElementById('explorer-terminal')!;
   const terminal = new Terminal(termContainer);
   const registry = createDefaultRegistry();
-  registry.register('pkg', createPkgCommand(registry));
-  loadInstalledPackages(vfs, registry);
+  bootLifoPackages(vfs, registry);
 
   const env = explorerKernel.getDefaultEnv();
   const shell = new Shell(terminal, vfs, registry, env);
@@ -797,16 +874,45 @@ async function bootExplorer() {
   shell.start();
 }
 
-// ─── 6. Git ───
+// ─── 6. Git (via lifo-pkg-git) ───
 
 async function bootGit() {
-  const sandbox = await Sandbox.create({
-    terminal: '#terminal-git',
-  });
+  const kernel = new Kernel();
+  await kernel.boot({ persist: false });
 
-  // Pre-run the git example setup so users see it in action
-  await sandbox.commands.run('mkdir -p /tmp/my-project');
-  await sandbox.commands.run('cd /tmp/my-project');
+  const container = document.getElementById('terminal-git')!;
+  const terminal = new Terminal(container);
+
+  const registry = createDefaultRegistry();
+  registry.register('git', gitCommand);  // register from lifo-pkg-git
+  bootLifoPackages(kernel.vfs, registry);
+
+  const env = kernel.getDefaultEnv();
+  const shell = new Shell(terminal, kernel.vfs, registry, env);
+
+  const jobTable = shell.getJobTable();
+  registry.register('ps', createPsCommand(jobTable));
+  registry.register('top', createTopCommand(jobTable));
+  registry.register('kill', createKillCommand(jobTable));
+  registry.register('watch', createWatchCommand(registry));
+  registry.register('help', createHelpCommand(registry));
+
+  // Register npm + lifo commands
+  const npmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
+    const result = await shell.execute(cmd, {
+      cwd: cmdCtx.cwd,
+      env: cmdCtx.env,
+      onStdout: (data: string) => cmdCtx.stdout.write(data),
+      onStderr: (data: string) => cmdCtx.stderr.write(data),
+    });
+    return result.exitCode;
+  };
+  registry.register('npm', createNpmCommand(registry, npmShellExecute));
+  registry.register('lifo', createLifoPkgCommand(registry, npmShellExecute));
+
+  await shell.sourceFile('/etc/profile');
+  await shell.sourceFile(env.HOME + '/.bashrc');
+  shell.start();
 }
 
 // ─── 7. npm ───
@@ -872,6 +978,156 @@ async function bootCli() {
 <span style="color:#565f89">  const sandbox = await Sandbox.create()</span>
 <span style="color:#565f89">  const provider = new NativeFsProvider('/my/dir', fs)</span>
 <span style="color:#565f89">  sandbox.kernel.vfs.mount('/mnt/host', provider)</span>`;
+}
+
+// ─── 9. Lifo Package Manager (docs) ───
+
+async function bootLifoPkg() {
+  const el = document.getElementById('lifo-pkg-output')!;
+  el.innerHTML = `\
+<span style="color:#7aa2f7;font-weight:bold">lifo</span> <span style="color:#565f89">-- Lifo Package Manager</span>
+
+<span style="color:#bb9af7">Overview:</span>
+  The <span style="color:#7aa2f7">lifo</span> command installs packages that extend
+  the OS with new commands. Packages live on npm
+  with the prefix <span style="color:#9ece6a">lifo-pkg-*</span>.
+
+<span style="color:#bb9af7">Install a package:</span>
+  <span style="color:#c0caf5">$ </span><span style="color:#7aa2f7">lifo install</span> <span style="color:#9ece6a">git</span>
+  <span style="color:#565f89">  Resolves to npm package: lifo-pkg-git</span>
+  <span style="color:#565f89">  Downloads, extracts, and registers commands</span>
+
+<span style="color:#bb9af7">What happens under the hood:</span>
+<span style="color:#3b4261">  ┌──────────────────────────────────────────────┐</span>
+<span style="color:#3b4261">  │</span> <span style="color:#c0caf5">lifo install git</span>                             <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span>   <span style="color:#565f89">1. Runs:</span> npm install -g lifo-pkg-git        <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span>   <span style="color:#565f89">2. Reads "lifo" field from package.json</span>      <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span>   <span style="color:#565f89">3. Registers commands with lifo runtime</span>      <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span>   <span style="color:#565f89">4. Command available immediately</span>             <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  └──────────────────────────────────────────────┘</span>
+
+<span style="color:#bb9af7">Commands:</span>
+  <span style="color:#7aa2f7">lifo install</span> <span style="color:#9ece6a">&lt;name&gt;</span>     Install lifo-pkg-&lt;name&gt; from npm
+  <span style="color:#7aa2f7">lifo remove</span> <span style="color:#9ece6a">&lt;name&gt;</span>      Remove a package
+  <span style="color:#7aa2f7">lifo list</span>               List installed packages + dev links
+  <span style="color:#7aa2f7">lifo search</span> <span style="color:#9ece6a">&lt;term&gt;</span>      Search npm for lifo-pkg-* packages
+  <span style="color:#7aa2f7">lifo init</span> <span style="color:#9ece6a">&lt;name&gt;</span>        Scaffold a new package
+  <span style="color:#7aa2f7">lifo link</span> <span style="color:#9ece6a">[path]</span>        Dev-link a local package
+  <span style="color:#7aa2f7">lifo unlink</span> <span style="color:#9ece6a">&lt;name&gt;</span>      Remove a dev link
+
+<span style="color:#bb9af7">Lifo Runtime API:</span>
+  <span style="color:#565f89">Lifo packages get an enhanced runtime with:</span>
+
+  <span style="color:#7aa2f7">lifo.import</span>(specifier)    Import ESM from CDN
+  <span style="color:#7aa2f7">lifo.loadWasm</span>(url)        Fetch + cache WASM modules
+  <span style="color:#7aa2f7">lifo.resolve</span>(path)        Resolve path relative to cwd
+  <span style="color:#7aa2f7">lifo.cdn</span>                  Current CDN URL
+
+<span style="color:#bb9af7">Configuration:</span>
+  <span style="color:#c0caf5">$ </span><span style="color:#7aa2f7">export</span> LIFO_CDN=<span style="color:#9ece6a">https://esm.sh</span>  <span style="color:#565f89">(default)</span>
+  <span style="color:#565f89">  Configure which CDN is used for lifo.import()</span>
+
+<span style="color:#bb9af7">npm still works unchanged:</span>
+  <span style="color:#c0caf5">$ </span><span style="color:#7aa2f7">npm install -g</span> <span style="color:#9ece6a">cowsay</span>  <span style="color:#565f89">  Pure JS packages</span>
+  <span style="color:#c0caf5">$ </span><span style="color:#7aa2f7">lifo install</span> <span style="color:#9ece6a">git</span>       <span style="color:#565f89">  Lifo-native packages</span>`;
+}
+
+// ─── 10. Build Lifo Packages (docs) ───
+
+async function bootBuildPkg() {
+  const el = document.getElementById('build-pkg-output')!;
+  el.innerHTML = `\
+<span style="color:#7aa2f7;font-weight:bold">Building Lifo Packages</span>
+
+<span style="color:#bb9af7">Create a package (on your host machine):</span>
+  <span style="color:#c0caf5">$ </span><span style="color:#7aa2f7">npm create lifo-pkg</span> <span style="color:#9ece6a">my-tool</span>
+
+  <span style="color:#565f89">Scaffolds a full TypeScript project:</span>
+    lifo-pkg-my-tool/
+      src/index.ts              <span style="color:#565f89"># command source (TypeScript)</span>
+      example/                  <span style="color:#565f89"># Vite app for browser testing</span>
+        index.html
+        main.ts                 <span style="color:#565f89"># boots Kernel + Shell + your command</span>
+      test-cli.js               <span style="color:#565f89"># CLI test harness (Node.js)</span>
+      vite.config.ts            <span style="color:#565f89"># build config</span>
+      package.json              <span style="color:#565f89"># with "lifo" field</span>
+
+<span style="color:#bb9af7">Or quick-start inside the Lifo sandbox:</span>
+  <span style="color:#c0caf5">$ </span><span style="color:#7aa2f7">lifo init</span> <span style="color:#9ece6a">my-tool</span>           <span style="color:#565f89"># CJS scaffold for dev-link</span>
+  <span style="color:#c0caf5">$ </span><span style="color:#7aa2f7">lifo link</span> <span style="color:#9ece6a">./my-tool</span>         <span style="color:#565f89"># register locally</span>
+  <span style="color:#c0caf5">$ </span>my-tool --help               <span style="color:#565f89"># test immediately</span>
+
+<span style="color:#bb9af7">The "lifo" field in package.json:</span>
+<span style="color:#3b4261">  ┌──────────────────────────────────────────────┐</span>
+<span style="color:#3b4261">  │</span>  {                                             <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span>    <span style="color:#7aa2f7">"name"</span>: <span style="color:#9ece6a">"lifo-pkg-my-tool"</span>,                <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span>    <span style="color:#7aa2f7">"lifo"</span>: {                                  <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span>      <span style="color:#7aa2f7">"commands"</span>: {                             <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span>        <span style="color:#7aa2f7">"my-tool"</span>: <span style="color:#9ece6a">"./dist/index.js"</span>           <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span>      }                                         <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span>    }                                            <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span>  }                                              <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  └──────────────────────────────────────────────┘</span>
+
+  <span style="color:#565f89">Any npm package with a "lifo" field and the</span>
+  <span style="color:#565f89">prefix lifo-pkg-* is a lifo package.</span>
+
+<span style="color:#bb9af7">Command source (TypeScript):</span>
+<span style="color:#3b4261">  ┌──────────────────────────────────────────────┐</span>
+<span style="color:#3b4261">  │</span>  <span style="color:#c0caf5">import type</span> { Command } <span style="color:#c0caf5">from</span> <span style="color:#9ece6a">'@lifo-sh/core'</span> <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span>                                               <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span>  <span style="color:#c0caf5">const</span> cmd: Command = <span style="color:#c0caf5">async</span> (ctx) => {        <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span>    ctx.stdout.write(<span style="color:#9ece6a">'Hello!\\n'</span>)               <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span>    <span style="color:#c0caf5">return</span> 0                                   <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span>  }                                             <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span>  <span style="color:#c0caf5">export default</span> cmd                            <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  └──────────────────────────────────────────────┘</span>
+
+<span style="color:#bb9af7">Or CJS (for lifo init / dev-link):</span>
+<span style="color:#3b4261">  ┌──────────────────────────────────────────────┐</span>
+<span style="color:#3b4261">  │</span>  module.exports = async function(ctx, lifo) { <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span>    <span style="color:#565f89">// lifo.import(), lifo.loadWasm()</span>          <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span>    ctx.stdout.write(<span style="color:#9ece6a">'Hello!\\n'</span>)               <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span>    return 0                                    <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  │</span>  }                                             <span style="color:#3b4261">│</span>
+<span style="color:#3b4261">  └──────────────────────────────────────────────┘</span>
+
+<span style="color:#bb9af7">Testing your package:</span>
+
+  <span style="color:#9ece6a">Browser</span> <span style="color:#565f89">(example Vite app included in scaffold)</span>
+  <span style="color:#c0caf5">$ </span>npm run build
+  <span style="color:#c0caf5">$ </span>npm run test:browser       <span style="color:#565f89"># opens terminal at localhost</span>
+
+  <span style="color:#9ece6a">CLI</span> <span style="color:#565f89">(headless, no browser needed)</span>
+  <span style="color:#c0caf5">$ </span>npm run test:cli -- --help <span style="color:#565f89"># runs command directly</span>
+
+  <span style="color:#9ece6a">Dev-link</span> <span style="color:#565f89">(inside a running Lifo sandbox)</span>
+  <span style="color:#c0caf5">$ </span><span style="color:#7aa2f7">lifo link</span> <span style="color:#9ece6a">./my-tool</span>
+  <span style="color:#c0caf5">$ </span>my-tool --help
+
+<span style="color:#bb9af7">Using lifo.import() for dependencies:</span>
+  <span style="color:#565f89">Load any npm package as ESM from CDN at runtime.</span>
+
+  <span style="color:#c0caf5">const</span> { FFmpeg } = await lifo.<span style="color:#7aa2f7">import</span>(<span style="color:#9ece6a">'@ffmpeg/ffmpeg'</span>)
+  <span style="color:#c0caf5">const</span> _ = await lifo.<span style="color:#7aa2f7">import</span>(<span style="color:#9ece6a">'lodash-es'</span>)
+
+<span style="color:#bb9af7">Using lifo.loadWasm() for WASM:</span>
+  <span style="color:#c0caf5">const</span> mod = await lifo.<span style="color:#7aa2f7">loadWasm</span>(<span style="color:#9ece6a">'https://...'</span>)
+  <span style="color:#c0caf5">const</span> instance = await WebAssembly.<span style="color:#7aa2f7">instantiate</span>(mod)
+
+<span style="color:#bb9af7">Publishing:</span>
+  <span style="color:#c0caf5">$ </span>cd lifo-pkg-my-tool
+  <span style="color:#c0caf5">$ </span>npm run build
+  <span style="color:#c0caf5">$ </span><span style="color:#7aa2f7">npm publish</span>
+
+  <span style="color:#565f89">Users install with:</span>  <span style="color:#c0caf5">$ </span><span style="color:#7aa2f7">lifo install</span> <span style="color:#9ece6a">my-tool</span>
+
+<span style="color:#bb9af7">Example: lifo-pkg-git</span>
+  <span style="color:#565f89">Real-world lifo package powering the git command:</span>
+  <span style="color:#565f89">  - TypeScript, exports Command type from @lifo-sh/core</span>
+  <span style="color:#565f89">  - Depends on isomorphic-git</span>
+  <span style="color:#565f89">  - Install: lifo install git</span>
+  <span style="color:#565f89">  - Or import: import gitCommand from 'lifo-pkg-git'</span>`;
 }
 
 // ─── Boot ───

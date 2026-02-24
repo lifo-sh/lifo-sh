@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { VFS } from '../../src/kernel/vfs/index.js';
-import type { CommandContext } from '../../src/commands/types.js';
-import gitCommand from '../../src/commands/vcs/git.js';
+import { VFS } from '@lifo-sh/core';
+import type { CommandContext } from '@lifo-sh/core';
+import gitCommand from '../src/index.js';
 
 function makeCtx(vfs: VFS, args: string[], cwd = '/repo'): CommandContext & { out: string; err: string } {
   const result = {

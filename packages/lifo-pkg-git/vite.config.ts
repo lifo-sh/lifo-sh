@@ -13,7 +13,8 @@ export default defineConfig({
     },
     rollupOptions: {
       external: [
-        '@lifo-sh/ui',
+        '@lifo-sh/core',
+        'isomorphic-git',
       ],
     },
   },

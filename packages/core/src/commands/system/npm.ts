@@ -275,6 +275,7 @@ function registerBinCommand(registry: CommandRegistry, binName: string, scriptPa
   );
 }
 
+
 // ─── Install logic ───
 
 async function installSinglePackage(
@@ -320,6 +321,7 @@ async function installSinglePackage(
         `#!/usr/bin/env node\nrequire('${scriptPath}');\n`,
       );
     }
+
   }
 
   // Recursively install dependencies (flat into the same targetBase)

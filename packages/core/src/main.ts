@@ -2,14 +2,13 @@ import { Kernel } from './kernel/index.js';
 import { Terminal } from './terminal/Terminal.js';
 import { Shell } from './shell/Shell.js';
 import { createDefaultRegistry } from './commands/registry.js';
-import { loadInstalledPackages } from './pkg/loader.js';
-import { createPkgCommand } from './commands/system/pkg.js';
 import { createPsCommand } from './commands/system/ps.js';
 import { createTopCommand } from './commands/system/top.js';
 import { createKillCommand } from './commands/system/kill.js';
 import { createWatchCommand } from './commands/system/watch.js';
 import { createHelpCommand } from './commands/system/help.js';
 import { createNpmCommand } from './commands/system/npm.js';
+import { createLifoPkgCommand, bootLifoPackages } from './commands/system/lifo.js';
 
 async function boot(): Promise<void> {
   // 1. Kernel & filesystem (async -- loads persisted data)
@@ -24,9 +23,8 @@ async function boot(): Promise<void> {
   // 3. Command registry
   const registry = createDefaultRegistry();
 
-  // 3b. Register pkg command (needs registry closure) & load installed packages
-  registry.register('pkg', createPkgCommand(registry));
-  loadInstalledPackages(kernel.vfs, registry);
+  // 3b. Boot lifo packages (dev links + installed lifo-pkg-* upgrades)
+  bootLifoPackages(kernel.vfs, registry);
 
   // 4. Display MOTD
   const motd = kernel.vfs.readFileString('/etc/motd');
@@ -56,6 +54,7 @@ async function boot(): Promise<void> {
     return result.exitCode;
   };
   registry.register('npm', createNpmCommand(registry, npmShellExecute));
+  registry.register('lifo', createLifoPkgCommand(registry, npmShellExecute));
 
   // 6. Source config files before showing prompt
   await shell.sourceFile('/etc/profile');

@@ -40,6 +40,11 @@
         <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="npm">npm</button>
         <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="cli">CLI (Node.js)</button>
       </div>
+      <div class="py-3 border-t border-tokyo-border">
+        <div class="text-[10px] font-semibold uppercase tracking-widest text-tokyo-comment px-4 pb-1.5">Packages</div>
+        <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="lifo-pkg">Lifo Package Manager</button>
+        <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="build-pkg">Build Lifo Packages</button>
+      </div>
     </nav>
 
     <!-- Column 2: Code -->
@@ -112,7 +117,7 @@
         <!-- Git -->
         <div id="out-git" class="output-panel">
           <div class="text-[13px] font-semibold text-tokyo-fg-bright mb-0.5">Git</div>
-          <div class="text-[11px] text-tokyo-comment mb-3.5">Built-in git powered by isomorphic-git -- try <code>git init</code>, <code>git add</code>, <code>git commit</code>, branching, and more</div>
+          <div class="text-[11px] text-tokyo-comment mb-3.5">Git via <code>lifo-pkg-git</code> -- powered by isomorphic-git. Try <code>git init</code>, <code>git add</code>, <code>git commit</code>, branching, and more</div>
           <div class="w-full rounded-lg overflow-hidden border border-tokyo-border p-2 bg-tokyo-bg flex-1">
             <div id="terminal-git" class="w-full h-full"></div>
           </div>
@@ -133,6 +138,24 @@
           <div class="text-[11px] text-tokyo-comment mb-3.5">Run Lifo in your terminal with <code>npx lifo-sh</code> -- mount host directories for real file access</div>
           <div class="flex flex-col gap-2.5 flex-1 min-h-0">
             <div id="cli-output" class="flex-1 bg-tokyo-bg-dark border border-tokyo-border rounded-md px-4 py-3.5 font-code text-xs leading-relaxed whitespace-pre-wrap text-tokyo-fg overflow-y-auto"></div>
+          </div>
+        </div>
+
+        <!-- Lifo Package Manager -->
+        <div id="out-lifo-pkg" class="output-panel">
+          <div class="text-[13px] font-semibold text-tokyo-fg-bright mb-0.5">Lifo Package Manager</div>
+          <div class="text-[11px] text-tokyo-comment mb-3.5">Install and manage packages with the <code>lifo</code> command</div>
+          <div class="flex flex-col gap-2.5 flex-1 min-h-0">
+            <div id="lifo-pkg-output" class="flex-1 bg-tokyo-bg-dark border border-tokyo-border rounded-md px-4 py-3.5 font-code text-xs leading-relaxed whitespace-pre-wrap text-tokyo-fg overflow-y-auto"></div>
+          </div>
+        </div>
+
+        <!-- Build Lifo Packages -->
+        <div id="out-build-pkg" class="output-panel">
+          <div class="text-[13px] font-semibold text-tokyo-fg-bright mb-0.5">Build Lifo Packages</div>
+          <div class="text-[11px] text-tokyo-comment mb-3.5">How to create, develop, and publish <code>lifo-pkg-*</code> packages</div>
+          <div class="flex flex-col gap-2.5 flex-1 min-h-0">
+            <div id="build-pkg-output" class="flex-1 bg-tokyo-bg-dark border border-tokyo-border rounded-md px-4 py-3.5 font-code text-xs leading-relaxed whitespace-pre-wrap text-tokyo-fg overflow-y-auto"></div>
           </div>
         </div>
       </div>
