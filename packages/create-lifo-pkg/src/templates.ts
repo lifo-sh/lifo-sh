@@ -63,7 +63,7 @@ export function generateTemplates(opts: TemplateOptions): GeneratedFile[] {
         '@lifo-sh/core': { optional: true },
       },
       devDependencies: {
-        '@lifo-sh/core': '^0.3.0',
+        '@lifo-sh/core': '^0.4.1',
         typescript: '^5.7.0',
         vite: '^6.0.0',
         'vite-plugin-dts': '^4.5.0',
@@ -162,8 +162,8 @@ export default ${camelCase(name)}Command;
         build: 'vite build',
       },
       dependencies: {
-        '@lifo-sh/core': '^0.3.0',
-        '@lifo-sh/ui': '^0.3.0',
+        '@lifo-sh/core': '^0.4.1',
+        '@lifo-sh/ui': '^0.4.1',
         [npmName]: 'file:..',
         '@xterm/xterm': '^5.5.0',
       },
@@ -220,7 +220,7 @@ async function main() {
   registry.register('help', createHelpCommand(registry));
 
   // 3. Create terminal + shell
-  const terminal = new Terminal('#terminal');
+  const terminal = new Terminal(document.getElementById('terminal')!);
   const shell = new Shell(terminal, kernel.vfs, registry, kernel.getDefaultEnv());
 
   await shell.sourceFile('/etc/profile');
@@ -256,45 +256,85 @@ export default defineConfig({
  * CLI test harness for ${npmName}.
  *
  * Usage:
- *   node test-cli.js [args...]
+ *   node test-cli.js
  *
- * Boots a headless Lifo kernel, registers the ${name} command,
- * and runs it with the provided arguments.
+ * Boots an interactive Lifo shell with the ${name} command
+ * pre-registered so you can test it in a real terminal.
  */
 
 import {
   Kernel,
+  Shell,
   createDefaultRegistry,
+  createHelpCommand,
 } from '@lifo-sh/core';
 import ${camelCase(name)}Command from './dist/index.js';
 
-const args = process.argv.slice(2);
+/**
+ * Minimal ITerminal backed by Node.js stdin/stdout.
+ */
+class NodeTerminal {
+  #callbacks = [];
 
-// Boot kernel
-const kernel = new Kernel();
-await kernel.boot();
+  constructor() {
+    if (process.stdin.isTTY) process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.setEncoding('utf-8');
+    process.stdin.on('data', (data) => {
+      for (const ch of data) {
+        for (const cb of this.#callbacks) cb(ch);
+      }
+    });
+  }
 
-// Register command
-const registry = createDefaultRegistry();
-registry.register('${name}', ${camelCase(name)}Command);
+  write(data) { process.stdout.write(data); }
+  writeln(data) { process.stdout.write(data + '\\r\\n'); }
+  onData(cb) { this.#callbacks.push(cb); }
+  get cols() { return process.stdout.columns || 80; }
+  get rows() { return process.stdout.rows || 24; }
+  focus() {}
+  clear() { process.stdout.write('\\x1b[2J\\x1b[H'); }
+  destroy() {
+    if (process.stdin.isTTY) process.stdin.setRawMode(false);
+    process.stdin.pause();
+  }
+}
 
-// Build context and run
-let stdout = '';
-let stderr = '';
-const ctx = {
-  args,
-  env: kernel.getDefaultEnv(),
-  cwd: '/home/user',
-  vfs: kernel.vfs,
-  stdout: { write(t) { stdout += t; } },
-  stderr: { write(t) { stderr += t; } },
-  signal: new AbortController().signal,
-};
+async function main() {
+  const terminal = new NodeTerminal();
 
-const exitCode = await ${camelCase(name)}Command(ctx);
-if (stdout) process.stdout.write(stdout);
-if (stderr) process.stderr.write(stderr);
-process.exit(exitCode);
+  // Boot kernel
+  const kernel = new Kernel();
+  await kernel.boot({ persist: false });
+
+  // Set up commands
+  const registry = createDefaultRegistry();
+  registry.register('${name}', ${camelCase(name)}Command);
+  registry.register('help', createHelpCommand(registry));
+
+  // Create shell
+  const env = kernel.getDefaultEnv();
+  const shell = new Shell(terminal, kernel.vfs, registry, env);
+
+  // Override exit to terminate the process
+  shell.builtins.set('exit', async () => {
+    terminal.write('logout\\r\\n');
+    terminal.destroy();
+    process.exit(0);
+  });
+
+  await shell.sourceFile('/etc/profile');
+
+  terminal.write('\\x1b[2m${npmName} test shell\\x1b[0m\\r\\n');
+  terminal.write('\\x1b[2mType "${name}" to test your command, "exit" to quit.\\x1b[0m\\r\\n');
+
+  shell.start();
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
 `,
   });
 
