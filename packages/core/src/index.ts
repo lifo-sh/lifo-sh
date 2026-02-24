@@ -50,7 +50,8 @@ export { Shell } from './shell/Shell.js';
 export { JobTable } from './shell/jobs.js';
 
 // Terminal
-export { Terminal } from './terminal/Terminal.js';
+export type { ITerminal } from './terminal/ITerminal.js';
+export { HeadlessTerminal } from './sandbox/HeadlessTerminal.js';
 
 // Package manager
 export { PackageManager } from './pkg/PackageManager.js';

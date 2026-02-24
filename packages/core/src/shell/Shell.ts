@@ -1,4 +1,4 @@
-import type { Terminal } from '../terminal/Terminal.js';
+import type { ITerminal } from '../terminal/ITerminal.js';
 import type { VFS } from '../kernel/vfs/index.js';
 import type { CommandRegistry } from '../commands/registry.js';
 import type { CommandOutputStream } from '../commands/types.js';
@@ -21,7 +21,7 @@ export interface ExecuteOptions {
 }
 
 export class Shell {
-  private terminal: Terminal;
+  private terminal: ITerminal;
   private vfs: VFS;
   private registry: CommandRegistry;
   private cwd: string;
@@ -57,7 +57,7 @@ export class Shell {
   private tabCount: number = 0;
 
   constructor(
-    terminal: Terminal,
+    terminal: ITerminal,
     vfs: VFS,
     registry: CommandRegistry,
     env: Record<string, string>,

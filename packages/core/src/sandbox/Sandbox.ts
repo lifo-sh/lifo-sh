@@ -9,8 +9,11 @@ import { createTopCommand } from '../commands/system/top.js';
 import { createKillCommand } from '../commands/system/kill.js';
 import { createWatchCommand } from '../commands/system/watch.js';
 import { createHelpCommand } from '../commands/system/help.js';
+import { createNodeCommand } from '../commands/system/node.js';
+import { createCurlCommand } from '../commands/net/curl.js';
 import { loadInstalledPackages } from '../pkg/loader.js';
 import type { VFS } from '../kernel/vfs/index.js';
+import type { ITerminal } from '../terminal/ITerminal.js';
 import type { SandboxOptions, SandboxCommands, SandboxFs } from './types.js';
 import { SandboxFsImpl } from './SandboxFs.js';
 import { SandboxCommandsImpl } from './SandboxCommands.js';
@@ -83,25 +86,31 @@ export class Sandbox {
     }
 
     // 5. Create terminal (headless or visual)
-    let shellTerminal: unknown;
+    let shellTerminal: ITerminal;
+    let isVisual = false;
 
-    if (options?.terminal) {
-      // Visual mode: lazy-load xterm.js
-      const { Terminal } = await import('../terminal/Terminal.js');
+    if (typeof options?.terminal === 'string' || (typeof HTMLElement !== 'undefined' && options?.terminal instanceof HTMLElement)) {
+      // Visual mode: lazy-load xterm.js from @lifo-sh/ui
+      const { Terminal } = await import('@lifo-sh/ui');
       const container = resolveContainer(options.terminal);
       const xtermTerminal = new Terminal(container);
       shellTerminal = xtermTerminal;
+      isVisual = true;
 
       // Display MOTD
       const motd = kernel.vfs.readFileString('/etc/motd');
       xtermTerminal.write(motd.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n'));
+    } else if (options?.terminal && typeof options.terminal === 'object') {
+      // Pre-created ITerminal instance
+      shellTerminal = options.terminal as ITerminal;
+      isVisual = true;
     } else {
       // Headless mode
       shellTerminal = new HeadlessTerminal();
     }
 
     // 6. Create shell
-    const shell = new Shell(shellTerminal as never, kernel.vfs, registry, env);
+    const shell = new Shell(shellTerminal, kernel.vfs, registry, env);
 
     // 7. Register factory commands
     const jobTable = shell.getJobTable();
@@ -110,6 +119,8 @@ export class Sandbox {
     registry.register('kill', createKillCommand(jobTable));
     registry.register('watch', createWatchCommand(registry));
     registry.register('help', createHelpCommand(registry));
+    registry.register('node', createNodeCommand(kernel.portRegistry));
+    registry.register('curl', createCurlCommand(kernel.portRegistry));
 
     // 8. Source config files
     await shell.sourceFile('/etc/profile');
@@ -121,9 +132,9 @@ export class Sandbox {
     }
 
     // 10. Start shell (for visual mode, enables interactive input)
-    if (options?.terminal) {
+    if (isVisual) {
       shell.start();
-      (shellTerminal as { focus(): void }).focus();
+      shellTerminal.focus();
     }
 
     // 11. Build the Sandbox
@@ -139,7 +150,7 @@ export class Sandbox {
    */
   async attach(container: HTMLElement): Promise<void> {
     if (this._destroyed) throw new Error('Sandbox is destroyed');
-    const { Terminal } = await import('../terminal/Terminal.js');
+    const { Terminal } = await import('@lifo-sh/ui');
     const xtermTerminal = new Terminal(container);
 
     const motd = this.kernel.vfs.readFileString('/etc/motd');
