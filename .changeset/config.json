@@ -7,5 +7,5 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["@lifo-sh/example-vite"]
+  "ignore": ["@lifo-sh/playground"]
 }
