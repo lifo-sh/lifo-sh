@@ -1,0 +1,13 @@
+{
+  "id": "7a6cfc06-33dd-4cb0-a9b9-a2acf8f1a483",
+  "name": "My Board",
+  "columns": [
+    "inbox",
+    "assigned",
+    "in_progress",
+    "testing",
+    "review",
+    "done"
+  ],
+  "created_at": "2026-02-25T13:46:55.605Z"
+}

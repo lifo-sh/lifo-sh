@@ -1,0 +1,21 @@
+{
+  "id": "c0d0ca83-48e2-4753-ba48-f217b529f4d1",
+  "title": "new task",
+  "description": "",
+  "status": "inbox",
+  "priority": "none",
+  "assignee": null,
+  "assignee_type": null,
+  "tags": [],
+  "created_at": "2026-02-25T13:55:59.814Z",
+  "updated_at": "2026-02-25T13:55:59.814Z",
+  "deliverables": [],
+  "activity": [
+    {
+      "type": "created",
+      "message": "Task created",
+      "by": "user",
+      "timestamp": "2026-02-25T13:55:59.814Z"
+    }
+  ]
+}
