@@ -13,14 +13,15 @@ const command: Command = async (ctx) => {
   let increment = 1;
   let last: number;
   let separator = '\n';
+  let equalWidth = false;
 
-  // Parse -s option
+  // Parse -s / -w options
   const positional: string[] = [];
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '-s' && i + 1 < args.length) {
       separator = args[++i];
     } else if (args[i] === '-w') {
-      // -w (equal width) -- we'll handle padding
+      equalWidth = true;
     } else {
       positional.push(args[i]);
     }
@@ -61,7 +62,12 @@ const command: Command = async (ctx) => {
   }
 
   if (results.length > 0) {
-    ctx.stdout.write(results.join(separator) + '\n');
+    if (equalWidth && isInt) {
+      const maxLen = Math.max(...results.map(r => r.length));
+      ctx.stdout.write(results.map(r => r.padStart(maxLen, '0')).join(separator) + '\n');
+    } else {
+      ctx.stdout.write(results.join(separator) + '\n');
+    }
   }
 
   return 0;

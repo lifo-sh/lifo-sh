@@ -263,6 +263,9 @@ const command: Command = async (ctx) => {
       }
       throw e;
     }
+  } else if (ctx.stdin) {
+    content = await ctx.stdin.readAll();
+    fileName = '(stdin)';
   } else {
     ctx.stderr.write('Usage: less FILE\n');
     ctx.stderr.write('View file contents one screen at a time. q to quit, / to search.\n');

@@ -190,6 +190,7 @@ function pasteCut(s: State): void {
   s.cursorRow += s.cutBuffer.length;
   s.cursorCol = 0;
   s.preferredCol = 0;
+  s.cutBuffer = [];
   s.modified = true;
 }
 

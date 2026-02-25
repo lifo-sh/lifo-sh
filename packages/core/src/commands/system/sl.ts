@@ -81,7 +81,6 @@ const D51HEIGHT = 10;
 const D51FUNNEL = 7;
 const D51LENGTH = 53;
 const COAL_LENGTH = 30;
-const COAL_OFFSET = 54;
 const PATTERNS = 6;
 
 // ─── Smoke ───
@@ -130,6 +129,17 @@ const command: Command = async (ctx) => {
   // Train width is body + space + coal
   const trainWidth = D51LENGTH + 1 + COAL_LENGTH;
 
+  // Helper to erase a smoke particle's previous drawn position
+  function eraseSmoke(f: string, py: number, px: number, plen: number): string {
+    const col = px - Math.floor(plen / 2);
+    const startCol = Math.max(0, col);
+    const clearLen = Math.min(plen + 1, cols - startCol);
+    if (py >= 0 && py < rows && startCol < cols && clearLen > 0) {
+      f += moveTo(py, startCol) + ' '.repeat(clearLen);
+    }
+    return f;
+  }
+
   for (let x = cols - 1; ; x--) {
     if (ctx.signal.aborted) break;
     // Exit once train is fully off-screen and no smoke remains
@@ -170,7 +180,7 @@ const command: Command = async (ctx) => {
     }
 
     // Clear columns behind the train (erase trail)
-    const trailCol = x + D51LENGTH + COAL_OFFSET + COAL_LENGTH + 1;
+    const trailCol = x + trainWidth + 1;
     if (trailCol >= 0 && trailCol < cols) {
       for (let i = 0; i < D51HEIGHT; i++) {
         const row = midRow + i;
@@ -191,17 +201,6 @@ const command: Command = async (ctx) => {
         kind: smokeCounter % 2,
       });
       smokeCounter++;
-    }
-
-    // Helper to erase a smoke particle's previous drawn position
-    function eraseSmoke(f: string, py: number, px: number, plen: number): string {
-      const col = px - Math.floor(plen / 2);
-      const startCol = Math.max(0, col);
-      const clearLen = Math.min(plen + 1, cols - startCol);
-      if (py >= 0 && py < rows && startCol < cols && clearLen > 0) {
-        f += moveTo(py, startCol) + ' '.repeat(clearLen);
-      }
-      return f;
     }
 
     // Erase previous positions, then draw new positions

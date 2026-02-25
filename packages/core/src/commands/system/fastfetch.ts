@@ -356,6 +356,11 @@ Colors: black, red, green, yellow, blue, magenta, cyan, white,
     }
   }
 
+  const isKnownColor = COLOR_MAP[colorChoice] !== undefined ||
+    (!isNaN(parseInt(colorChoice, 10)) && parseInt(colorChoice, 10) >= 0 && parseInt(colorChoice, 10) <= 255);
+  if (!isKnownColor) {
+    ctx.stderr.write(`fastfetch: unknown color '${colorChoice}', using default (brightcyan)\n`);
+  }
   const accent = resolveColor(colorChoice);
 
   // Build logo
