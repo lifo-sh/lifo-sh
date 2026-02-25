@@ -12,7 +12,7 @@ importers:
         specifier: ^2.29.8
         version: 2.29.8(@types/node@22.19.11)
 
-  apps/vite-app:
+  apps/playground:
     dependencies:
       '@lifo-sh/core':
         specifier: workspace:*

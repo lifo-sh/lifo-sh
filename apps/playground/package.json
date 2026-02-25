@@ -1,5 +1,5 @@
 {
-  "name": "@lifo-sh/example-vite",
+  "name": "@lifo-sh/playground",
   "version": "0.0.0",
   "private": true,
   "type": "module",
