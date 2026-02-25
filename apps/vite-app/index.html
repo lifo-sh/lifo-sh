@@ -36,6 +36,7 @@
         <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="multi">Multi Terminal</button>
         <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="http">HTTP Server</button>
         <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="explorer">File Explorer</button>
+        <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="board">Kanban Board</button>
         <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="npm">npm</button>
         <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="cli">CLI (Node.js)</button>
       </div>
@@ -116,6 +117,13 @@
             <div class="flex-1 rounded-lg overflow-hidden border border-tokyo-border min-h-0" id="explorer-panel"></div>
             <div class="h-[200px] shrink-0 rounded-lg overflow-hidden border border-tokyo-border p-2 bg-tokyo-bg" id="explorer-terminal"></div>
           </div>
+        </div>
+
+        <!-- Kanban Board -->
+        <div id="out-board" class="output-panel">
+          <div class="text-[13px] font-semibold text-tokyo-fg-bright mb-0.5">Kanban Board</div>
+          <div class="text-[11px] text-tokyo-comment mb-3.5">Reactive task board driven by the VFS — drag cards between columns, edit details, or write task files directly for instant updates</div>
+          <div class="flex-1 rounded-lg overflow-hidden border border-tokyo-border min-h-0" id="board-container"></div>
         </div>
 
         <!-- Git -->

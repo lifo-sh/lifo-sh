@@ -1,6 +1,6 @@
 import './app.css';
 import '@xterm/xterm/css/xterm.css';
-import { Terminal, FileExplorer } from '@lifo-sh/ui';
+import { Terminal, FileExplorer, KanbanBoard } from '@lifo-sh/ui';
 import type { EditorProvider, EditorInstance } from '@lifo-sh/ui';
 
 declare global {
@@ -281,6 +281,43 @@ const CODE_LIFO_PKG = `\
 <span class="code-comment">// Configure CDN for ESM imports</span>
 <span class="code-string">export LIFO_CDN=https://esm.sh</span>`;
 
+const CODE_BOARD = `\
+<span class="code-keyword">import</span> { KanbanBoard } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/ui'</span>
+<span class="code-keyword">import</span> { Kernel } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/core'</span>
+
+<span class="code-keyword">const</span> kernel = <span class="code-keyword">new</span> <span class="code-fn">Kernel</span>()
+<span class="code-keyword">await</span> kernel.<span class="code-fn">boot</span>({ <span class="code-const">persist</span>: <span class="code-keyword">true</span> })
+
+<span class="code-comment">// Board reads/writes from /home/user/.kanban/</span>
+<span class="code-keyword">const</span> board = <span class="code-keyword">new</span> <span class="code-fn">KanbanBoard</span>(
+  document.<span class="code-fn">getElementById</span>(<span class="code-string">'board'</span>),
+  kernel.vfs,
+  {
+    <span class="code-const">assignees</span>: [
+      { <span class="code-const">id</span>: <span class="code-string">'user'</span>, <span class="code-const">name</span>: <span class="code-string">'You'</span>, <span class="code-const">type</span>: <span class="code-string">'human'</span> },
+      { <span class="code-const">id</span>: <span class="code-string">'bot-1'</span>, <span class="code-const">name</span>: <span class="code-string">'Bot 1'</span>, <span class="code-const">type</span>: <span class="code-string">'agent'</span> },
+    ]
+  }
+)
+
+<span class="code-comment">// Bot writes task → board updates instantly</span>
+<span class="code-keyword">const</span> task = <span class="code-fn">JSON</span>.<span class="code-fn">parse</span>(
+  <span class="code-keyword">await</span> kernel.vfs.<span class="code-fn">readFileString</span>(<span class="code-string">'/home/user/.kanban/tasks/abc.json'</span>)
+)
+task.status = <span class="code-string">'done'</span>
+task.updated_at = <span class="code-keyword">new</span> <span class="code-fn">Date</span>().<span class="code-fn">toISOString</span>()
+task.activity.<span class="code-fn">push</span>({
+  <span class="code-const">type</span>: <span class="code-string">'status_changed'</span>,
+  <span class="code-const">message</span>: <span class="code-string">'Moved to done'</span>,
+  <span class="code-const">by</span>: <span class="code-string">'bot-1'</span>,
+  <span class="code-const">timestamp</span>: <span class="code-keyword">new</span> <span class="code-fn">Date</span>().<span class="code-fn">toISOString</span>(),
+})
+kernel.vfs.<span class="code-fn">writeFile</span>(
+  <span class="code-string">'/home/user/.kanban/tasks/abc.json'</span>,
+  <span class="code-fn">JSON</span>.<span class="code-fn">stringify</span>(task, <span class="code-keyword">null</span>, <span class="code-const">2</span>)
+)
+<span class="code-comment">// Board re-renders via vfs.watch() automatically</span>`;
+
 const CODE_BUILD_PKG = `\
 <span class="code-comment">// Create a new lifo package</span>
 <span class="code-string">lifo init my-tool</span>
@@ -373,6 +410,7 @@ const codeSnippets: Record<string, string> = {
   multi: CODE_MULTI,
   http: CODE_HTTP,
   explorer: CODE_EXPLORER,
+  board: CODE_BOARD,
   git: CODE_GIT,
   ffmpeg: CODE_FFMPEG,
   npm: CODE_NPM,
@@ -383,7 +421,7 @@ const codeSnippets: Record<string, string> = {
 
 // ─── State ───
 
-type ExampleId = 'interactive' | 'headless' | 'multi' | 'http' | 'explorer' | 'git' | 'ffmpeg' | 'npm' | 'cli' | 'lifo-pkg' | 'build-pkg';
+type ExampleId = 'interactive' | 'headless' | 'multi' | 'http' | 'explorer' | 'board' | 'git' | 'ffmpeg' | 'npm' | 'cli' | 'lifo-pkg' | 'build-pkg';
 
 const examples: Record<ExampleId, { booted: boolean; boot: () => Promise<void> }> = {
   interactive:  { booted: false, boot: bootInteractive },
@@ -391,6 +429,7 @@ const examples: Record<ExampleId, { booted: boolean; boot: () => Promise<void> }
   multi:        { booted: false, boot: bootMulti },
   http:         { booted: false, boot: bootHttp },
   explorer:     { booted: false, boot: bootExplorer },
+  board:        { booted: false, boot: bootBoard },
   git:          { booted: false, boot: bootGit },
   ffmpeg:       { booted: false, boot: bootFfmpeg },
   npm:          { booted: false, boot: bootNpm },
@@ -928,6 +967,121 @@ async function bootExplorer() {
   await shell.sourceFile('/etc/profile');
   await shell.sourceFile(env.HOME + '/.bashrc');
   shell.start();
+}
+
+// ─── 5b. Kanban Board ───
+
+async function bootBoard() {
+  const kernel = new Kernel();
+  await kernel.boot({ persist: true });
+
+  const vfs = kernel.vfs;
+
+  // Seed example tasks spread across columns
+  const kanbanRoot = '/home/user/.kanban';
+  vfs.mkdir(kanbanRoot, { recursive: true });
+  vfs.mkdir(kanbanRoot + '/tasks', { recursive: true });
+
+  // Only seed if tasks dir is empty
+  let existingTasks: { name: string; type: string }[] = [];
+  try { existingTasks = vfs.readdir(kanbanRoot + '/tasks') as { name: string; type: string }[]; } catch { /* ignore */ }
+
+  if (existingTasks.filter((e) => e.name.endsWith('.json')).length === 0) {
+    const now = new Date().toISOString();
+    const seed = [
+      {
+        id: '11111111-0000-0000-0000-000000000001',
+        title: 'Set up CI pipeline',
+        description: 'Configure GitHub Actions for build, test, and deploy steps.',
+        status: 'inbox',
+        priority: 'high',
+        assignee: null,
+        assignee_type: null,
+        tags: ['devops', 'ci'],
+        created_at: now,
+        updated_at: now,
+        deliverables: [],
+        activity: [{ type: 'created', message: 'Task created', by: 'user', timestamp: now }],
+      },
+      {
+        id: '22222222-0000-0000-0000-000000000002',
+        title: 'Design onboarding flow',
+        description: 'Wireframes and copy for the new user onboarding experience.',
+        status: 'assigned',
+        priority: 'medium',
+        assignee: 'user',
+        assignee_type: 'human',
+        tags: ['design', 'ux'],
+        created_at: now,
+        updated_at: now,
+        deliverables: [],
+        activity: [
+          { type: 'created', message: 'Task created', by: 'user', timestamp: now },
+          { type: 'assigned', message: 'Assigned to You', by: 'user', timestamp: now },
+        ],
+      },
+      {
+        id: '33333333-0000-0000-0000-000000000003',
+        title: 'Implement Kanban VFS watch',
+        description: 'Board should update instantly when any agent writes a task file.',
+        status: 'in_progress',
+        priority: 'high',
+        assignee: 'bot-1',
+        assignee_type: 'agent',
+        tags: ['feature'],
+        created_at: now,
+        updated_at: now,
+        deliverables: [],
+        activity: [
+          { type: 'created', message: 'Task created', by: 'user', timestamp: now },
+          { type: 'assigned', message: 'Assigned to Bot 1', by: 'user', timestamp: now },
+        ],
+      },
+      {
+        id: '44444444-0000-0000-0000-000000000004',
+        title: 'Write unit tests',
+        description: 'Cover KanbanStore methods with unit tests.',
+        status: 'testing',
+        priority: 'medium',
+        assignee: 'bot-1',
+        assignee_type: 'agent',
+        tags: ['testing'],
+        created_at: now,
+        updated_at: now,
+        deliverables: [],
+        activity: [{ type: 'created', message: 'Task created', by: 'user', timestamp: now }],
+      },
+      {
+        id: '55555555-0000-0000-0000-000000000005',
+        title: 'Update README',
+        description: 'Document the Kanban Board API and bot integration pattern.',
+        status: 'done',
+        priority: 'low',
+        assignee: null,
+        assignee_type: null,
+        tags: ['docs'],
+        created_at: now,
+        updated_at: now,
+        deliverables: [],
+        activity: [
+          { type: 'created', message: 'Task created', by: 'user', timestamp: now },
+          { type: 'status_changed', message: 'Moved from review to done', by: 'user', timestamp: now },
+        ],
+      },
+    ];
+
+    for (const task of seed) {
+      vfs.writeFile(kanbanRoot + '/tasks/' + task.id + '.json', JSON.stringify(task, null, 2));
+    }
+  }
+
+  const container = document.getElementById('board-container')!;
+  new KanbanBoard(container, vfs, {
+    assignees: [
+      { id: 'user', name: 'You', type: 'human' },
+      { id: 'bot-1', name: 'Bot 1', type: 'agent' },
+    ],
+  });
 }
 
 // ─── 6. Git (via lifo-pkg-git) ───
