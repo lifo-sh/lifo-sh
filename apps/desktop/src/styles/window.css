@@ -1,0 +1,135 @@
+.lf-window {
+  position: absolute;
+  background: var(--dt-window-bg);
+  border: 1px solid var(--dt-window-border);
+  border-radius: var(--dt-window-radius);
+  box-shadow: var(--dt-window-shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 200px;
+  min-height: 150px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.lf-window.focused {
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.lf-window.maximized {
+  border-radius: 0;
+  border: none;
+}
+
+.lf-window.minimized {
+  display: none;
+}
+
+/* ── Titlebar ── */
+
+.lf-window-titlebar {
+  display: flex;
+  align-items: center;
+  height: var(--dt-titlebar-height);
+  padding: 0 12px;
+  background: rgba(40, 42, 60, 0.6);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  flex-shrink: 0;
+  cursor: default;
+}
+
+.lf-window-traffic {
+  display: flex;
+  gap: 8px;
+  margin-right: 12px;
+  flex-shrink: 0;
+}
+
+.lf-window-traffic-btn {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.lf-window-traffic-btn.close {
+  background: var(--dt-close);
+}
+
+.lf-window-traffic-btn.minimize {
+  background: var(--dt-minimize);
+}
+
+.lf-window-traffic-btn.maximize {
+  background: var(--dt-maximize);
+}
+
+/* Show glyphs on hover */
+.lf-window-traffic:hover .lf-window-traffic-btn::after {
+  font-size: 8px;
+  font-weight: bold;
+  color: rgba(0, 0, 0, 0.6);
+}
+
+.lf-window-traffic:hover .close::after {
+  content: '\00d7';
+  font-size: 11px;
+}
+
+.lf-window-traffic:hover .minimize::after {
+  content: '\2013';
+  font-size: 10px;
+}
+
+.lf-window-traffic:hover .maximize::after {
+  content: '\002B';
+  font-size: 10px;
+}
+
+/* Inactive window: grey dots */
+.lf-window:not(.focused) .lf-window-traffic-btn {
+  background: var(--dt-traffic-inactive);
+}
+
+.lf-window-title {
+  flex: 1;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dt-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+/* ── Content ── */
+
+.lf-window-content {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ── Resize Handles ── */
+
+.lf-window-resize {
+  position: absolute;
+  z-index: 1;
+}
+
+.lf-window-resize.n  { top: -3px; left: 10px; right: 10px; height: 6px; cursor: n-resize; }
+.lf-window-resize.s  { bottom: -3px; left: 10px; right: 10px; height: 6px; cursor: s-resize; }
+.lf-window-resize.e  { right: -3px; top: 10px; bottom: 10px; width: 6px; cursor: e-resize; }
+.lf-window-resize.w  { left: -3px; top: 10px; bottom: 10px; width: 6px; cursor: w-resize; }
+.lf-window-resize.nw { top: -3px; left: -3px; width: 12px; height: 12px; cursor: nw-resize; }
+.lf-window-resize.ne { top: -3px; right: -3px; width: 12px; height: 12px; cursor: ne-resize; }
+.lf-window-resize.sw { bottom: -3px; left: -3px; width: 12px; height: 12px; cursor: sw-resize; }
+.lf-window-resize.se { bottom: -3px; right: -3px; width: 12px; height: 12px; cursor: se-resize; }
