@@ -127,8 +127,7 @@ export function createDefaultRegistry(): CommandRegistry {
   registry.registerLazy('bc', () => import('./system/bc.js'));
   registry.registerLazy('man', () => import('./system/man.js'));
   registry.registerLazy('sha256sum', () => import('./system/sha256sum.js'));
-  registry.registerLazy('sl', () => import('./system/sl.js'));
-  registry.registerLazy('fastfetch', () => import('./system/fastfetch.js'));
+registry.registerLazy('fastfetch', () => import('./system/fastfetch.js'));
   registry.registerLazy('neofetch', () => import('./system/fastfetch.js'));
 
   return registry;

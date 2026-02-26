@@ -1,0 +1,52 @@
+{
+  "name": "lifo-pkg-sl",
+  "version": "0.5.1",
+  "description": "sl (steam locomotive) command for Lifo",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "lifo": {
+    "commands": {
+      "sl": "./dist/index.js"
+    }
+  },
+  "keywords": [
+    "lifo-pkg",
+    "sl",
+    "steam-locomotive",
+    "fun"
+  ],
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {},
+  "peerDependencies": {
+    "@lifo-sh/core": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@lifo-sh/core": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@lifo-sh/core": "workspace:*",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0",
+    "vite-plugin-dts": "^4.5.0"
+  }
+}

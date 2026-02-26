@@ -1,4 +1,4 @@
-import type { Command } from '../types.js';
+import type { Command } from '@lifo-sh/core';
 
 // Steam Locomotive - based on sl by Toyoda Masashi (mtoyoda/sl)
 // https://github.com/mtoyoda/sl
