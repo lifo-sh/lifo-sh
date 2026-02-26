@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { AgentConfig, KanbanTask, ImplementationOutput } from '../types.js';
 import { loadSkills } from '../skill-loader.js';
 import { callLLM, stripCodeFences } from '../../llm.js';
+import { loadWorkspaceContext } from '../../lifoboard.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const config: AgentConfig = JSON.parse(
@@ -11,6 +12,7 @@ export const config: AgentConfig = JSON.parse(
 );
 
 const skills = loadSkills(__dirname);
+const workspaceContext = loadWorkspaceContext();
 
 const SYSTEM_PROMPT = `You are an implementation agent for a Kanban task management system.
 
@@ -26,7 +28,7 @@ Rules:
 - Reference the plan steps when describing changes
 - Be specific about what was implemented
 - Respond ONLY with the JSON object, no markdown fences or extra text
-${skills}`;
+${skills}${workspaceContext}`;
 
 export async function handle(task: KanbanTask, taskPath: string, apiKey: string): Promise<void> {
   task.activity.push({

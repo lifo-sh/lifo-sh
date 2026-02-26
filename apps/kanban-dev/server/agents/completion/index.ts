@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { AgentConfig, KanbanTask, CompletionOutput } from '../types.js';
 import { loadSkills } from '../skill-loader.js';
 import { callLLM, stripCodeFences } from '../../llm.js';
+import { loadWorkspaceContext, writeMemoryEntry } from '../../lifoboard.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const config: AgentConfig = JSON.parse(
@@ -11,6 +12,7 @@ export const config: AgentConfig = JSON.parse(
 );
 
 const skills = loadSkills(__dirname);
+const workspaceContext = loadWorkspaceContext();
 
 const SYSTEM_PROMPT = `You are a completion agent for a Kanban task management system.
 
@@ -27,7 +29,7 @@ Rules:
 - Be concise and user-facing (not developer-facing)
 - List any documentation or system areas that were affected
 - Respond ONLY with the JSON object, no markdown fences or extra text
-${skills}`;
+${skills}${workspaceContext}`;
 
 export async function handle(task: KanbanTask, taskPath: string, apiKey: string): Promise<void> {
   // Skip if completion already done (avoid re-running on the same task)
@@ -82,11 +84,14 @@ export async function handle(task: KanbanTask, taskPath: string, apiKey: string)
     fs.writeFileSync(taskPath, JSON.stringify(task, null, 2));
     console.log(`[completion] task ${task.id}: changelog generated`);
 
-    // Write one-liner to memory so future planning agents have project context
+    // Write one-liner to data/memory (per-task file, used by planning agent)
     const memoryDir = path.resolve(__dirname, '../../../data/memory');
     fs.mkdirSync(memoryDir, { recursive: true });
     const memoryEntry = `${task.title} — ${completion.changelog}\n`;
     fs.writeFileSync(path.join(memoryDir, `${task.id}.txt`), memoryEntry);
+
+    // Write to ~/.lifoboard/memory (daily log + curate MEMORY.md every 10 tasks)
+    writeMemoryEntry(task.title, completion.changelog);
   } catch (err) {
     task.activity.push({
       type: 'agent_error',

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { AgentConfig, KanbanTask, TestOutput } from '../types.js';
 import { loadSkills } from '../skill-loader.js';
 import { callLLM, stripCodeFences } from '../../llm.js';
+import { loadWorkspaceContext } from '../../lifoboard.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const config: AgentConfig = JSON.parse(
@@ -11,6 +12,7 @@ export const config: AgentConfig = JSON.parse(
 );
 
 const skills = loadSkills(__dirname);
+const workspaceContext = loadWorkspaceContext();
 
 const SYSTEM_PROMPT = `You are a testing agent for a Kanban task management system.
 
@@ -28,7 +30,7 @@ Rules:
 - Check for completeness, correctness, and edge cases
 - Be thorough but pragmatic
 - Respond ONLY with the JSON object, no markdown fences or extra text
-${skills}`;
+${skills}${workspaceContext}`;
 
 export async function handle(task: KanbanTask, taskPath: string, apiKey: string): Promise<void> {
   task.activity.push({

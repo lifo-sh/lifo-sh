@@ -11,6 +11,7 @@ import { VFS, NativeFsProvider } from '@lifo-sh/core';
 import { Runner } from './runner.js';
 import type { QueueEntry } from './runner.js';
 import type { AgentModule, KanbanTask } from './agents/types.js';
+import { initLifoboard, LIFOBOARD_DIR } from './lifoboard.js';
 
 // Agent imports
 import * as planningAgent from './agents/planning/index.js';
@@ -27,10 +28,15 @@ const RUNNER_PATH = path.join(DATA_DIR, 'runner.json');
 // Ensure data directories exist on disk
 fs.mkdirSync(TASKS_DIR, { recursive: true });
 
+// Init ~/.lifoboard workspace (creates files only if missing)
+initLifoboard();
+
 // VFS backed by real disk.
 // vfs.writeFile('/kanban/tasks/foo.json', ...) → ./data/tasks/foo.json
+// vfs.readFile('/home/user/.lifoboard/workspace/SOUL.md') → ~/.lifoboard/workspace/SOUL.md
 const vfs = new VFS();
 vfs.mount('/kanban', new NativeFsProvider(DATA_DIR, fs));
+vfs.mount('/home/user/.lifoboard', new NativeFsProvider(LIFOBOARD_DIR, fs));
 
 // Init board.json if missing
 if (!vfs.exists('/kanban/board.json')) {

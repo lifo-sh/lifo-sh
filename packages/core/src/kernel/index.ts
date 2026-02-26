@@ -121,6 +121,20 @@ export class Kernel {
       this.vfs.writeFile('/home/user/.bashrc', DEFAULT_BASHRC);
     }
 
+    // Seed ~/.lifoboard stub — the real workspace lives at ~/.lifoboard on the host.
+    // The server mounts it at /home/user/.lifoboard via NativeFsProvider.
+    // In the browser terminal this is a read-only reference point.
+    if (!this.vfs.exists('/home/user/.lifoboard')) {
+      this.vfs.mkdir('/home/user/.lifoboard', { recursive: true });
+      this.vfs.mkdir('/home/user/.lifoboard/workspace', { recursive: true });
+      this.vfs.writeFile(
+        '/home/user/.lifoboard/README',
+        'This directory is managed by the Lifoboard server.\n' +
+        'The real workspace lives at ~/.lifoboard on the host filesystem.\n' +
+        'Edit workspace files there directly (e.g. ~/.lifoboard/workspace/USER.md).\n',
+      );
+    }
+
     // Install example files
     installSamples(this.vfs);
   }
