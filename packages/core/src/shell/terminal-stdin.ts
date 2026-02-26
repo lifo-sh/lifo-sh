@@ -9,10 +9,20 @@ export class TerminalStdin implements CommandInputStream {
   private closed = false;
   private resolver: ((value: string | null) => void) | null = null;
   private _waiting = false;
+  private _rawMode = false;
 
   /** True when a command has called read() and is waiting for input. */
   get isWaiting(): boolean {
     return this._waiting;
+  }
+
+  /** When true, the shell should bypass line editing and feed raw keypresses. */
+  get rawMode(): boolean {
+    return this._rawMode;
+  }
+
+  set rawMode(value: boolean) {
+    this._rawMode = value;
   }
 
   /** Shell calls this on Enter (with line + '\n'). */

@@ -216,7 +216,32 @@ export class Shell {
 
   start(): void {
     this.terminal.onData((data) => this.handleInput(data));
-    this.printPrompt();
+
+    // Source rc files on startup (like bash/zsh)
+    this.sourceRcFiles().then(() => {
+      this.printPrompt();
+    });
+  }
+
+  private async sourceRcFiles(): Promise<void> {
+    const home = this.env['HOME'] ?? '/home/user';
+
+    // Source system-wide profile first
+    await this.sourceFile('/etc/profile');
+
+    // Then user rc files (first one found wins, like bash)
+    const rcFiles = [
+      `${home}/.liforc`,
+      `${home}/.bashrc`,
+      `${home}/.profile`,
+    ];
+
+    for (const rc of rcFiles) {
+      if (this.vfs.exists(rc)) {
+        await this.sourceFile(rc);
+        break;
+      }
+    }
   }
 
   private printPrompt(): void {
@@ -240,6 +265,12 @@ export class Shell {
   }
 
   private handleInput(data: string): void {
+    // Raw mode: bypass all shell line editing, deliver keypresses directly
+    if (this.running && this.terminalStdin?.rawMode) {
+      this.terminalStdin.feed(data);
+      return;
+    }
+
     // ESC sequences
     if (data === '\x1b[D') { this.moveCursorLeft(); return; }
     if (data === '\x1b[C') { this.moveCursorRight(); return; }

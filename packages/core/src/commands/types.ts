@@ -18,6 +18,7 @@ export interface CommandContext {
   stderr: CommandOutputStream;
   signal: AbortSignal;
   stdin?: CommandInputStream;
+  setRawMode?: (enabled: boolean) => void;
 }
 
 export type Command = (ctx: CommandContext) => Promise<number>;
