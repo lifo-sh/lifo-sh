@@ -90,10 +90,10 @@ export function handleLogout(): void {
   process.exit(0);
 }
 
-export async function handleStatus(): Promise<void> {
+export async function handleWhoami(): Promise<void> {
   const token = readToken();
   if (!token) {
-    console.log('Not logged in. Run: lifo login');
+    console.log('not logged in');
     process.exit(0);
   }
 
@@ -102,12 +102,11 @@ export async function handleStatus(): Promise<void> {
       headers: { authorization: `Bearer ${token}` },
     });
     if (!res.ok) {
-      console.log('Not logged in (token revoked or invalid). Run: lifo login');
+      console.log('not logged in');
       process.exit(1);
     }
     const { email } = await res.json();
-    console.log(`Logged in as ${email}`);
-    console.log(`API key: ${token.slice(0, 12)}...`);
+    console.log(email);
   } catch {
     console.log('Could not reach auth server. Check your connection.');
     process.exit(1);

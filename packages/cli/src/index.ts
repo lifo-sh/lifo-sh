@@ -18,7 +18,7 @@ import {
   createCurlCommand,
 } from '@lifo-sh/core';
 import { NodeTerminal } from './NodeTerminal.js';
-import { TOKEN_PATH, readToken, handleLogin, handleLogout, handleStatus } from './auth.js';
+import { TOKEN_PATH, readToken, handleLogin, handleLogout, handleWhoami } from './auth.js';
 
 // ─── CLI argument parsing ───
 
@@ -44,7 +44,7 @@ async function main() {
   const cmd = process.argv[2];
   if (cmd === 'login') await handleLogin();  // falls through to boot shell
   if (cmd === 'logout') { handleLogout(); return; }
-  if (cmd === 'status') { await handleStatus(); return; }
+  if (cmd === 'whoami') { await handleWhoami(); return; }
 
   const opts = parseArgs(process.argv);
   const terminal = new NodeTerminal();
@@ -87,8 +87,9 @@ async function main() {
   env.PWD = MOUNT_PATH;
   env.LIFO_HOST_DIR = hostDir;
 
-  // 5. Load auth token from host filesystem (not exposed in shell env)
+  // 5. Load auth token from host filesystem
   const token = readToken();
+  if (token) env.LIFO_AUTH_TOKEN = token;
   env.LIFO_TOKEN_PATH = TOKEN_PATH;
 
   // 6. Create shell
@@ -123,7 +124,6 @@ async function main() {
   (shell as any).builtins.set(
     'exit',
     async () => {
-      terminal.write('logout\r\n');
       cleanup();
       return 0;
     },
