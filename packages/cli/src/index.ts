@@ -42,7 +42,7 @@ function parseArgs(argv: string[]): CliOptions {
 async function main() {
   // Handle top-level auth commands before booting the shell
   const cmd = process.argv[2];
-  if (cmd === 'login') await handleLogin();  // falls through to boot shell
+  if (cmd === 'login') { await handleLogin(); return; }
   if (cmd === 'logout') { handleLogout(); return; }
   if (cmd === 'whoami') { await handleWhoami(); return; }
 
