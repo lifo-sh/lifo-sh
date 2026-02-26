@@ -16,7 +16,6 @@ import {
   createHelpCommand,
   createNodeCommand,
   createCurlCommand,
-  createLogoutCommand,
 } from '@lifo-sh/core';
 import { NodeTerminal } from './NodeTerminal.js';
 import { TOKEN_PATH, readToken, handleLogin, handleLogout, handleStatus } from './auth.js';
@@ -45,7 +44,7 @@ async function main() {
   const cmd = process.argv[2];
   if (cmd === 'login') await handleLogin();  // falls through to boot shell
   if (cmd === 'logout') { handleLogout(); return; }
-  if (cmd === 'status') { handleStatus(); return; }
+  if (cmd === 'status') { await handleStatus(); return; }
 
   const opts = parseArgs(process.argv);
   const terminal = new NodeTerminal();
@@ -88,9 +87,8 @@ async function main() {
   env.PWD = MOUNT_PATH;
   env.LIFO_HOST_DIR = hostDir;
 
-  // 5. Load auth token from host filesystem
+  // 5. Load auth token from host filesystem (not exposed in shell env)
   const token = readToken();
-  if (token) env.LIFO_TOKEN = token;
   env.LIFO_TOKEN_PATH = TOKEN_PATH;
 
   // 6. Create shell
@@ -117,8 +115,6 @@ async function main() {
   };
   registry.register('npm', createNpmCommand(registry, npmShellExecute));
   registry.register('lifo', createLifoPkgCommand(registry, npmShellExecute));
-  registry.register('logout', createLogoutCommand(() => fs.unlinkSync(TOKEN_PATH), () => cleanup()));
-
   // 8. Source config files
   await shell.sourceFile('/etc/profile');
   await shell.sourceFile(env.HOME + '/.bashrc');

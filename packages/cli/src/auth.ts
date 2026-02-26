@@ -5,7 +5,7 @@ import * as readline from 'node:readline';
 
 export const TOKEN_PATH = path.join(os.homedir(), '.lifo-token');
 export const BASE_URL = process.env.LIFO_BASE_URL || 'http://localhost:3000';
-export const AUTH_URL = `${BASE_URL}/auth/cli`;
+export const AUTH_URL = `${BASE_URL}/auth/keys`;
 
 export function readToken(): string | null {
   try {
@@ -90,12 +90,27 @@ export function handleLogout(): void {
   process.exit(0);
 }
 
-export function handleStatus(): void {
+export async function handleStatus(): Promise<void> {
   const token = readToken();
-  if (token) {
-    console.log(`Logged in. API key: ${token.slice(0, 12)}...`);
-  } else {
+  if (!token) {
     console.log('Not logged in. Run: lifo login');
+    process.exit(0);
+  }
+
+  try {
+    const res = await fetch(`${BASE_URL}/api/me`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      console.log('Not logged in (token revoked or invalid). Run: lifo login');
+      process.exit(1);
+    }
+    const { email } = await res.json();
+    console.log(`Logged in as ${email}`);
+    console.log(`API key: ${token.slice(0, 12)}...`);
+  } catch {
+    console.log('Could not reach auth server. Check your connection.');
+    process.exit(1);
   }
   process.exit(0);
 }
