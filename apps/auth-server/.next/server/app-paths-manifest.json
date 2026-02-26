@@ -1,6 +1,0 @@
-{
-  "/api/me/route": "app/api/me/route.js",
-  "/auth/cli/page": "app/auth/cli/page.js",
-  "/login/page": "app/login/page.js",
-  "/register/page": "app/register/page.js"
-}
