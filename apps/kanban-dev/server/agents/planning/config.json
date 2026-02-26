@@ -1,0 +1,6 @@
+{
+  "name": "planning",
+  "description": "Breaks down a task into a concrete plan with steps",
+  "triggerStatus": "assigned",
+  "targetStatus": "in_progress"
+}

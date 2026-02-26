@@ -1,0 +1,10 @@
+{
+  "transitions": {
+    "assigned": { "agent": "planning", "target": "in_progress" },
+    "in_progress": { "agent": "progress", "target": "testing" },
+    "testing": { "agent": "testing", "target": "review" },
+    "review": { "agent": "review", "target": "done", "rejectTarget": "in_progress" },
+    "done": { "agent": "completion", "target": "done" }
+  },
+  "maxTransitionsPerEdge": 3
+}

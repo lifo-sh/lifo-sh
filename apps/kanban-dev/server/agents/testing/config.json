@@ -1,0 +1,6 @@
+{
+  "name": "testing",
+  "description": "Validates the implementation and reports issues",
+  "triggerStatus": "testing",
+  "targetStatus": "review"
+}

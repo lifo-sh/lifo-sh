@@ -1,15 +1,28 @@
 import type { VFS } from '@lifo-sh/core';
 
+export type RunnerStatusHandler = (status: unknown) => void;
+export type AgentActivityHandler = (activity: unknown) => void;
+
 export class KanbanSync {
   private vfs: VFS;
   private root: string;
   private ws: WebSocket | null = null;
   // IDs we just sent to the server — suppress the echo WS event
   private pendingSync = new Set<string>();
+  private onRunnerStatus: RunnerStatusHandler | null = null;
+  private onAgentActivity: AgentActivityHandler | null = null;
 
   constructor(vfs: VFS, root: string) {
     this.vfs = vfs;
     this.root = root;
+  }
+
+  setRunnerStatusHandler(handler: RunnerStatusHandler): void {
+    this.onRunnerStatus = handler;
+  }
+
+  setAgentActivityHandler(handler: AgentActivityHandler): void {
+    this.onAgentActivity = handler;
   }
 
   // Fetch all tasks from server → write into VFS
@@ -35,17 +48,29 @@ export class KanbanSync {
 
     this.ws.addEventListener('message', evt => {
       const msg = JSON.parse(evt.data as string) as {
-        type: string; id: string; content?: string;
+        type: string; id?: string; content?: string;
       };
 
-      if (this.pendingSync.has(msg.id)) {
+      // Handle runner-status messages
+      if (msg.type === 'runner-status') {
+        this.onRunnerStatus?.(msg);
+        return;
+      }
+
+      // Handle agent-activity messages
+      if (msg.type === 'agent-activity') {
+        this.onAgentActivity?.(msg);
+        return;
+      }
+
+      if (msg.id && this.pendingSync.has(msg.id)) {
         this.pendingSync.delete(msg.id);
         return; // echo from our own write — skip
       }
 
-      if (msg.type === 'task-updated' && msg.content) {
+      if (msg.type === 'task-updated' && msg.content && msg.id) {
         this.vfs.writeFile(this.root + '/tasks/' + msg.id + '.json', msg.content);
-      } else if (msg.type === 'task-deleted') {
+      } else if (msg.type === 'task-deleted' && msg.id) {
         try { this.vfs.unlink(this.root + '/tasks/' + msg.id + '.json'); } catch { /* gone */ }
       }
     });

@@ -1,0 +1,27 @@
+{
+  "id": "6dc85db1-fb5f-40f1-911c-ae47ee3e4b06",
+  "title": "Create a todo app in reactjs.",
+  "description": "",
+  "status": "assigned",
+  "priority": "none",
+  "assignee": null,
+  "assignee_type": null,
+  "tags": [],
+  "created_at": "2026-02-26T05:43:53.837Z",
+  "updated_at": "2026-02-26T05:44:08.778Z",
+  "deliverables": [],
+  "activity": [
+    {
+      "type": "created",
+      "message": "Task created",
+      "by": "user",
+      "timestamp": "2026-02-26T05:43:53.837Z"
+    },
+    {
+      "type": "status_changed",
+      "message": "Moved from inbox to assigned",
+      "by": "user",
+      "timestamp": "2026-02-26T05:44:08.778Z"
+    }
+  ]
+}

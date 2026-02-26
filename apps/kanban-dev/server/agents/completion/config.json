@@ -1,0 +1,6 @@
+{
+  "name": "completion",
+  "description": "Generates changelog and documentation for completed tasks",
+  "triggerStatus": "done",
+  "targetStatus": "done"
+}

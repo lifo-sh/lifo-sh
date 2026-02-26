@@ -1,0 +1,6 @@
+{
+  "name": "progress",
+  "description": "Generates implementation based on the plan",
+  "triggerStatus": "in_progress",
+  "targetStatus": "testing"
+}

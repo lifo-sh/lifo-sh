@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as http from 'node:http';
@@ -7,9 +8,21 @@ import { WebSocketServer, WebSocket } from 'ws';
 import chokidar from 'chokidar';
 import { VFS, NativeFsProvider } from '@lifo-sh/core';
 
+import { Runner } from './runner.js';
+import type { QueueEntry } from './runner.js';
+import type { AgentModule, KanbanTask } from './agents/types.js';
+
+// Agent imports
+import * as planningAgent from './agents/planning/index.js';
+import * as progressAgent from './agents/progress/index.js';
+import * as testingAgent from './agents/testing/index.js';
+import * as reviewAgent from './agents/review/index.js';
+import * as completionAgent from './agents/completion/index.js';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR  = path.resolve(__dirname, '../data');
 const TASKS_DIR = path.join(DATA_DIR, 'tasks');
+const RUNNER_PATH = path.join(DATA_DIR, 'runner.json');
 
 // Ensure data directories exist on disk
 fs.mkdirSync(TASKS_DIR, { recursive: true });
@@ -29,6 +42,147 @@ if (!vfs.exists('/kanban/board.json')) {
   }, null, 2));
 }
 
+// ─── Agent Registry ─────────────────────────────────────────────────────────
+
+const agents: AgentModule[] = [
+  planningAgent,
+  progressAgent,
+  testingAgent,
+  reviewAgent,
+  completionAgent,
+];
+
+// Map: triggerStatus → agent module
+const agentByTrigger = new Map<string, AgentModule>();
+for (const agent of agents) {
+  agentByTrigger.set(agent.config.triggerStatus, agent);
+  console.log(`[agents] registered: ${agent.config.name} (triggers on "${agent.config.triggerStatus}")`);
+}
+
+function findAgentForStatus(status: string): AgentModule | undefined {
+  return agentByTrigger.get(status);
+}
+
+// ─── Runner (control plane) ─────────────────────────────────────────────────
+
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
+if (!OPENROUTER_API_KEY || OPENROUTER_API_KEY === 'your-api-key-here') {
+  console.warn('[runner] ⚠ OPENROUTER_API_KEY not set — agents will fail. Set it in .env');
+}
+
+const runner = new Runner(RUNNER_PATH);
+
+// Track IDs currently being written by agents so chokidar doesn't re-trigger
+const pendingAgentWrites = new Set<string>();
+
+runner.setDispatcher(async (entry: QueueEntry) => {
+  const agent = agentByTrigger.get(entry.toStatus);
+  if (!agent) {
+    console.error(`[dispatch] no agent for status "${entry.toStatus}"`);
+    return;
+  }
+
+  // Broadcast agent-activity: started
+  broadcast({
+    type: 'agent-activity',
+    taskId: entry.taskId,
+    agent: agent.config.name,
+    action: 'started',
+    message: `${agent.config.name} agent started processing`,
+    timestamp: new Date().toISOString(),
+  });
+
+  try {
+    // Read fresh task data from disk
+    const taskData = fs.readFileSync(entry.taskPath, 'utf8');
+    const task: KanbanTask = JSON.parse(taskData);
+
+    // Mark this task as being written by an agent (suppress chokidar echo)
+    pendingAgentWrites.add(entry.taskId);
+
+    await agent.handle(task, entry.taskPath, OPENROUTER_API_KEY);
+
+    // Broadcast agent-activity: completed
+    broadcast({
+      type: 'agent-activity',
+      taskId: entry.taskId,
+      agent: agent.config.name,
+      action: 'completed',
+      message: `${agent.config.name} agent completed`,
+      timestamp: new Date().toISOString(),
+    });
+
+    // Read the updated task and broadcast it
+    try {
+      const updatedContent = fs.readFileSync(entry.taskPath, 'utf8');
+      broadcast({ type: 'task-updated', id: entry.taskId, content: updatedContent });
+
+      // Update status cache with the new status
+      const updatedTask = JSON.parse(updatedContent) as KanbanTask;
+      const newStatus = updatedTask.status;
+      statusCache.set(entry.taskId, newStatus);
+
+      // Clear agent write flag after broadcast
+      setTimeout(() => pendingAgentWrites.delete(entry.taskId), 500);
+
+      // Check if the agent moved the task to a new status that triggers another agent
+      if (newStatus !== entry.toStatus || (newStatus === 'done' && !updatedTask.metadata?.completion)) {
+        const nextAgent = findAgentForStatus(newStatus);
+        if (nextAgent) {
+          // Don't re-trigger the same agent for the same status (avoid completion loop)
+          if (newStatus === 'done' && updatedTask.metadata?.completion) return;
+
+          runner.requestDispatch({
+            taskId: entry.taskId,
+            taskPath: entry.taskPath,
+            fromStatus: entry.toStatus,
+            toStatus: newStatus,
+            agentName: nextAgent.config.name,
+            queuedAt: new Date().toISOString(),
+          });
+        }
+      }
+    } catch { /* file may have been deleted */ }
+  } catch (err) {
+    // Clear agent write flag
+    setTimeout(() => pendingAgentWrites.delete(entry.taskId), 500);
+
+    // Broadcast agent-activity: error
+    broadcast({
+      type: 'agent-activity',
+      taskId: entry.taskId,
+      agent: agent.config.name,
+      action: 'error',
+      message: `${agent.config.name} agent error: ${err instanceof Error ? err.message : String(err)}`,
+      timestamp: new Date().toISOString(),
+    });
+
+    // Read and broadcast the task (it may have error activity written)
+    try {
+      const content = fs.readFileSync(entry.taskPath, 'utf8');
+      broadcast({ type: 'task-updated', id: entry.taskId, content });
+    } catch { /* ignore */ }
+  }
+});
+
+// ─── Status Cache (for detecting status transitions) ────────────────────────
+
+const statusCache = new Map<string, string>();
+
+// Populate cache from existing task files
+try {
+  const entries = vfs.readdir('/kanban/tasks');
+  for (const entry of entries) {
+    if (entry.type === 'file' && entry.name.endsWith('.json')) {
+      try {
+        const task = JSON.parse(vfs.readFileString('/kanban/tasks/' + entry.name));
+        statusCache.set(task.id, task.status);
+      } catch { /* skip malformed */ }
+    }
+  }
+  console.log(`[status-cache] loaded ${statusCache.size} tasks`);
+} catch { /* no tasks dir yet */ }
+
 // ─── Express REST API ───────────────────────────────────────────────────────
 
 const app = express();
@@ -46,28 +200,91 @@ app.get('/api/tasks', (_req, res) => {
 });
 
 app.post('/api/tasks', (req, res) => {
-  const task = req.body as { id: string };
+  const task = req.body as { id: string; status?: string };
   const content = JSON.stringify(task, null, 2);
   pendingApiWrites.add(task.id);
   vfs.writeFile('/kanban/tasks/' + task.id + '.json', content);
+  // Update status cache
+  if (task.status) statusCache.set(task.id, task.status);
   broadcast({ type: 'task-updated', id: task.id, content });
   res.json(task);
 });
 
 app.put('/api/tasks/:id', (req, res) => {
-  const task = req.body as { id: string };
+  const task = req.body as { id: string; status?: string };
+  const id = req.params.id;
   const content = JSON.stringify(task, null, 2);
-  pendingApiWrites.add(req.params.id);
-  vfs.writeFile('/kanban/tasks/' + req.params.id + '.json', content);
-  broadcast({ type: 'task-updated', id: req.params.id, content });
+
+  // Detect status change from API writes (user drags card)
+  const oldStatus = statusCache.get(id);
+  pendingApiWrites.add(id);
+  vfs.writeFile('/kanban/tasks/' + id + '.json', content);
+
+  if (task.status) statusCache.set(id, task.status);
+  broadcast({ type: 'task-updated', id, content });
+
+  // If status changed, request agent dispatch
+  if (oldStatus && task.status && oldStatus !== task.status) {
+    const agent = findAgentForStatus(task.status);
+    if (agent) {
+      runner.requestDispatch({
+        taskId: id,
+        taskPath: path.join(TASKS_DIR, id + '.json'),
+        fromStatus: oldStatus,
+        toStatus: task.status,
+        agentName: agent.config.name,
+        queuedAt: new Date().toISOString(),
+      });
+    }
+  }
+
   res.json(task);
 });
 
 app.delete('/api/tasks/:id', (req, res) => {
-  pendingApiWrites.add(req.params.id);
-  try { vfs.unlink('/kanban/tasks/' + req.params.id + '.json'); } catch { /* already gone */ }
-  broadcast({ type: 'task-deleted', id: req.params.id });
+  const id = req.params.id;
+  pendingApiWrites.add(id);
+  try { vfs.unlink('/kanban/tasks/' + id + '.json'); } catch { /* already gone */ }
+  statusCache.delete(id);
+  broadcast({ type: 'task-deleted', id });
   res.json({ ok: true });
+});
+
+// ─── Runner API routes ──────────────────────────────────────────────────────
+
+app.get('/api/runner/status', (_req, res) => {
+  res.json(runner.getStatus());
+});
+
+app.post('/api/runner/start', (_req, res) => {
+  const status = runner.start();
+  broadcast({ type: 'runner-status', ...status });
+  res.json(status);
+});
+
+app.post('/api/runner/pause', (_req, res) => {
+  const status = runner.pause();
+  broadcast({ type: 'runner-status', ...status });
+  res.json(status);
+});
+
+app.post('/api/runner/stop', (_req, res) => {
+  const status = runner.stop();
+  broadcast({ type: 'runner-status', ...status });
+  res.json(status);
+});
+
+app.post('/api/runner/step', (_req, res) => {
+  const status = runner.step();
+  broadcast({ type: 'runner-status', ...status });
+  res.json(status);
+});
+
+app.delete('/api/runner/queue', (_req, res) => {
+  runner.clearQueue();
+  const status = runner.getStatus();
+  broadcast({ type: 'runner-status', ...status });
+  res.json(status);
 });
 
 // ─── HTTP + WebSocket server ────────────────────────────────────────────────
@@ -86,6 +303,8 @@ function broadcast(msg: object, skip?: WebSocket) {
 
 wss.on('connection', ws => {
   console.log('[ws] client connected');
+  // Send current runner status on connect
+  ws.send(JSON.stringify({ type: 'runner-status', ...runner.getStatus() }));
   ws.on('close', () => console.log('[ws] client disconnected'));
 });
 
@@ -104,7 +323,13 @@ chokidar.watch(TASKS_DIR, { ignoreInitial: true }).on('all', (event, filePath) =
     return; // came from our own REST API — don't echo back
   }
 
+  if (pendingAgentWrites.has(id)) {
+    // Agent write — don't broadcast (dispatcher already handled it)
+    return;
+  }
+
   if (event === 'unlink') {
+    statusCache.delete(id);
     broadcast({ type: 'task-deleted', id });
     return;
   }
@@ -112,10 +337,31 @@ chokidar.watch(TASKS_DIR, { ignoreInitial: true }).on('all', (event, filePath) =
   try {
     const content = fs.readFileSync(filePath, 'utf8');
     broadcast({ type: 'task-updated', id, content });
-  } catch { /* file deleted mid-read */ }
+
+    // Detect status change from external writes
+    const task = JSON.parse(content) as KanbanTask;
+    const oldStatus = statusCache.get(task.id);
+    statusCache.set(task.id, task.status);
+
+    if (oldStatus && oldStatus !== task.status) {
+      const agent = findAgentForStatus(task.status);
+      if (agent) {
+        runner.requestDispatch({
+          taskId: task.id,
+          taskPath: filePath,
+          fromStatus: oldStatus,
+          toStatus: task.status,
+          agentName: agent.config.name,
+          queuedAt: new Date().toISOString(),
+        });
+      }
+    }
+  } catch { /* file deleted mid-read or malformed JSON */ }
 });
 
 server.listen(3001, () => {
   console.log('[server] http://localhost:3001');
   console.log('[data]  ', TASKS_DIR);
+  console.log('[runner]', runner.getStatus().mode);
+  console.log('[agents]', agents.map(a => a.config.name).join(', '));
 });

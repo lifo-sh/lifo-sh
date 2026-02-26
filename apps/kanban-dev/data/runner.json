@@ -1,0 +1,12 @@
+{
+  "mode": "stopped",
+  "queue": [],
+  "stats": {
+    "totalForwarded": 0,
+    "totalDropped": 1,
+    "totalQueued": 0,
+    "lastEventAt": "2026-02-26T05:44:08.786Z"
+  },
+  "startedAt": null,
+  "pausedAt": null
+}
