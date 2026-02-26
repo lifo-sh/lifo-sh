@@ -12,56 +12,26 @@ importers:
         specifier: ^2.29.8
         version: 2.29.8(@types/node@22.19.11)
 
-  apps/auth-server:
+  apps/desktop:
     dependencies:
-      '@neondatabase/serverless':
-        specifier: ^0.10.0
-        version: 0.10.4
-      bcryptjs:
-        specifier: ^2.4.3
-        version: 2.4.3
-      dotenv:
-        specifier: ^17.3.1
-        version: 17.3.1
-      drizzle-orm:
-        specifier: ^0.38.0
-        version: 0.38.4(@neondatabase/serverless@0.10.4)(@types/pg@8.11.6)(@types/react@18.3.28)(react@18.3.1)
-      jose:
-        specifier: ^5.0.0
-        version: 5.10.0
-      nanoid:
-        specifier: ^5.0.0
-        version: 5.1.6
-      next:
-        specifier: ^15.0.0
-        version: 15.5.12(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      next-auth:
-        specifier: ^4.24.0
-        version: 4.24.13(next@15.5.12(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
-      react:
-        specifier: ^18.0.0
-        version: 18.3.1
-      react-dom:
-        specifier: ^18.0.0
-        version: 18.3.1(react@18.3.1)
+      '@lifo-sh/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@lifo-sh/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@xterm/xterm':
+        specifier: ^5.5.0
+        version: 5.5.0
     devDependencies:
-      '@types/bcryptjs':
-        specifier: ^2.4.6
-        version: 2.4.6
-      '@types/node':
-        specifier: ^22.0.0
-        version: 22.19.11
-      '@types/react':
-        specifier: ^18.0.0
-        version: 18.3.28
-      drizzle-kit:
-        specifier: ^0.30.0
-        version: 0.30.6
       typescript:
         specifier: ^5.7.0
         version: 5.9.3
+      vite:
+        specifier: ^6.0.0
+        version: 6.4.1(@types/node@22.19.11)(jiti@2.6.1)(lightningcss@1.31.1)(tsx@4.21.0)
 
-  apps/vite-app:
+  apps/playground:
     dependencies:
       '@lifo-sh/core':
         specifier: workspace:*
