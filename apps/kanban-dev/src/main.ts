@@ -46,8 +46,16 @@ async function boot() {
     const card = document.querySelector(`[data-task-id="${a.taskId}"]`) as HTMLElement | null;
     if (a.action === 'started') {
       card?.classList.add('agent-active');
+      // Show active agent in runner controls
+      let taskTitle = a.taskId.slice(0, 8) + '…';
+      try {
+        const raw = vfs.readFileString(`${root}/tasks/${a.taskId}.json`);
+        taskTitle = (JSON.parse(raw) as { title: string }).title;
+      } catch { /* ok */ }
+      runnerControls.setActiveAgent({ agent: a.agent, taskTitle });
     } else {
       card?.classList.remove('agent-active');
+      runnerControls.setActiveAgent(null);
       // Refresh panel if it's showing this task
       taskPanel.refreshIfShowing(a.taskId);
     }

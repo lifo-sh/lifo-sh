@@ -27,6 +27,7 @@ export interface KanbanTask {
     completion?: CompletionOutput;
   };
   transition_count?: Record<string, number>;
+  pipeline?: string[];   // optional custom status route, e.g. ["assigned","in_progress","done"]
 }
 
 export interface PlanOutput {
@@ -68,6 +69,7 @@ export interface AgentConfig {
   triggerStatus: string;
   targetStatus: string;
   rejectTarget?: string;
+  model?: string;
 }
 
 export interface AgentModule {

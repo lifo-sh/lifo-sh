@@ -61,6 +61,7 @@ export async function handle(task: KanbanTask, taskPath: string, apiKey: string)
       systemPrompt: SYSTEM_PROMPT,
       userMessage,
       apiKey,
+      model: config.model,
     });
 
     const completion: CompletionOutput = {
@@ -80,6 +81,12 @@ export async function handle(task: KanbanTask, taskPath: string, apiKey: string)
     task.updated_at = new Date().toISOString();
     fs.writeFileSync(taskPath, JSON.stringify(task, null, 2));
     console.log(`[completion] task ${task.id}: changelog generated`);
+
+    // Write one-liner to memory so future planning agents have project context
+    const memoryDir = path.resolve(__dirname, '../../../data/memory');
+    fs.mkdirSync(memoryDir, { recursive: true });
+    const memoryEntry = `${task.title} — ${completion.changelog}\n`;
+    fs.writeFileSync(path.join(memoryDir, `${task.id}.txt`), memoryEntry);
   } catch (err) {
     task.activity.push({
       type: 'agent_error',

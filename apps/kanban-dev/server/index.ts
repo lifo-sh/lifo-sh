@@ -117,6 +117,37 @@ runner.setDispatcher(async (entry: QueueEntry) => {
     const taskData = fs.readFileSync(entry.taskPath, 'utf8');
     const task: KanbanTask = JSON.parse(taskData);
 
+    // ── Server-side loop enforcement ─────────────────────────────────────────
+    // Check transition_count against pipeline.json maxTransitionsPerEdge.
+    // This is enforced in code, not just in the LLM prompt.
+    const pipelineConfig = JSON.parse(
+      fs.readFileSync(path.join(DATA_DIR, 'pipeline.json'), 'utf8')
+    ) as { maxTransitionsPerEdge: number };
+    const edgeKey = `${entry.fromStatus}→${entry.toStatus}`;
+    const transitionCount = task.transition_count?.[edgeKey] || 0;
+    if (transitionCount >= pipelineConfig.maxTransitionsPerEdge) {
+      broadcast({
+        type: 'server-log',
+        level: 'warn',
+        source: 'dispatcher',
+        message: `loop limit reached for task ${entry.taskId.slice(0, 8)}... on edge ${edgeKey} — forcing to done`,
+        meta: { taskId: entry.taskId, edgeKey, transitionCount },
+        timestamp: new Date().toISOString(),
+      });
+      task.status = 'done';
+      task.activity.push({
+        type: 'status_changed',
+        message: `Loop limit reached (${transitionCount} transitions on ${edgeKey}) — forced to done`,
+        by: 'dispatcher',
+        timestamp: new Date().toISOString(),
+      });
+      task.updated_at = new Date().toISOString();
+      fs.writeFileSync(entry.taskPath, JSON.stringify(task, null, 2));
+      broadcast({ type: 'task-updated', id: entry.taskId, content: JSON.stringify(task, null, 2) });
+      return;
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     // Mark this task as being written by an agent (suppress chokidar echo)
     pendingAgentWrites.add(entry.taskId);
 
@@ -147,8 +178,39 @@ runner.setDispatcher(async (entry: QueueEntry) => {
 
       // Update status cache with the new status
       const updatedTask = JSON.parse(updatedContent) as KanbanTask;
-      const newStatus = updatedTask.status;
+      let newStatus = updatedTask.status;
       statusCache.set(entry.taskId, newStatus);
+
+      // ── Custom pipeline redirect ──────────────────────────────────────────
+      // If the task has a custom pipeline, ensure the next status follows it.
+      // The agent may have moved to its hardcoded targetStatus — we override
+      // that here if it falls outside the task's declared route.
+      if (updatedTask.pipeline && updatedTask.pipeline.length > 0) {
+        const currentIdx = updatedTask.pipeline.indexOf(entry.toStatus);
+        const nextInPipeline = updatedTask.pipeline[currentIdx + 1];
+        if (nextInPipeline && newStatus !== nextInPipeline) {
+          broadcast({
+            type: 'server-log',
+            level: 'info',
+            source: 'dispatcher',
+            message: `pipeline redirect for task ${entry.taskId.slice(0, 8)}...: ${newStatus} → ${nextInPipeline}`,
+            meta: { taskId: entry.taskId },
+            timestamp: new Date().toISOString(),
+          });
+          updatedTask.status = nextInPipeline;
+          updatedTask.activity.push({
+            type: 'status_changed',
+            message: `Custom pipeline: redirected from ${newStatus} → ${nextInPipeline}`,
+            by: 'dispatcher',
+            timestamp: new Date().toISOString(),
+          });
+          newStatus = nextInPipeline;
+          statusCache.set(entry.taskId, newStatus);
+          fs.writeFileSync(entry.taskPath, JSON.stringify(updatedTask, null, 2));
+          broadcast({ type: 'task-updated', id: entry.taskId, content: JSON.stringify(updatedTask, null, 2) });
+        }
+      }
+      // ─────────────────────────────────────────────────────────────────────
 
       // Clear agent write flag after broadcast
       setTimeout(() => pendingAgentWrites.delete(entry.taskId), 500);

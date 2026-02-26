@@ -2,5 +2,6 @@
   "name": "testing",
   "description": "Validates the implementation and reports issues",
   "triggerStatus": "testing",
-  "targetStatus": "review"
+  "targetStatus": "review",
+  "model": "anthropic/claude-haiku-4-5"
 }

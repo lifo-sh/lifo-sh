@@ -31,6 +31,7 @@ export class RunnerControls {
   private label!: HTMLElement;
   private queueLabel!: HTMLElement;
   private statsLabel!: HTMLElement;
+  private activeAgentEl!: HTMLElement;
   private btnStart!: HTMLButtonElement;
   private btnPause!: HTMLButtonElement;
   private btnStop!: HTMLButtonElement;
@@ -53,6 +54,16 @@ export class RunnerControls {
   updateStatus(status: RunnerStatus): void {
     this.status = status;
     this.refresh();
+  }
+
+  /** Called externally when an agent starts or stops */
+  setActiveAgent(info: { agent: string; taskTitle: string } | null): void {
+    if (info) {
+      this.activeAgentEl.textContent = `↳ ${info.agent}  ·  "${info.taskTitle}"`;
+      this.activeAgentEl.style.display = 'block';
+    } else {
+      this.activeAgentEl.style.display = 'none';
+    }
   }
 
   destroy(): void {
@@ -111,6 +122,22 @@ export class RunnerControls {
     this.statsLabel = document.createElement('span');
     Object.assign(this.statsLabel.style, { marginLeft: 'auto', color: '#666', fontSize: '11px' });
     this.container.appendChild(this.statsLabel);
+
+    // Active agent line (shown below main row when agent is running)
+    this.activeAgentEl = document.createElement('div');
+    Object.assign(this.activeAgentEl.style, {
+      position: 'absolute',
+      bottom: '0',
+      left: '16px',
+      fontSize: '11px',
+      color: '#8be9fd',
+      fontFamily: 'monospace',
+      display: 'none',
+      paddingBottom: '2px',
+    });
+    this.container.appendChild(this.activeAgentEl);
+    this.container.style.position = 'relative';
+    this.container.style.paddingBottom = '18px';
 
     this.refresh();
   }

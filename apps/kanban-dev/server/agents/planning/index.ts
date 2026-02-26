@@ -42,12 +42,30 @@ export async function handle(task: KanbanTask, taskPath: string, apiKey: string)
   fs.writeFileSync(taskPath, JSON.stringify(task, null, 2));
 
   try {
-    // 2. Call LLM
-    const userMessage = `Task: ${task.title}\n\nDescription: ${task.description || '(no description provided)'}`;
+    // 2. Load project memory (last 5 completed tasks for context)
+    let memoryContext = '';
+    try {
+      const memoryDir = path.resolve(__dirname, '../../../data/memory');
+      if (fs.existsSync(memoryDir)) {
+        const files = fs.readdirSync(memoryDir)
+          .filter(f => f.endsWith('.txt'))
+          .map(f => ({ f, mtime: fs.statSync(path.join(memoryDir, f)).mtimeMs }))
+          .sort((a, b) => b.mtime - a.mtime)
+          .slice(0, 5)
+          .map(({ f }) => fs.readFileSync(path.join(memoryDir, f), 'utf8').trim());
+        if (files.length > 0) {
+          memoryContext = `\n\nRecent completed work in this project:\n${files.map(l => `- ${l}`).join('\n')}`;
+        }
+      }
+    } catch { /* memory is optional — never fail planning because of it */ }
+
+    // 3. Call LLM
+    const userMessage = `Task: ${task.title}\n\nDescription: ${task.description || '(no description provided)'}${memoryContext}`;
     const result = await callLLM({
       systemPrompt: SYSTEM_PROMPT,
       userMessage,
       apiKey,
+      model: config.model,
     });
 
     // 3. Parse result

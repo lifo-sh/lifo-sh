@@ -2,5 +2,6 @@
   "name": "progress",
   "description": "Generates implementation based on the plan",
   "triggerStatus": "in_progress",
-  "targetStatus": "testing"
+  "targetStatus": "testing",
+  "model": "anthropic/claude-sonnet-4-5"
 }

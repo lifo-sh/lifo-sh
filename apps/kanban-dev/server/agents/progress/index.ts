@@ -48,6 +48,7 @@ export async function handle(task: KanbanTask, taskPath: string, apiKey: string)
       systemPrompt: SYSTEM_PROMPT,
       userMessage,
       apiKey,
+      model: config.model,
     });
 
     const implementation: ImplementationOutput = {

@@ -2,5 +2,6 @@
   "name": "completion",
   "description": "Generates changelog and documentation for completed tasks",
   "triggerStatus": "done",
-  "targetStatus": "done"
+  "targetStatus": "done",
+  "model": "anthropic/claude-haiku-4-5"
 }

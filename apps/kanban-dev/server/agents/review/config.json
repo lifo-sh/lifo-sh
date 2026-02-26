@@ -3,5 +3,6 @@
   "description": "Reviews the implementation and approves or rejects",
   "triggerStatus": "review",
   "targetStatus": "done",
-  "rejectTarget": "in_progress"
+  "rejectTarget": "in_progress",
+  "model": "anthropic/claude-sonnet-4-5"
 }

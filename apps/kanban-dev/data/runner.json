@@ -2,10 +2,10 @@
   "mode": "running",
   "queue": [],
   "stats": {
-    "totalForwarded": 59,
+    "totalForwarded": 67,
     "totalDropped": 5,
     "totalQueued": 0,
-    "lastEventAt": "2026-02-26T12:22:10.143Z"
+    "lastEventAt": "2026-02-26T12:48:11.834Z"
   },
   "startedAt": "2026-02-26T12:18:42.899Z",
   "pausedAt": null

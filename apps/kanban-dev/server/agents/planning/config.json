@@ -2,5 +2,6 @@
   "name": "planning",
   "description": "Breaks down a task into a concrete plan with steps",
   "triggerStatus": "assigned",
-  "targetStatus": "in_progress"
+  "targetStatus": "in_progress",
+  "model": "anthropic/claude-opus-4-5"
 }
