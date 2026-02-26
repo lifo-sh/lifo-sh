@@ -66,7 +66,7 @@ function findAgentForStatus(status: string): AgentModule | undefined {
 // ─── Runner (control plane) ─────────────────────────────────────────────────
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
-if (!OPENROUTER_API_KEY || OPENROUTER_API_KEY === 'your-api-key-here') {
+if (!OPENROUTER_API_KEY || OPENROUTER_API_KEY === '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') {
   console.warn('[runner] ⚠ OPENROUTER_API_KEY not set — agents will fail. Set it in .env');
 }
 

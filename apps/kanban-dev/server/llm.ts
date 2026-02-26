@@ -12,7 +12,7 @@ export async function callLLM(options: LLMOptions): Promise<string> {
   const {
     systemPrompt,
     userMessage,
-    model = "anthropic/claude-sonnet-4.5",
+    model = "anthropic/claude-sonnet-4-5",
     apiKey,
     maxRetries = 3,
     retryDelayMs = 2000,
