@@ -28,6 +28,8 @@ import {
 } from '@lifo-sh/core';
 import gitCommand from 'lifo-pkg-git';
 import ffmpegCommand from 'lifo-pkg-ffmpeg';
+import openclawCommand, { AgentRunner, SessionManager, createTools, saveConfig } from 'lifo-pkg-openclaw';
+import type { AgentConfig, AgentContext, AgentEventHandler, TokenUsage } from 'lifo-pkg-openclaw';
 
 // ─── Code snippets for each example ───
 
@@ -328,6 +330,42 @@ module.exports = <span class="code-keyword">async function</span>(ctx, lifo) {
 <span class="code-string">cd my-tool && npm publish</span>
 <span class="code-comment">// Users install with: lifo install my-tool</span>`;
 
+const CODE_AGENT = `\
+<span class="code-keyword">import</span> {
+  AgentRunner, SessionManager,
+  createTools, saveConfig,
+} <span class="code-keyword">from</span> <span class="code-string">'lifo-pkg-openclaw'</span>
+<span class="code-keyword">import</span> { Kernel } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/core'</span>
+
+<span class="code-comment">// Boot kernel for VFS + shell</span>
+<span class="code-keyword">const</span> kernel = <span class="code-keyword">new</span> <span class="code-fn">Kernel</span>()
+<span class="code-keyword">await</span> kernel.<span class="code-fn">boot</span>()
+
+<span class="code-comment">// Create agent context</span>
+<span class="code-keyword">const</span> ctx = {
+  <span class="code-const">vfs</span>: kernel.vfs,
+  <span class="code-const">cwd</span>: <span class="code-string">'/home/user'</span>,
+  <span class="code-const">env</span>: kernel.<span class="code-fn">getDefaultEnv</span>(),
+  <span class="code-const">executeShell</span>: (cmd) => shell.<span class="code-fn">execute</span>(cmd),
+}
+
+<span class="code-comment">// Wire up agent</span>
+<span class="code-keyword">const</span> tools = <span class="code-fn">createTools</span>(ctx)
+<span class="code-keyword">const</span> sessions = <span class="code-keyword">new</span> <span class="code-fn">SessionManager</span>(kernel.vfs)
+<span class="code-keyword">const</span> runner = <span class="code-keyword">new</span> <span class="code-fn">AgentRunner</span>(
+  config, tools, sessions
+)
+
+<span class="code-comment">// Run with streaming events</span>
+<span class="code-keyword">const</span> result = <span class="code-keyword">await</span> runner.<span class="code-fn">run</span>(
+  <span class="code-string">"list files in /home/user"</span>,
+  {
+    <span class="code-fn">onPartialReply</span>(text) { <span class="code-comment">/* stream */</span> },
+    <span class="code-fn">onToolStart</span>(name, params) { <span class="code-comment">/* ... */</span> },
+    <span class="code-fn">onToolResult</span>(name, result) { <span class="code-comment">/* ... */</span> },
+  }
+)`;
+
 const CODE_CLI = `\
 <span class="code-comment">// Run Lifo as a CLI in your terminal</span>
 <span class="code-comment">// Install: npm i -g lifo-sh</span>
@@ -376,6 +414,7 @@ const codeSnippets: Record<string, string> = {
   git: CODE_GIT,
   ffmpeg: CODE_FFMPEG,
   npm: CODE_NPM,
+  agent: CODE_AGENT,
   cli: CODE_CLI,
   'lifo-pkg': CODE_LIFO_PKG,
   'build-pkg': CODE_BUILD_PKG,
@@ -394,6 +433,7 @@ const examples: Record<ExampleId, { booted: boolean; boot: () => Promise<void> }
   git:          { booted: false, boot: bootGit },
   ffmpeg:       { booted: false, boot: bootFfmpeg },
   npm:          { booted: false, boot: bootNpm },
+  agent:        { booted: false, boot: bootAgent },
   cli:          { booted: false, boot: bootCli },
   'lifo-pkg':   { booted: false, boot: bootLifoPkg },
   'build-pkg':  { booted: false, boot: bootBuildPkg },
@@ -1249,6 +1289,338 @@ async function bootBuildPkg() {
   <span style="color:#565f89">  - Depends on isomorphic-git</span>
   <span style="color:#565f89">  - Install: lifo install git</span>
   <span style="color:#565f89">  - Or import: import gitCommand from 'lifo-pkg-git'</span>`;
+}
+
+// ─── AI Agent ───
+
+let agentKernel: Kernel | null = null;
+let agentShell: Shell | null = null;
+let agentRunner: AgentRunner | null = null;
+let agentSessions: SessionManager | null = null;
+let agentAbortController: AbortController | null = null;
+let agentCumulativeTokens: TokenUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+
+const AGENT_STORAGE_KEY = 'lifo-agent-config';
+
+function getAgentSavedConfig(): { provider: string; model: string; apiKey: string } | null {
+  try {
+    const raw = localStorage.getItem(AGENT_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function setAgentStatus(text: string, color?: string) {
+  const el = document.getElementById('agent-status');
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = color || '';
+}
+
+function updateTokenDisplay() {
+  const el = document.getElementById('agent-tokens');
+  if (!el) return;
+  if (agentCumulativeTokens.totalTokens === 0) {
+    el.textContent = '';
+    return;
+  }
+  const fmt = (n: number) => n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
+  el.textContent = `${fmt(agentCumulativeTokens.inputTokens)} in / ${fmt(agentCumulativeTokens.outputTokens)} out`;
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+async function bootAgent() {
+  // Boot kernel
+  agentKernel = new Kernel();
+  await agentKernel.boot({ persist: false });
+
+  // Mount terminal in bottom panel
+  const termContainer = document.getElementById('agent-terminal')!;
+  const terminal = new Terminal(termContainer);
+  const registry = createDefaultRegistry();
+  bootLifoPackages(agentKernel.vfs, registry);
+
+  const env = agentKernel.getDefaultEnv();
+  agentShell = new Shell(terminal, agentKernel.vfs, registry, env);
+
+  const jobTable = agentShell.getJobTable();
+  registry.register('ps', createPsCommand(jobTable));
+  registry.register('top', createTopCommand(jobTable));
+  registry.register('kill', createKillCommand(jobTable));
+  registry.register('watch', createWatchCommand(registry));
+  registry.register('help', createHelpCommand(registry));
+
+  const agentNpmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
+    const result = await agentShell!.execute(cmd, {
+      cwd: cmdCtx.cwd,
+      env: cmdCtx.env,
+      onStdout: (data: string) => cmdCtx.stdout.write(data),
+      onStderr: (data: string) => cmdCtx.stderr.write(data),
+    });
+    return result.exitCode;
+  };
+  registry.register('npm', createNpmCommand(registry, agentNpmShellExecute));
+  registry.register('lifo', createLifoPkgCommand(registry, agentNpmShellExecute));
+  registry.register('openclaw', openclawCommand);
+
+  await agentShell.sourceFile('/etc/profile');
+  await agentShell.sourceFile(env.HOME + '/.bashrc');
+  agentShell.start();
+
+  // Check for saved config
+  const saved = getAgentSavedConfig();
+  const settingsEl = document.getElementById('agent-settings')!;
+  const mainEl = document.getElementById('agent-main')!;
+
+  if (saved && saved.apiKey) {
+    // Pre-fill form & skip to chat
+    (document.getElementById('agent-provider') as HTMLSelectElement).value = saved.provider;
+    (document.getElementById('agent-model') as HTMLInputElement).value = saved.model;
+    (document.getElementById('agent-apikey') as HTMLInputElement).value = saved.apiKey;
+    settingsEl.style.display = 'none';
+    mainEl.classList.remove('hidden');
+    mainEl.classList.add('flex');
+    initAgent(saved.provider, saved.model, saved.apiKey);
+  }
+
+  // Save & Start button
+  document.getElementById('agent-save-key')!.addEventListener('click', () => {
+    const provider = (document.getElementById('agent-provider') as HTMLSelectElement).value;
+    const model = (document.getElementById('agent-model') as HTMLInputElement).value.trim();
+    const apiKey = (document.getElementById('agent-apikey') as HTMLInputElement).value.trim();
+
+    if (!apiKey) {
+      (document.getElementById('agent-apikey') as HTMLInputElement).focus();
+      return;
+    }
+
+    localStorage.setItem(AGENT_STORAGE_KEY, JSON.stringify({ provider, model, apiKey }));
+    settingsEl.style.display = 'none';
+    mainEl.classList.remove('hidden');
+    mainEl.classList.add('flex');
+    initAgent(provider, model, apiKey);
+  });
+
+  // Settings button (re-open)
+  document.getElementById('agent-open-settings')!.addEventListener('click', () => {
+    mainEl.classList.remove('flex');
+    mainEl.classList.add('hidden');
+    settingsEl.style.display = '';
+  });
+
+  // New Session button
+  document.getElementById('agent-new-session')!.addEventListener('click', () => {
+    document.getElementById('agent-messages')!.innerHTML = '';
+    agentCumulativeTokens = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+    updateTokenDisplay();
+    setAgentStatus('Ready');
+    // Re-init runner with new session
+    const saved = getAgentSavedConfig();
+    if (saved) initAgent(saved.provider, saved.model, saved.apiKey);
+  });
+
+  // Input: Enter to send, Shift+Enter for newline
+  const inputEl = document.getElementById('agent-input') as HTMLTextAreaElement;
+  inputEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendAgentMessage();
+    }
+  });
+
+  // Auto-resize textarea
+  inputEl.addEventListener('input', () => {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + 'px';
+  });
+
+  // Send button
+  document.getElementById('agent-send')!.addEventListener('click', sendAgentMessage);
+
+  // Abort button
+  document.getElementById('agent-abort')!.addEventListener('click', () => {
+    agentAbortController?.abort();
+  });
+
+  // Provider change -> update default model
+  document.getElementById('agent-provider')!.addEventListener('change', () => {
+    const provider = (document.getElementById('agent-provider') as HTMLSelectElement).value;
+    const modelInput = document.getElementById('agent-model') as HTMLInputElement;
+    if (provider === 'anthropic') modelInput.value = 'claude-sonnet-4-5-20250514';
+    else if (provider === 'openai') modelInput.value = 'gpt-4o';
+    else if (provider === 'openrouter') modelInput.value = 'anthropic/claude-sonnet-4';
+  });
+}
+
+function initAgent(provider: string, model: string, apiKey: string) {
+  if (!agentKernel || !agentShell) return;
+
+  const vfs = agentKernel.vfs;
+
+  const config: AgentConfig = {
+    provider,
+    model,
+    apiKey,
+    maxTokens: 8192,
+    temperature: 0,
+    workspaceDir: '/home/user',
+  };
+
+  // Save config into VFS for openclaw internals
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- monorepo dist/src type mismatch
+  saveConfig(vfs as any, config);
+
+  const ctx: AgentContext = {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- monorepo dist/src type mismatch
+    vfs: vfs as any,
+    cwd: '/home/user',
+    env: agentKernel.getDefaultEnv(),
+    executeShell: async (cmd: string) => {
+      const result = await agentShell!.execute(cmd);
+      return result.stdout + result.stderr;
+    },
+  };
+
+  const tools = createTools(ctx);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- monorepo dist/src type mismatch
+  agentSessions = new SessionManager(vfs as any);
+  agentRunner = new AgentRunner(config, tools, agentSessions);
+  setAgentStatus('Ready', 'var(--color-tokyo-green)');
+}
+
+async function sendAgentMessage() {
+  const inputEl = document.getElementById('agent-input') as HTMLTextAreaElement;
+  const message = inputEl.value.trim();
+  if (!message || !agentRunner) return;
+
+  inputEl.value = '';
+  inputEl.style.height = 'auto';
+
+  const messagesEl = document.getElementById('agent-messages')!;
+  const sendBtn = document.getElementById('agent-send')!;
+  const abortBtn = document.getElementById('agent-abort')!;
+
+  // Add user bubble
+  const userBubble = document.createElement('div');
+  userBubble.className = 'chat-msg-user';
+  userBubble.textContent = message;
+  messagesEl.appendChild(userBubble);
+
+  // Create assistant bubble
+  const assistantBubble = document.createElement('div');
+  assistantBubble.className = 'chat-msg-assistant streaming';
+  messagesEl.appendChild(assistantBubble);
+
+  // Swap buttons
+  sendBtn.classList.add('hidden');
+  abortBtn.classList.remove('hidden');
+  setAgentStatus('Thinking...', 'var(--color-tokyo-orange)');
+
+  // Scroll to bottom
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+
+  agentAbortController = new AbortController();
+
+  const events: AgentEventHandler = {
+    onPartialReply(text: string) {
+      assistantBubble.textContent = text;
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    },
+
+    onToolStart(name: string, params: Record<string, unknown>) {
+      const card = document.createElement('div');
+      card.className = 'chat-tool-call executing';
+      card.dataset.toolName = name;
+
+      const paramStr = Object.entries(params)
+        .map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
+        .join('\n');
+
+      card.innerHTML = `<div class="tool-name">${escapeHtml(name)}</div>` +
+        (paramStr ? `<div class="tool-params">${escapeHtml(paramStr)}</div>` : '');
+
+      messagesEl.insertBefore(card, assistantBubble);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    },
+
+    onToolResult(name: string, result) {
+      // Find the last executing card for this tool
+      const cards = messagesEl.querySelectorAll('.chat-tool-call.executing');
+      for (let i = cards.length - 1; i >= 0; i--) {
+        const card = cards[i] as HTMLElement;
+        if (card.dataset.toolName === name) {
+          card.classList.remove('executing');
+          card.classList.add('completed');
+
+          // Show result preview
+          const resultText = result.content
+            .map((c: { type: string; text?: string; message?: string }) => {
+              if (c.type === 'text') return c.text || '';
+              if (c.type === 'error') return `Error: ${c.message || ''}`;
+              return '';
+            })
+            .join('')
+            .slice(0, 200);
+
+          if (resultText) {
+            const resultEl = document.createElement('div');
+            resultEl.className = 'tool-result';
+            resultEl.textContent = resultText + (resultText.length >= 200 ? '...' : '');
+            card.appendChild(resultEl);
+          }
+          break;
+        }
+      }
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    },
+
+    onError(error: Error) {
+      const errEl = document.createElement('div');
+      errEl.className = 'chat-msg-assistant';
+      errEl.style.color = 'var(--color-tokyo-orange)';
+      errEl.textContent = `Error: ${error.message}`;
+      messagesEl.appendChild(errEl);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    },
+
+    onComplete(_text: string, usage: TokenUsage) {
+      agentCumulativeTokens.inputTokens += usage.inputTokens;
+      agentCumulativeTokens.outputTokens += usage.outputTokens;
+      agentCumulativeTokens.totalTokens += usage.totalTokens;
+      updateTokenDisplay();
+
+      // Add token pill
+      const pill = document.createElement('div');
+      pill.className = 'chat-token-pill';
+      pill.textContent = `${usage.inputTokens} in / ${usage.outputTokens} out`;
+      messagesEl.appendChild(pill);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    },
+  };
+
+  try {
+    await agentRunner.run(message, events, agentAbortController.signal);
+    assistantBubble.classList.remove('streaming');
+    setAgentStatus('Ready', 'var(--color-tokyo-green)');
+  } catch (err) {
+    assistantBubble.classList.remove('streaming');
+    if ((err as Error).name === 'AbortError' || agentAbortController.signal.aborted) {
+      assistantBubble.textContent += ' (aborted)';
+      assistantBubble.style.opacity = '0.5';
+      setAgentStatus('Aborted', 'var(--color-tokyo-comment)');
+    } else {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      assistantBubble.textContent += `\n\nError: ${errMsg}`;
+      assistantBubble.style.color = 'var(--color-tokyo-orange)';
+      setAgentStatus('Error', 'var(--color-tokyo-orange)');
+    }
+  } finally {
+    agentAbortController = null;
+    sendBtn.classList.remove('hidden');
+    abortBtn.classList.add('hidden');
+  }
 }
 
 // ─── Boot ───

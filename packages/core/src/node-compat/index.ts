@@ -16,6 +16,13 @@ import * as timersModule from './timers.js';
 import * as cryptoModule from './crypto.js';
 import * as zlibModule from './zlib.js';
 import * as stringDecoderModule from './string_decoder.js';
+import { createNet } from './net.js';
+import * as dnsModule from './dns.js';
+import * as readlineModule from './readline.js';
+import * as workerThreadsModule from './worker_threads.js';
+import * as tlsModule from './tls.js';
+import * as vmModule from './vm.js';
+import * as moduleModule from './module.js';
 
 export interface NodeContext {
   vfs: VFS;
@@ -51,11 +58,40 @@ export function createModuleMap(ctx: NodeContext): Record<string, () => unknown>
     https: () => createHttp(ctx.portRegistry),
     child_process: () => createChildProcess(ctx.executeCapture),
     stream: () => streamModule,
+    'stream/promises': () => streamModule.promises,
+    'stream/web': () => ({
+      ReadableStream: globalThis.ReadableStream,
+      WritableStream: globalThis.WritableStream,
+      TransformStream: globalThis.TransformStream,
+    }),
     url: () => urlModule,
     timers: () => timersModule,
+    'timers/promises': () => ({
+      setTimeout: (ms: number, value?: unknown) => new Promise(resolve => globalThis.setTimeout(() => resolve(value), ms)),
+      setInterval: (ms: number) => {
+        // Return an async iterable that yields on each interval
+        let resolve: ((value: unknown) => void) | null = null;
+        const id = globalThis.setInterval(() => { if (resolve) resolve(undefined); }, ms);
+        return {
+          [Symbol.asyncIterator]() { return this; },
+          next() { return new Promise(r => { resolve = () => r({ value: undefined, done: false }); }); },
+          return() { globalThis.clearInterval(id); return Promise.resolve({ value: undefined, done: true as const }); },
+        };
+      },
+      setImmediate: (value?: unknown) => new Promise(resolve => globalThis.setTimeout(() => resolve(value), 0)),
+    }),
     crypto: () => cryptoModule,
     zlib: () => zlibModule,
     string_decoder: () => stringDecoderModule,
+    net: () => createNet(ctx.portRegistry),
+    dns: () => dnsModule,
+    'dns/promises': () => dnsModule.promises,
+    readline: () => readlineModule,
+    'readline/promises': () => readlineModule.promises,
+    worker_threads: () => workerThreadsModule,
+    tls: () => tlsModule,
+    vm: () => vmModule,
+    module: () => moduleModule,
     querystring: () => ({
       parse: (str: string) => Object.fromEntries(new URLSearchParams(str)),
       stringify: (obj: Record<string, string>) => new URLSearchParams(obj).toString(),
@@ -79,6 +115,14 @@ export function createModuleMap(ctx: NodeContext): Record<string, () => unknown>
       };
       return assert;
     },
+    console: () => globalThis.console,
+    // Aliases for node: prefix resolution
+    punycode: () => ({
+      encode: (input: string) => input,
+      decode: (input: string) => input,
+      toASCII: (input: string) => input,
+      toUnicode: (input: string) => input,
+    }),
   };
 }
 

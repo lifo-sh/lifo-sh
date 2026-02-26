@@ -88,3 +88,96 @@
     display: block;
   }
 }
+
+/* ── Components: Chat UI ── */
+@layer components {
+  .chat-msg-user {
+    align-self: flex-end;
+    max-width: 80%;
+    background: var(--color-tokyo-active);
+    color: var(--color-tokyo-fg-bright);
+    padding: 8px 12px;
+    border-radius: 12px 12px 2px 12px;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .chat-msg-assistant {
+    align-self: flex-start;
+    max-width: 90%;
+    color: var(--color-tokyo-fg);
+    padding: 4px 0;
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .chat-msg-assistant.streaming::after {
+    content: "\2588";
+    color: var(--color-tokyo-blue);
+    animation: blink-cursor 0.8s step-end infinite;
+  }
+
+  @keyframes blink-cursor {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  .chat-tool-call {
+    align-self: flex-start;
+    max-width: 90%;
+    border-left: 3px solid var(--color-tokyo-cyan);
+    background: var(--color-tokyo-bg-dark);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 11px;
+    line-height: 1.5;
+    font-family: var(--font-code);
+  }
+
+  .chat-tool-call.executing {
+    border-left-color: var(--color-tokyo-orange);
+  }
+
+  .chat-tool-call.completed {
+    border-left-color: var(--color-tokyo-green);
+  }
+
+  .chat-tool-call .tool-name {
+    font-weight: 600;
+    color: var(--color-tokyo-cyan);
+  }
+
+  .chat-tool-call .tool-params {
+    color: var(--color-tokyo-comment);
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 60px;
+    overflow: hidden;
+  }
+
+  .chat-tool-call .tool-result {
+    color: var(--color-tokyo-muted);
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 80px;
+    overflow: hidden;
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid var(--color-tokyo-border);
+  }
+
+  .chat-token-pill {
+    align-self: center;
+    background: var(--color-tokyo-bg-dark);
+    border: 1px solid var(--color-tokyo-border);
+    border-radius: 9999px;
+    padding: 2px 10px;
+    font-size: 10px;
+    color: var(--color-tokyo-comment);
+    font-family: var(--font-code);
+  }
+}

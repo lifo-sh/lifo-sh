@@ -45,6 +45,10 @@
         <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="ffmpeg">FFmpeg</button>
       </div>
       <div class="py-3 border-t border-tokyo-border">
+        <div class="text-[10px] font-semibold uppercase tracking-widest text-tokyo-comment px-4 pb-1.5">AI</div>
+        <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="agent">AI Agent</button>
+      </div>
+      <div class="py-3 border-t border-tokyo-border">
         <div class="text-[10px] font-semibold uppercase tracking-widest text-tokyo-comment px-4 pb-1.5">Develop</div>
         <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="lifo-pkg">Lifo Package Manager</button>
         <button class="sidebar-item block w-full px-4 py-2 bg-transparent border-none text-tokyo-muted text-[13px] text-left cursor-pointer transition-colors hover:bg-tokyo-hover hover:text-tokyo-fg-bright" data-example="build-pkg">Build Lifo Packages</button>
@@ -152,6 +156,61 @@
           <div class="text-[11px] text-tokyo-comment mb-3.5">Run Lifo in your terminal with <code>npx lifo-sh</code> -- mount host directories for real file access</div>
           <div class="flex flex-col gap-2.5 flex-1 min-h-0">
             <div id="cli-output" class="flex-1 bg-tokyo-bg-dark border border-tokyo-border rounded-md px-4 py-3.5 font-code text-xs leading-relaxed whitespace-pre-wrap text-tokyo-fg overflow-y-auto"></div>
+          </div>
+        </div>
+
+        <!-- AI Agent -->
+        <div id="out-agent" class="output-panel">
+          <!-- Settings overlay (shown when no API key) -->
+          <div id="agent-settings" class="flex flex-col gap-3 max-w-sm">
+            <div class="text-[13px] font-semibold text-tokyo-fg-bright">AI Agent Setup</div>
+            <div class="text-[11px] text-tokyo-comment mb-1">Configure your LLM provider to start chatting. Your key is stored in localStorage only.</div>
+            <label class="text-[11px] text-tokyo-muted">
+              Provider
+              <select id="agent-provider" class="mt-1 block w-full px-3 py-2 bg-tokyo-bg-dark border border-tokyo-border rounded text-xs text-tokyo-fg focus:outline-none focus:border-tokyo-blue">
+                <option value="anthropic">Anthropic</option>
+                <option value="openai">OpenAI</option>
+                <option value="openrouter">OpenRouter</option>
+              </select>
+            </label>
+            <label class="text-[11px] text-tokyo-muted">
+              Model
+              <input id="agent-model" type="text" value="claude-sonnet-4-5-20250514" placeholder="Model name" class="mt-1 block w-full px-3 py-2 bg-tokyo-bg-dark border border-tokyo-border rounded text-xs text-tokyo-fg focus:outline-none focus:border-tokyo-blue" />
+            </label>
+            <label class="text-[11px] text-tokyo-muted">
+              API Key
+              <input id="agent-apikey" type="password" placeholder="sk-..." class="mt-1 block w-full px-3 py-2 bg-tokyo-bg-dark border border-tokyo-border rounded text-xs text-tokyo-fg focus:outline-none focus:border-tokyo-blue" />
+            </label>
+            <button id="agent-save-key" class="self-start px-4 py-[7px] bg-tokyo-blue text-tokyo-bg text-xs font-semibold border-none rounded-[5px] cursor-pointer transition-colors hover:bg-tokyo-blue-bright mt-1">Save &amp; Start</button>
+          </div>
+
+          <!-- Main chat area (hidden until key saved) -->
+          <div id="agent-main" class="hidden flex-col flex-1 min-h-0 gap-2">
+            <!-- Chat header -->
+            <div class="flex items-center justify-between shrink-0">
+              <div class="flex items-center gap-2">
+                <div class="text-[13px] font-semibold text-tokyo-fg-bright">AI Agent</div>
+                <span id="agent-status" class="text-[10px] text-tokyo-comment">Ready</span>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span id="agent-tokens" class="text-[10px] text-tokyo-comment font-code"></span>
+                <button id="agent-new-session" class="px-2.5 py-1 text-[10px] font-medium rounded border border-tokyo-border text-tokyo-muted hover:text-tokyo-fg-bright hover:bg-tokyo-hover transition-colors cursor-pointer bg-transparent">New</button>
+                <button id="agent-open-settings" class="px-2.5 py-1 text-[10px] font-medium rounded border border-tokyo-border text-tokyo-muted hover:text-tokyo-fg-bright hover:bg-tokyo-hover transition-colors cursor-pointer bg-transparent">Settings</button>
+              </div>
+            </div>
+
+            <!-- Message list -->
+            <div id="agent-messages" class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2 py-2"></div>
+
+            <!-- Input bar -->
+            <div class="flex items-end gap-2 shrink-0">
+              <textarea id="agent-input" rows="1" placeholder="Send a message..." class="flex-1 px-3 py-2 bg-tokyo-bg-dark border border-tokyo-border rounded-lg text-xs text-tokyo-fg font-code resize-none focus:outline-none focus:border-tokyo-blue leading-relaxed max-h-[120px] overflow-y-auto"></textarea>
+              <button id="agent-send" class="px-3 py-2 bg-tokyo-blue text-tokyo-bg text-xs font-semibold border-none rounded-lg cursor-pointer transition-colors hover:bg-tokyo-blue-bright shrink-0">Send</button>
+              <button id="agent-abort" class="hidden px-3 py-2 bg-tokyo-orange text-tokyo-bg text-xs font-semibold border-none rounded-lg cursor-pointer transition-colors hover:opacity-80 shrink-0">Abort</button>
+            </div>
+
+            <!-- Terminal (shared VFS observability) -->
+            <div class="h-[180px] shrink-0 rounded-lg overflow-hidden border border-tokyo-border p-2 bg-tokyo-bg" id="agent-terminal"></div>
           </div>
         </div>
 

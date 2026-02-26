@@ -144,6 +144,28 @@ function parseFlags(flags: string | number): number {
   }
 }
 
+// ─── Dirent class ───
+
+class Dirent {
+  name: string;
+  private _isDir: boolean;
+  path?: string;
+
+  constructor(name: string, isDir: boolean, path?: string) {
+    this.name = name;
+    this._isDir = isDir;
+    this.path = path;
+  }
+
+  isFile(): boolean { return !this._isDir; }
+  isDirectory(): boolean { return this._isDir; }
+  isSymbolicLink(): boolean { return false; }
+  isBlockDevice(): boolean { return false; }
+  isCharacterDevice(): boolean { return false; }
+  isFIFO(): boolean { return false; }
+  isSocket(): boolean { return false; }
+}
+
 export function createFs(vfs: VFS, cwd: string) {
   // ─── File descriptor table ───
 
@@ -197,9 +219,12 @@ export function createFs(vfs: VFS, cwd: string) {
     vfs.mkdir(abs, { recursive: opts?.recursive });
   }
 
-  function readdirSync(path: string | URL, _options?: { encoding?: string; withFileTypes?: boolean }): string[] {
+  function readdirSync(path: string | URL, options?: { encoding?: string; withFileTypes?: boolean }): string[] | Dirent[] {
     const abs = resolvePath(cwd, path);
     const entries = vfs.readdir(abs);
+    if (options?.withFileTypes) {
+      return entries.map((e) => new Dirent(e.name, e.type === 'directory'));
+    }
     return entries.map((e) => e.name);
   }
 
@@ -582,7 +607,7 @@ export function createFs(vfs: VFS, cwd: string) {
     stat: async (path: string | URL) => statSync(path),
     lstat: async (path: string | URL) => lstatSync(path),
     mkdir: async (path: string | URL, options?: { recursive?: boolean }) => { mkdirSync(path, options); },
-    readdir: async (path: string | URL) => readdirSync(path),
+    readdir: async (path: string | URL, options?: { withFileTypes?: boolean }) => readdirSync(path, options),
     unlink: async (path: string | URL) => unlinkSync(path),
     rmdir: async (path: string | URL, options?: { recursive?: boolean }) => rmdirSync(path, options),
     rename: async (oldPath: string | URL, newPath: string | URL) => renameSync(oldPath, newPath),
@@ -628,6 +653,64 @@ export function createFs(vfs: VFS, cwd: string) {
     },
   };
 
+  // ─── rmSync ───
+
+  function rmSync(path: string | URL, options?: { recursive?: boolean; force?: boolean }): void {
+    const abs = resolvePath(cwd, path);
+    try {
+      const s = vfs.stat(abs);
+      if (s.type === 'directory') {
+        if (options?.recursive) {
+          vfs.rmdirRecursive(abs);
+        } else {
+          vfs.rmdir(abs);
+        }
+      } else {
+        vfs.unlink(abs);
+      }
+    } catch (e) {
+      if (options?.force && e instanceof VFSError && e.code === 'ENOENT') return;
+      throw e;
+    }
+  }
+
+  // ─── watchFile / unwatchFile stubs ───
+
+  function watchFile(_filename: string | URL, _optionsOrListener?: Record<string, unknown> | ((...args: unknown[]) => void), _listener?: (...args: unknown[]) => void): void {
+    // Stub - use watch() instead
+  }
+
+  function unwatchFile(_filename: string | URL, _listener?: (...args: unknown[]) => void): void {
+    // Stub
+  }
+
+  // ─── writeFile callback with options ───
+
+  function appendFile(path: string | URL, data: string | Uint8Array, optionsOrCb: string | { encoding?: string } | Callback<void>, cb?: Callback<void>): void {
+    const callback = typeof optionsOrCb === 'function' ? optionsOrCb : cb!;
+    wrapCallback(() => appendFileSync(path, data), callback);
+  }
+
+  function copyFile(src: string | URL, dest: string | URL, flagsOrCb: number | Callback<void>, cb?: Callback<void>): void {
+    const callback = typeof flagsOrCb === 'function' ? flagsOrCb : cb!;
+    wrapCallback(() => copyFileSync(src, dest), callback);
+  }
+
+  function chmod(path: string | URL, mode: number, cb: Callback<void>): void {
+    wrapCallback(() => chmodSync(path, mode), cb);
+  }
+
+  function realpath(path: string | URL, optionsOrCb: Record<string, unknown> | Callback<string>, cb?: Callback<string>): void {
+    const callback = typeof optionsOrCb === 'function' ? optionsOrCb : cb!;
+    wrapCallback(() => realpathSync(path), callback);
+  }
+
+  function rm(path: string | URL, optionsOrCb: { recursive?: boolean; force?: boolean } | Callback<void>, cb?: Callback<void>): void {
+    const callback = typeof optionsOrCb === 'function' ? optionsOrCb : cb!;
+    const options = typeof optionsOrCb === 'function' ? undefined : optionsOrCb;
+    wrapCallback(() => rmSync(path, options), callback);
+  }
+
   // ─── Constants ───
 
   const constants = {
@@ -658,6 +741,7 @@ export function createFs(vfs: VFS, cwd: string) {
     readdirSync,
     unlinkSync,
     rmdirSync,
+    rmSync,
     renameSync,
     copyFileSync,
     chmodSync,
@@ -679,6 +763,7 @@ export function createFs(vfs: VFS, cwd: string) {
     // Callback
     readFile,
     writeFile,
+    appendFile,
     stat,
     lstat,
     mkdir,
@@ -691,14 +776,22 @@ export function createFs(vfs: VFS, cwd: string) {
     close,
     read,
     fstat,
+    copyFile,
+    chmod,
+    realpath,
+    rm,
     // Streams
     createReadStream,
     createWriteStream,
     // Watch
     watch,
+    watchFile,
+    unwatchFile,
     // Promises
     promises,
     // Constants
     constants,
+    // Dirent class
+    Dirent,
   };
 }
