@@ -58,7 +58,8 @@ export { createHelpCommand } from './commands/system/help.js';
 export { createNodeCommand } from './commands/system/node.js';
 export { createCurlCommand } from './commands/net/curl.js';
 export { createLifoPkgCommand, bootLifoPackages } from './commands/system/lifo.js';
-export { createNpmCommand, createNpxCommand } from './commands/system/npm.js';
+export { createNpmCommand } from './commands/system/npm.js';
+export { createLogoutCommand } from './commands/system/logout.js';
 
 // Shell
 export { Shell } from './shell/Shell.js';

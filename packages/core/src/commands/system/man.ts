@@ -14,7 +14,7 @@ const PAGES: Record<string, { synopsis: string; description: string }> = {
   fg: { synopsis: 'fg [JOB_ID]', description: 'Move a background job to the foreground.' },
   bg: { synopsis: 'bg [JOB_ID]', description: 'Resume a stopped background job.' },
   history: { synopsis: 'history', description: 'Display the command history list.' },
-  source: { synopsis: 'source FILE', description: 'Read and execute commands from FILE in the current shell environment.' },
+  source: { synopsis: 'source FILE', description: 'Read and execute commands from FILE in the current shell environment. Shell sources /etc/profile and ~/.liforc on startup.' },
   alias: { synopsis: 'alias [NAME=VALUE...]', description: 'Define or display aliases. Without arguments, lists all aliases.' },
   unalias: { synopsis: 'unalias NAME...', description: 'Remove alias definitions.' },
 
@@ -93,6 +93,22 @@ const PAGES: Record<string, { synopsis: string; description: string }> = {
   gunzip: { synopsis: 'gunzip [-k] FILE...', description: 'Decompress gzip files. -k keep original.' },
   zip: { synopsis: 'zip [-r] ARCHIVE FILE...', description: 'Package and compress files. -r recursive.' },
   unzip: { synopsis: 'unzip [-lo] ARCHIVE', description: 'Extract files from a ZIP archive. -l list, -o overwrite.' },
+
+  // Text editors & pagers
+  nano: { synopsis: 'nano [FILE]', description: 'A simple text editor. ^O save, ^X exit, ^K cut line, ^U paste, ^W search, arrow keys to navigate.' },
+  less: { synopsis: 'less [FILE]', description: 'View file contents one screen at a time. j/k scroll, f/b page, /pattern search, n/N next/prev match, q quit.' },
+
+  // Text utilities (continued)
+  seq: { synopsis: 'seq [-s SEP] [FIRST [INCR]] LAST', description: 'Print a sequence of numbers from FIRST to LAST with optional INCRement. -s sets separator (default newline).' },
+  tac: { synopsis: 'tac [FILE...]', description: 'Concatenate and print files in reverse line order (opposite of cat).' },
+  base64: { synopsis: 'base64 [-d] [-w COLS] [FILE]', description: 'Base64 encode or decode data. -d decode, -w wrap encoded lines at COLS (default 76, 0 disables).' },
+  strings: { synopsis: 'strings [-n MIN] [FILE...]', description: 'Print sequences of printable characters from files. -n sets minimum string length (default 4).' },
+  sha256sum: { synopsis: 'sha256sum [-c FILE] [FILE...]', description: 'Compute or verify SHA-256 checksums. -c reads checksums from FILE and verifies them.' },
+
+  // Fun
+  sl: { synopsis: 'sl', description: 'Steam Locomotive. Displays a train animation. A classic punishment for mistyping ls.' },
+  fastfetch: { synopsis: 'fastfetch [--logo default|small|none] [--color COLOR]', description: 'Display system information with a custom Lifo logo. Config at ~/.config/fastfetch/config.json. Supports custom logos, colors (256-color), and module selection.' },
+  neofetch: { synopsis: 'neofetch', description: 'Alias for fastfetch. Display system information with a custom Lifo logo.' },
 
   // Node.js
   node: { synopsis: 'node [-e CODE] [FILE]', description: 'Execute JavaScript using the Node.js-compatible runtime.' },

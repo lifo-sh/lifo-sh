@@ -1,6 +1,6 @@
 {
   "name": "@lifo-sh/ui",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "Terminal UI for Lifo -- xterm.js wrapper with WebGL rendering",
   "license": "MIT",
   "repository": {

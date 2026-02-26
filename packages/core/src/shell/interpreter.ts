@@ -516,6 +516,9 @@ export class Interpreter {
               stderr,
               signal,
               stdin,
+              setRawMode: terminalStdin
+                ? (v: boolean) => { terminalStdin.rawMode = v; }
+                : undefined,
             };
 
             try {
