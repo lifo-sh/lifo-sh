@@ -7,7 +7,7 @@ import { createTopCommand } from './commands/system/top.js';
 import { createKillCommand } from './commands/system/kill.js';
 import { createWatchCommand } from './commands/system/watch.js';
 import { createHelpCommand } from './commands/system/help.js';
-import { createNpmCommand } from './commands/system/npm.js';
+import { createNpmCommand, createNpxCommand } from './commands/system/npm.js';
 import { createLifoPkgCommand, bootLifoPackages } from './commands/system/lifo.js';
 
 async function boot(): Promise<void> {
@@ -54,6 +54,7 @@ async function boot(): Promise<void> {
     return result.exitCode;
   };
   registry.register('npm', createNpmCommand(registry, npmShellExecute));
+  registry.register('npx', createNpxCommand(registry, npmShellExecute));
   registry.register('lifo', createLifoPkgCommand(registry, npmShellExecute));
 
   // 6. Source config files before showing prompt

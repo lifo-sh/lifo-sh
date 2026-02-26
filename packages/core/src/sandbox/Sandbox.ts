@@ -10,7 +10,7 @@ import { createWatchCommand } from '../commands/system/watch.js';
 import { createHelpCommand } from '../commands/system/help.js';
 import { createNodeCommand } from '../commands/system/node.js';
 import { createCurlCommand } from '../commands/net/curl.js';
-import { createNpmCommand } from '../commands/system/npm.js';
+import { createNpmCommand, createNpxCommand } from '../commands/system/npm.js';
 import { createLifoPkgCommand, bootLifoPackages } from '../commands/system/lifo.js';
 import type { VFS } from '../kernel/vfs/index.js';
 import { NativeFsProvider } from '../kernel/vfs/providers/NativeFsProvider.js';
@@ -134,6 +134,7 @@ export class Sandbox {
       return result.exitCode;
     };
     registry.register('npm', createNpmCommand(registry, npmShellExecute));
+    registry.register('npx', createNpxCommand(registry, npmShellExecute));
     registry.register('lifo', createLifoPkgCommand(registry, npmShellExecute));
 
     // 8. Source config files

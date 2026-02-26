@@ -813,6 +813,141 @@ export function createNpmCommand(registry: CommandRegistry, shellExecute?: Shell
  * Called directly by `lifo install` to avoid the shell.execute()
  * round-trip which can silently swallow output and errors.
  */
+// ─── npx ───
+
+const NPX_CACHE = '/tmp/.npx-cache/node_modules';
+
+function findBinScript(
+  vfs: VFS,
+  pkgDir: string,
+  binName: string | null,
+): string | null {
+  const pkgJsonPath = join(pkgDir, 'package.json');
+  if (!vfs.exists(pkgJsonPath)) return null;
+  try {
+    const pkg: PackageJson = JSON.parse(vfs.readFileString(pkgJsonPath));
+    const bins = getBinEntries(pkg);
+    if (Object.keys(bins).length === 0) return null;
+    // If a specific bin name is requested, look for it
+    if (binName && bins[binName]) return resolve(pkgDir, bins[binName]);
+    // Otherwise return the first entry
+    const first = Object.values(bins)[0];
+    return first ? resolve(pkgDir, first) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function createNpxCommand(
+  registry: CommandRegistry,
+  shellExecute?: ShellExecuteFn,
+): Command {
+  return async (ctx) => {
+    const rawArgs = ctx.args.slice();
+    let explicitPkg: string | null = null;
+
+    // Parse flags
+    const passthrough: string[] = [];
+    let i = 0;
+    while (i < rawArgs.length) {
+      const a = rawArgs[i];
+      if (a === '-y' || a === '--yes') {
+        i++;
+        continue;
+      }
+      if (a === '--package' && i + 1 < rawArgs.length) {
+        explicitPkg = rawArgs[i + 1];
+        i += 2;
+        continue;
+      }
+      if (a.startsWith('--package=')) {
+        explicitPkg = a.slice('--package='.length);
+        i++;
+        continue;
+      }
+      if (a === '--version' || a === '-v') {
+        ctx.stdout.write(NPM_VERSION + '\n');
+        return 0;
+      }
+      if (a === '--help' || a === '-h') {
+        ctx.stdout.write('Usage: npx [options] <package[@version]> [args...]\n\n');
+        ctx.stdout.write('Options:\n');
+        ctx.stdout.write('  -y, --yes              skip prompts\n');
+        ctx.stdout.write('  --package=<pkg>        explicit package name\n');
+        ctx.stdout.write('  -v, --version          print version\n');
+        ctx.stdout.write('  -h, --help             show this help\n');
+        return 0;
+      }
+      // First non-flag is the package spec (or bin name if --package was set)
+      break;
+    }
+
+    const spec = rawArgs[i];
+    if (!spec) {
+      ctx.stderr.write('npx: missing package or command\n');
+      ctx.stderr.write('Usage: npx <package[@version]> [args...]\n');
+      return 1;
+    }
+    // Everything after the spec is passthrough args
+    passthrough.push(...rawArgs.slice(i + 1));
+
+    const { name: parsedName, version } = parsePackageSpec(explicitPkg || spec);
+    // The bin name to look for: if --package was used, spec is the bin name; otherwise derive from package name
+    const binName = explicitPkg ? spec : parsedName.split('/').pop()!;
+
+    // 1. Check local node_modules
+    const localPkgDir = join(ctx.cwd, 'node_modules', parsedName);
+    let scriptPath = findBinScript(ctx.vfs, localPkgDir, binName);
+
+    // 2. Check global modules
+    if (!scriptPath) {
+      const globalPkgDir = join(GLOBAL_MODULES, parsedName);
+      scriptPath = findBinScript(ctx.vfs, globalPkgDir, binName);
+    }
+
+    // 3. Install to cache
+    if (!scriptPath) {
+      const cacheDir = join(NPX_CACHE, parsedName);
+      if (!ctx.vfs.exists(join(cacheDir, 'package.json'))) {
+        const npmRegistry = getRegistry(ctx.env);
+        const seen = new Set<string>();
+        try {
+          await installSinglePackage(
+            parsedName, version, NPX_CACHE, ctx.vfs, npmRegistry, ctx.signal,
+            ctx.stdout, ctx.stderr, false, registry, seen,
+          );
+        } catch (e) {
+          ctx.stderr.write(`npx: could not install ${parsedName}: ${e instanceof Error ? e.message : String(e)}\n`);
+          return 1;
+        }
+      }
+      scriptPath = findBinScript(ctx.vfs, cacheDir, binName);
+    }
+
+    if (!scriptPath) {
+      ctx.stderr.write(`npx: could not find executable for '${binName}'\n`);
+      return 1;
+    }
+
+    // 4. Execute via node (prefer direct invocation to avoid shell reentrance)
+    const nodeCmd = await registry.resolve('node');
+    if (nodeCmd) {
+      return nodeCmd({ ...ctx, args: [scriptPath, ...passthrough] });
+    }
+
+    // Fallback: shellExecute
+    if (shellExecute) {
+      const cmd = ['node', scriptPath, ...passthrough]
+        .map((s) => (s.includes(' ') ? `"${s}"` : s))
+        .join(' ');
+      return shellExecute(cmd, ctx);
+    }
+
+    ctx.stderr.write('npx: node command not available\n');
+    return 1;
+  };
+}
+
 export async function npmInstallGlobal(
   packageName: string,
   ctx: CommandContext,
