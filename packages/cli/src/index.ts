@@ -18,11 +18,12 @@ import {
   createCurlCommand,
 } from '@lifo-sh/core';
 import { NodeTerminal } from './NodeTerminal.js';
+import { TOKEN_PATH, readToken, handleLogin, handleLogout, handleWhoami } from './auth.js';
 
 // ─── CLI argument parsing ───
 
 interface CliOptions {
-  mount?: string;   // --mount <path> : host directory to mount
+  mount?: string;
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -30,7 +31,7 @@ function parseArgs(argv: string[]): CliOptions {
   for (let i = 2; i < argv.length; i++) {
     if ((argv[i] === '--mount' || argv[i] === '-m') && argv[i + 1]) {
       opts.mount = path.resolve(argv[i + 1]);
-      i++; // skip next arg
+      i++;
     }
   }
   return opts;
@@ -39,6 +40,12 @@ function parseArgs(argv: string[]): CliOptions {
 // ─── Main ───
 
 async function main() {
+  // Handle top-level auth commands before booting the shell
+  const cmd = process.argv[2];
+  if (cmd === 'login') { await handleLogin(); return; }
+  if (cmd === 'logout') { handleLogout(); return; }
+  if (cmd === 'whoami') { await handleWhoami(); return; }
+
   const opts = parseArgs(process.argv);
   const terminal = new NodeTerminal();
 
@@ -47,7 +54,6 @@ async function main() {
   let isTempSession = false;
 
   if (opts.mount) {
-    // Validate the provided path exists
     if (!fs.existsSync(opts.mount)) {
       console.error(`Error: mount path does not exist: ${opts.mount}`);
       process.exit(1);
@@ -58,7 +64,6 @@ async function main() {
     }
     hostDir = opts.mount;
   } else {
-    // Create a temp directory for this session
     hostDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lifo-'));
     isTempSession = true;
   }
@@ -77,15 +82,20 @@ async function main() {
   const registry = createDefaultRegistry();
   bootLifoPackages(kernel.vfs, registry);
 
-  // 4. Set up environment -- HOME and PWD point to the mounted directory
+  // 4. Set up environment
   const env = kernel.getDefaultEnv();
   env.PWD = MOUNT_PATH;
   env.LIFO_HOST_DIR = hostDir;
 
-  // 5. Create shell
+  // 5. Load auth token from host filesystem
+  const token = readToken();
+  if (token) env.LIFO_AUTH_TOKEN = token;
+  env.LIFO_TOKEN_PATH = TOKEN_PATH;
+
+  // 6. Create shell
   const shell = new Shell(terminal, kernel.vfs, registry, env);
 
-  // 6. Register factory commands that need shell/kernel references
+  // 7. Register factory commands
   const jobTable = shell.getJobTable();
   registry.register('ps', createPsCommand(jobTable));
   registry.register('top', createTopCommand(jobTable));
@@ -95,7 +105,6 @@ async function main() {
   registry.register('node', createNodeCommand(kernel.portRegistry));
   registry.register('curl', createCurlCommand(kernel.portRegistry));
 
-  // npm + lifo package manager (need shell for npm install)
   const npmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
     const result = await shell.execute(cmd, {
       cwd: cmdCtx.cwd,
@@ -107,22 +116,20 @@ async function main() {
   };
   registry.register('npm', createNpmCommand(registry, npmShellExecute));
   registry.register('lifo', createLifoPkgCommand(registry, npmShellExecute));
-
-  // 7. Source config files
+  // 8. Source config files
   await shell.sourceFile('/etc/profile');
   await shell.sourceFile(env.HOME + '/.bashrc');
 
-  // 8. Override exit to actually terminate the process
+  // 9. Override exit
   (shell as any).builtins.set(
     'exit',
     async () => {
-      terminal.write('logout\r\n');
       cleanup();
       return 0;
     },
   );
 
-  // 9. Display MOTD, then start interactive shell
+  // 10. Display MOTD
   const motd = kernel.vfs.readFileString('/etc/motd');
   terminal.write(motd.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n'));
 
@@ -134,15 +141,13 @@ async function main() {
 
   shell.start();
 
-  // Cleanup handler
   function cleanup() {
     terminal.destroy();
-    // Clean up temp directory if it was a temp session
     if (isTempSession) {
       try {
         fs.rmSync(hostDir, { recursive: true, force: true });
       } catch {
-        // Best effort cleanup
+        // best effort
       }
     }
     process.exit(0);
