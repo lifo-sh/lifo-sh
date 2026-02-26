@@ -72,6 +72,18 @@ if (!OPENROUTER_API_KEY || OPENROUTER_API_KEY === 'your-api-key-here') {
 
 const runner = new Runner(RUNNER_PATH);
 
+// Pipe runner logs to WS so the browser can see them
+runner.setLogger((level, source, message, meta) => {
+  broadcast({
+    type: 'server-log',
+    level,
+    source,
+    message,
+    meta: meta || {},
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // Track IDs currently being written by agents so chokidar doesn't re-trigger
 const pendingAgentWrites = new Set<string>();
 
@@ -89,6 +101,14 @@ runner.setDispatcher(async (entry: QueueEntry) => {
     agent: agent.config.name,
     action: 'started',
     message: `${agent.config.name} agent started processing`,
+    timestamp: new Date().toISOString(),
+  });
+  broadcast({
+    type: 'server-log',
+    level: 'info',
+    source: agent.config.name,
+    message: `agent started for task ${entry.taskId.slice(0, 8)}... (${entry.fromStatus} → ${entry.toStatus})`,
+    meta: { taskId: entry.taskId },
     timestamp: new Date().toISOString(),
   });
 
@@ -109,6 +129,14 @@ runner.setDispatcher(async (entry: QueueEntry) => {
       agent: agent.config.name,
       action: 'completed',
       message: `${agent.config.name} agent completed`,
+      timestamp: new Date().toISOString(),
+    });
+    broadcast({
+      type: 'server-log',
+      level: 'info',
+      source: agent.config.name,
+      message: `agent completed for task ${entry.taskId.slice(0, 8)}...`,
+      meta: { taskId: entry.taskId },
       timestamp: new Date().toISOString(),
     });
 
@@ -154,6 +182,14 @@ runner.setDispatcher(async (entry: QueueEntry) => {
       agent: agent.config.name,
       action: 'error',
       message: `${agent.config.name} agent error: ${err instanceof Error ? err.message : String(err)}`,
+      timestamp: new Date().toISOString(),
+    });
+    broadcast({
+      type: 'server-log',
+      level: 'error',
+      source: agent.config.name,
+      message: `agent error: ${err instanceof Error ? err.message : String(err)}`,
+      meta: { taskId: entry.taskId },
       timestamp: new Date().toISOString(),
     });
 
@@ -225,6 +261,14 @@ app.put('/api/tasks/:id', (req, res) => {
 
   // If status changed, request agent dispatch
   if (oldStatus && task.status && oldStatus !== task.status) {
+    broadcast({
+      type: 'server-log',
+      level: 'info',
+      source: 'status-change',
+      message: `task ${id.slice(0, 8)}... status: ${oldStatus} → ${task.status}`,
+      meta: { taskId: id, from: oldStatus, to: task.status },
+      timestamp: new Date().toISOString(),
+    });
     const agent = findAgentForStatus(task.status);
     if (agent) {
       runner.requestDispatch({

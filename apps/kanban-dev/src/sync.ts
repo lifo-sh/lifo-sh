@@ -2,6 +2,7 @@ import type { VFS } from '@lifo-sh/core';
 
 export type RunnerStatusHandler = (status: unknown) => void;
 export type AgentActivityHandler = (activity: unknown) => void;
+export type ServerLogHandler = (log: { level: string; source: string; message: string; meta?: Record<string, unknown>; timestamp: string }) => void;
 
 export class KanbanSync {
   private vfs: VFS;
@@ -11,6 +12,7 @@ export class KanbanSync {
   private pendingSync = new Set<string>();
   private onRunnerStatus: RunnerStatusHandler | null = null;
   private onAgentActivity: AgentActivityHandler | null = null;
+  private onServerLog: ServerLogHandler | null = null;
 
   constructor(vfs: VFS, root: string) {
     this.vfs = vfs;
@@ -23,6 +25,10 @@ export class KanbanSync {
 
   setAgentActivityHandler(handler: AgentActivityHandler): void {
     this.onAgentActivity = handler;
+  }
+
+  setServerLogHandler(handler: ServerLogHandler): void {
+    this.onServerLog = handler;
   }
 
   // Fetch all tasks from server → write into VFS
@@ -60,6 +66,12 @@ export class KanbanSync {
       // Handle agent-activity messages
       if (msg.type === 'agent-activity') {
         this.onAgentActivity?.(msg);
+        return;
+      }
+
+      // Handle server-log messages
+      if (msg.type === 'server-log') {
+        this.onServerLog?.(msg as unknown as Parameters<ServerLogHandler>[0]);
         return;
       }
 

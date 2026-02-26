@@ -23,6 +23,8 @@ export interface RunnerStatus {
   pausedAt: string | null;
 }
 
+export type LogFn = (level: 'info' | 'warn' | 'error', source: string, message: string, meta?: Record<string, unknown>) => void;
+
 export class Runner {
   mode: 'running' | 'paused' | 'stopped' | 'step' = 'stopped';
   queue: QueueEntry[] = [];
@@ -38,10 +40,20 @@ export class Runner {
   private configPath: string;
   private dispatchFn: ((entry: QueueEntry) => Promise<void>) | null = null;
   private draining = false;
+  private logFn: LogFn | null = null;
 
   constructor(configPath: string) {
     this.configPath = configPath;
     this.load();
+  }
+
+  setLogger(fn: LogFn): void {
+    this.logFn = fn;
+  }
+
+  private log(level: 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>): void {
+    console.log(`[runner] ${message}`);
+    this.logFn?.(level, 'runner', message, meta);
   }
 
   setDispatcher(fn: (entry: QueueEntry) => Promise<void>): void {
@@ -53,8 +65,7 @@ export class Runner {
     this.startedAt = new Date().toISOString();
     this.pausedAt = null;
     this.persist();
-    console.log('[runner] mode → running');
-    // Drain any queued entries
+    this.log('info', 'mode → running');
     this.drainQueue();
     return this.getStatus();
   }
@@ -63,7 +74,7 @@ export class Runner {
     this.mode = 'paused';
     this.pausedAt = new Date().toISOString();
     this.persist();
-    console.log('[runner] mode → paused');
+    this.log('info', 'mode → paused');
     return this.getStatus();
   }
 
@@ -75,18 +86,18 @@ export class Runner {
     this.startedAt = null;
     this.pausedAt = null;
     this.persist();
-    console.log(`[runner] mode → stopped (dropped ${dropped} queued)`);
+    this.log('info', `mode → stopped (dropped ${dropped} queued)`);
     return this.getStatus();
   }
 
   step(): RunnerStatus {
     if (this.mode !== 'paused' && this.mode !== 'step') {
-      console.log(`[runner] step ignored — mode is ${this.mode}`);
+      this.log('warn', `step ignored — mode is ${this.mode}`);
       return this.getStatus();
     }
     this.mode = 'step';
     this.persist();
-    console.log('[runner] stepping one entry');
+    this.log('info', 'stepping one entry');
     this.forwardOne();
     return this.getStatus();
   }
@@ -96,20 +107,20 @@ export class Runner {
 
     switch (this.mode) {
       case 'running':
-        console.log(`[runner] dispatching ${entry.agentName} for task ${entry.taskId}`);
+        this.log('info', `dispatching ${entry.agentName} for task ${entry.taskId.slice(0, 8)}...`, { taskId: entry.taskId, agent: entry.agentName });
         this.stats.totalForwarded++;
         this.persist();
         this.dispatch(entry);
         break;
       case 'paused':
       case 'step':
-        console.log(`[runner] queuing ${entry.agentName} for task ${entry.taskId} (mode=${this.mode})`);
+        this.log('info', `queuing ${entry.agentName} for task ${entry.taskId.slice(0, 8)}... (mode=${this.mode})`, { taskId: entry.taskId, agent: entry.agentName });
         this.queue.push(entry);
         this.stats.totalQueued++;
         this.persist();
         break;
       case 'stopped':
-        console.log(`[runner] dropping ${entry.agentName} for task ${entry.taskId} (stopped)`);
+        this.log('warn', `dropping ${entry.agentName} for task ${entry.taskId.slice(0, 8)}... (stopped)`, { taskId: entry.taskId, agent: entry.agentName });
         this.stats.totalDropped++;
         this.persist();
         break;
@@ -132,18 +143,18 @@ export class Runner {
     this.queue = [];
     this.stats.totalDropped += dropped;
     this.persist();
-    console.log(`[runner] queue cleared (${dropped} entries dropped)`);
+    this.log('info', `queue cleared (${dropped} entries dropped)`);
   }
 
   private async dispatch(entry: QueueEntry): Promise<void> {
     if (!this.dispatchFn) {
-      console.error('[runner] no dispatcher set!');
+      this.log('error', 'no dispatcher set!');
       return;
     }
     try {
       await this.dispatchFn(entry);
     } catch (err) {
-      console.error(`[runner] agent ${entry.agentName} failed:`, err);
+      this.log('error', `agent ${entry.agentName} failed: ${err instanceof Error ? err.message : String(err)}`, { taskId: entry.taskId, agent: entry.agentName });
     }
   }
 
@@ -164,7 +175,7 @@ export class Runner {
 
   private async forwardOne(): Promise<void> {
     if (this.queue.length === 0) {
-      console.log('[runner] step: queue empty, nothing to forward');
+      this.log('info', 'step: queue empty, nothing to forward');
       return;
     }
     const entry = this.queue.shift()!;

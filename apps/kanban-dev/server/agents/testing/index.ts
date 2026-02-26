@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { AgentConfig, KanbanTask, TestOutput } from '../types.js';
 import { loadSkills } from '../skill-loader.js';
-import { callLLM } from '../../llm.js';
+import { callLLM, stripCodeFences } from '../../llm.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const config: AgentConfig = JSON.parse(
@@ -56,7 +56,7 @@ export async function handle(task: KanbanTask, taskPath: string, apiKey: string)
     });
 
     const testResults: TestOutput = {
-      ...JSON.parse(result),
+      ...JSON.parse(stripCodeFences(result)),
       generatedAt: new Date().toISOString(),
     };
 

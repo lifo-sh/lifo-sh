@@ -2,6 +2,7 @@ import { Kernel } from '@lifo-sh/core';
 import { KanbanBoard } from '@lifo-sh/ui';
 import { KanbanSync } from './sync.js';
 import { RunnerControls } from './runner-controls.js';
+import { LogPanel } from './log-panel.js';
 
 async function boot() {
   // No IndexedDB — persist: false. State lives on disk via the server.
@@ -18,13 +19,27 @@ async function boot() {
   const runnerEl = document.getElementById('runner-controls')!;
   const runnerControls = new RunnerControls(runnerEl);
 
-  // Wire WS messages to RunnerControls
+  // Mount LogPanel
+  const logEl = document.getElementById('log-panel')!;
+  const logPanel = new LogPanel(logEl);
+
+  // Wire WS messages to RunnerControls + LogPanel
   sync.setRunnerStatusHandler((status) => {
     runnerControls.updateStatus(status as Parameters<typeof runnerControls.updateStatus>[0]);
   });
 
   sync.setAgentActivityHandler((activity) => {
-    console.log('[agent-activity]', activity);
+    const a = activity as { agent: string; action: string; message: string; timestamp: string };
+    logPanel.addLog({
+      level: a.action === 'error' ? 'error' : 'info',
+      source: a.agent,
+      message: a.message,
+      timestamp: a.timestamp,
+    });
+  });
+
+  sync.setServerLogHandler((log) => {
+    logPanel.addLog(log);
   });
 
   sync.connect();          // open WebSocket for live updates
