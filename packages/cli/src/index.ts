@@ -16,6 +16,7 @@ import {
   createHelpCommand,
   createNodeCommand,
   createCurlCommand,
+  createTunnelCommand,
 } from '@lifo-sh/core';
 import { NodeTerminal } from './NodeTerminal.js';
 
@@ -94,6 +95,7 @@ async function main() {
   registry.register('help', createHelpCommand(registry));
   registry.register('node', createNodeCommand(kernel.portRegistry));
   registry.register('curl', createCurlCommand(kernel.portRegistry));
+  registry.register('tunnel', createTunnelCommand(kernel.portRegistry));
 
   // npm + lifo package manager (need shell for npm install)
   const npmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
