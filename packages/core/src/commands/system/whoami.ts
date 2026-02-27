@@ -1,9 +1,10 @@
 import type { Command } from '../types.js';
 
-const AUTH_URL = process.env.LIFO_BASE_URL || 'http://localhost:3000';
+const AUTH_URL = process.env.LIFO_BASE_URL ||
+  (import.meta.env?.DEV ? 'http://localhost:3000' : 'https://lifo.sh');
 
 const command: Command = async (ctx) => {
-  const token = ctx.env.LIFO_TOKEN;
+  const token = ctx.env.LIFO_AUTH_TOKEN;
 
   if (!token) {
     ctx.stdout.write((ctx.env.USER || 'user') + '\n');

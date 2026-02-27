@@ -4,7 +4,7 @@
     "outDir": "dist",
     "rootDir": ".",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["vitest/globals"]
+    "types": ["vitest/globals", "vite/client"]
   },
   "include": ["src", "tests"]
 }

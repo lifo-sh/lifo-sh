@@ -4,7 +4,8 @@ import * as path from 'node:path';
 import * as readline from 'node:readline';
 
 export const TOKEN_PATH = path.join(os.homedir(), '.lifo-token');
-export const BASE_URL = process.env.LIFO_BASE_URL || 'http://localhost:3000';
+export const BASE_URL = process.env.LIFO_BASE_URL ||
+  (process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : 'https://lifo.sh');
 export const AUTH_URL = `${BASE_URL}/auth/keys`;
 
 export function readToken(): string | null {
