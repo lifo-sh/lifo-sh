@@ -59,7 +59,7 @@ import { DaemonTerminal } from './DaemonTerminal.js';
 import { TOKEN_PATH, readToken, handleLogin, handleLogout, handleWhoami } from './auth.js';
 import { SESSIONS_DIR, writeSession, deleteSession, readSession, listSessions } from './session.js';
 import { startDaemon } from './daemon.js';
-import { attachToSession } from './attach.js';
+import { attachToSession, attachViaTcp } from './attach.js';
 
 // ─── CLI argument parsing ──────────────────────────────────────────────────────
 
@@ -92,6 +92,8 @@ function getEffectiveArgs(): string[] {
 interface CliOptions {
   mount?: string;
   detach?: boolean;
+  /** TCP port for remote attach. Daemon listens on both Unix socket AND this port. */
+  port?: number;
   /** Internal flag — marks the process as a background daemon. Not user-facing. */
   daemon?: boolean;
   /** Internal flag — the session ID passed to the daemon by startDaemon(). */
@@ -106,6 +108,14 @@ function parseArgs(args: string[]): CliOptions {
       i++;
     } else if (args[i] === '--detach' || args[i] === '-d') {
       opts.detach = true;
+    } else if (args[i] === '--port' && args[i + 1]) {
+      const p = parseInt(args[i + 1]!, 10);
+      if (isNaN(p) || p < 1 || p > 65535) {
+        console.error(`Error: --port must be a number between 1 and 65535`);
+        process.exit(1);
+      }
+      opts.port = p;
+      i++;
     } else if (args[i] === '--daemon') {
       opts.daemon = true;
     } else if (args[i] === '--id' && args[i + 1]) {
@@ -126,7 +136,11 @@ function handleList(): void {
     return;
   }
   const now = Date.now();
-  console.log('ID       UPTIME   MOUNT                              STATUS');
+  const showPort = sessions.some(s => s.port !== undefined);
+  const header = showPort
+    ? 'ID       UPTIME   PORT   MOUNT                              STATUS'
+    : 'ID       UPTIME   MOUNT                              STATUS';
+  console.log(header);
   for (const s of sessions) {
     const uptimeMs = now - new Date(s.startedAt).getTime();
     const uptimeSec = Math.floor(uptimeMs / 1000);
@@ -138,7 +152,12 @@ function handleList(): void {
           : `${Math.floor(uptimeSec / 3600)}h`;
     const mount = s.mountPath.padEnd(34).slice(0, 34);
     const status = s.alive ? 'running' : 'dead';
-    console.log(`${s.id.padEnd(8)} ${uptime.padEnd(8)} ${mount} ${status}`);
+    if (showPort) {
+      const port = s.port !== undefined ? String(s.port).padEnd(6) : '      ';
+      console.log(`${s.id.padEnd(8)} ${uptime.padEnd(8)} ${port} ${mount} ${status}`);
+    } else {
+      console.log(`${s.id.padEnd(8)} ${uptime.padEnd(8)} ${mount} ${status}`);
+    }
   }
 }
 
@@ -185,7 +204,7 @@ function handleStop(id: string): void {
  *   SIGTERM / SIGHUP → close socket server + delete session files + exit.
  *   `exit` typed in the shell → disconnects all clients, VM keeps running.
  */
-async function runDaemon(id: string, mountPath: string): Promise<void> {
+async function runDaemon(id: string, mountPath: string, port?: number): Promise<void> {
   const socketPath = path.join(SESSIONS_DIR, `${id}.sock`);
 
   fs.mkdirSync(SESSIONS_DIR, { recursive: true });
@@ -258,27 +277,44 @@ async function runDaemon(id: string, mountPath: string): Promise<void> {
   const motd = kernel.vfs.readFileString('/etc/motd');
   const motdText = motd.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n');
 
-  const server = net.createServer((socket) => {
+  /** Shared client handler — identical logic for Unix and TCP clients. */
+  function handleClient(socket: net.Socket) {
     // Greet each newly attached client with the MOTD and mount info.
     const mountInfo = `\x1b[2mMounted: ${mountPath} -> ${MOUNT_PATH}\x1b[0m\r\n`;
     const welcome = JSON.stringify({ type: 'output', data: motdText + mountInfo }) + '\n';
     socket.write(welcome);
     daemonTerminal.addClient(socket);
-  });
+  }
+
+  const server = net.createServer(handleClient);
 
   // Start listening BEFORE writing the session file so the parent process
   // (polling for the socket) doesn't see a partially-ready daemon.
   await new Promise<void>((resolve) => server.listen(socketPath, resolve));
 
+  // Optionally also bind a TCP server so remote clients can attach directly
+  // without needing access to the Unix socket file.
+  // WARNING: unauthenticated — only use on trusted networks.
+  let tcpServer: net.Server | undefined;
+  if (port !== undefined) {
+    tcpServer = net.createServer(handleClient);
+    // Listen on '::' (IPv6 wildcard). On macOS this creates a dual-stack socket
+    // that also accepts IPv4 connections, so both `localhost` (::1) and
+    // `127.0.0.1` work. On Linux dual-stack depends on ipv6only sysctl, but
+    // the explicit IPv6 path still works for remote attach.
+    await new Promise<void>((resolve) => tcpServer!.listen(port, '::', resolve));
+  }
+
   // Now that the socket is ready, register ourselves in the session registry.
-  writeSession({ id, pid: process.pid, socketPath, mountPath, startedAt: new Date().toISOString() });
+  writeSession({ id, pid: process.pid, socketPath, mountPath, startedAt: new Date().toISOString(), port });
 
   shell.start();
 
   // ── Shutdown handler ──────────────────────────────────────────────────────
   function shutdown() {
-    server.close();       // stop accepting new connections
-    deleteSession(id);    // clean up ~/.lifo/sessions/<id>.{json,sock}
+    server.close();           // stop accepting new connections on Unix socket
+    tcpServer?.close();       // stop accepting new connections on TCP (if any)
+    deleteSession(id);        // clean up ~/.lifo/sessions/<id>.{json,sock}
     process.exit(0);
   }
 
@@ -409,9 +445,21 @@ async function main() {
   if (cmd === 'list') { handleList(); return; }
 
   if (cmd === 'attach') {
-    const id = args[1];
-    if (!id) { console.error('Usage: lifo attach <id>'); process.exit(1); }
-    await attachToSession(id);
+    const target = args[1];
+    if (!target) {
+      console.error('Usage: lifo attach <id>  OR  lifo attach <host>:<port>');
+      process.exit(1);
+    }
+    // Detect <host>:<port> pattern (e.g. "localhost:7777", "192.168.1.100:7777").
+    // A bare session ID is a short hex string like "a1b2c3" — it won't contain ":".
+    const tcpMatch = target.match(/^(.+):(\d+)$/);
+    if (tcpMatch) {
+      const host = tcpMatch[1]!;
+      const port = parseInt(tcpMatch[2]!, 10);
+      await attachViaTcp(host, port);
+    } else {
+      await attachToSession(target);
+    }
     return;
   }
 
@@ -425,10 +473,11 @@ async function main() {
   if (cmd === 'new') {
     // Boot a VM daemon and immediately attach to it in one step.
     // Equivalent to: lifo --detach && lifo attach <id>
-    const mountArg = args[1] === '--mount' || args[1] === '-m' ? args[2] : undefined;
+    // Supports: lifo new [--mount <path>] [--port <n>]
+    const newOpts = parseArgs(args.slice(1));
     let mountPath: string;
-    if (mountArg) {
-      const resolved = path.resolve(mountArg);
+    if (newOpts.mount) {
+      const resolved = newOpts.mount; // already path.resolve'd by parseArgs
       if (!fs.existsSync(resolved)) {
         console.error(`Error: mount path does not exist: ${resolved}`);
         process.exit(1);
@@ -442,8 +491,12 @@ async function main() {
       mountPath = fs.mkdtempSync(path.join(os.tmpdir(), 'lifo-'));
     }
     try {
-      const id = await startDaemon(mountPath);
-      console.log(`Started VM ${id}`);
+      const id = await startDaemon(mountPath, newOpts.port);
+      if (newOpts.port !== undefined) {
+        console.log(`Started VM ${id} (TCP port: ${newOpts.port})`);
+      } else {
+        console.log(`Started VM ${id}`);
+      }
       await attachToSession(id);
     } catch (err: any) {
       console.error(`Failed to start VM: ${err.message}`);
@@ -460,7 +513,7 @@ async function main() {
   if (opts.daemon) {
     if (!opts.id)    { console.error('--daemon requires --id');    process.exit(1); }
     if (!opts.mount) { console.error('--daemon requires --mount'); process.exit(1); }
-    await runDaemon(opts.id, opts.mount);
+    await runDaemon(opts.id, opts.mount, opts.port);
     return;
   }
 
@@ -485,11 +538,12 @@ async function main() {
     }
 
     try {
-      const id = await startDaemon(mountPath);
+      const id = await startDaemon(mountPath, opts.port);
+      const portSuffix = opts.port !== undefined ? `, TCP port: ${opts.port}` : '';
       if (isTempMount) {
-        console.log(`Started VM ${id} (temp mount: ${mountPath})`);
+        console.log(`Started VM ${id} (temp mount: ${mountPath}${portSuffix})`);
       } else {
-        console.log(`Started VM ${id} (mounted: ${mountPath})`);
+        console.log(`Started VM ${id} (mounted: ${mountPath}${portSuffix})`);
       }
     } catch (err: any) {
       console.error(`Failed to start daemon: ${err.message}`);

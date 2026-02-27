@@ -8,49 +8,41 @@
  * Data flow while attached:
  *
  *   Host stdin  ──► (raw mode keypresses)
- *                     └─► JSON { type:"input", data } ──► Unix socket ──► DaemonTerminal ──► Shell
+ *                     └─► JSON { type:"input", data } ──► socket ──► DaemonTerminal ──► Shell
  *
- *   Shell output ──► DaemonTerminal ──► Unix socket ──► JSON { type:"output", data }
- *                                                           └─► host stdout
+ *   Shell output ──► DaemonTerminal ──► socket ──► JSON { type:"output", data }
+ *                                                       └─► host stdout
  *
- *   SIGWINCH ──► JSON { type:"resize", cols, rows } ──► Unix socket ──► DaemonTerminal
+ *   SIGWINCH ──► JSON { type:"resize", cols, rows } ──► socket ──► DaemonTerminal
  *
  * Detach behaviour (matching Docker's UX):
  *   - Ctrl+D  → intercepted here, destroys the socket, VM keeps running.
  *   - `exit`  → handled by the daemon shell which calls disconnectAllClients(),
  *               also keeps the VM running (see runDaemon in index.ts).
  *   - `lifo stop <id>` → the only way to actually kill the VM.
+ *
+ * Transport:
+ *   Both Unix-socket attach (local) and TCP attach (remote) use the same
+ *   newline-delimited JSON protocol and the same terminal-proxy logic —
+ *   only the connection setup differs.
+ *
+ * Security note (TCP):
+ *   TCP attach is unauthenticated in this version — anyone who can reach
+ *   the port can attach to the VM. Suitable for local/trusted-network use
+ *   only (same as Docker without TLS).
  */
 
 import * as net from 'node:net';
 import { readSession } from './session.js';
 
 /**
- * Attaches the current host terminal to the VM identified by `id`.
+ * Core terminal-proxy loop: wires the host terminal to an already-connected
+ * socket (Unix or TCP). Resolves when the connection closes.
  *
- * Resolves when the connection closes (Ctrl+D, `exit`, or daemon shutdown).
- * Always restores stdin to its original state before returning.
+ * Always restores stdin to its original (cooked) mode before returning,
+ * even if an error occurs.
  */
-export async function attachToSession(id: string): Promise<void> {
-  const session = readSession(id);
-  if (!session) {
-    console.error(`No session found with id: ${id}`);
-    process.exit(1);
-  }
-
-  // Connect to the daemon's Unix socket.
-  let socket: net.Socket;
-  try {
-    socket = await new Promise<net.Socket>((resolve, reject) => {
-      const s = net.createConnection(session.socketPath);
-      s.once('connect', () => resolve(s));
-      s.once('error', reject);
-    });
-  } catch (err: any) {
-    console.error(`Could not connect to session ${id}: ${err.message}`);
-    process.exit(1);
-  }
-
+async function runAttachOnSocket(socket: net.Socket): Promise<void> {
   // Raw mode: pass keypresses (including Ctrl+C, arrow keys, etc.) through to
   // the daemon shell unchanged, rather than having Node intercept them.
   if (process.stdin.isTTY) {
@@ -119,4 +111,59 @@ export async function attachToSession(id: string): Promise<void> {
     // Socket error (daemon crashed, socket file deleted, etc.).
     socket.on('error', () => { cleanup(); resolve(); });
   });
+}
+
+/**
+ * Attaches the current host terminal to the VM identified by `id` via its
+ * Unix socket. Requires the session to exist in the local session registry.
+ *
+ * Resolves when the connection closes (Ctrl+D, `exit`, or daemon shutdown).
+ */
+export async function attachToSession(id: string): Promise<void> {
+  const session = readSession(id);
+  if (!session) {
+    console.error(`No session found with id: ${id}`);
+    process.exit(1);
+  }
+
+  let socket: net.Socket;
+  try {
+    socket = await new Promise<net.Socket>((resolve, reject) => {
+      const s = net.createConnection(session.socketPath);
+      s.once('connect', () => resolve(s));
+      s.once('error', reject);
+    });
+  } catch (err: any) {
+    console.error(`Could not connect to session ${id}: ${err.message}`);
+    process.exit(1);
+  }
+
+  await runAttachOnSocket(socket);
+}
+
+/**
+ * Attaches the current host terminal to a VM running on a remote (or local)
+ * host via a TCP connection. No session registry is needed — just host + port.
+ *
+ * Example: attachViaTcp('192.168.1.100', 7777)
+ *
+ * Resolves when the connection closes (Ctrl+D, `exit`, or daemon shutdown).
+ *
+ * Security note: this connection is unauthenticated. Only use on trusted
+ * networks. A future version may add a shared-secret token.
+ */
+export async function attachViaTcp(host: string, port: number): Promise<void> {
+  let socket: net.Socket;
+  try {
+    socket = await new Promise<net.Socket>((resolve, reject) => {
+      const s = net.createConnection(port, host);
+      s.once('connect', () => resolve(s));
+      s.once('error', reject);
+    });
+  } catch (err: any) {
+    console.error(`Could not connect to ${host}:${port}: ${err.message}`);
+    process.exit(1);
+  }
+
+  await runAttachOnSocket(socket);
 }

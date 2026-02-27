@@ -70,20 +70,24 @@ function getSpawnExecutable(): { executable: string; prefixArgs: string[] } {
  *
  * @param mountPath  Absolute path on the host to mount at /mnt/host inside
  *                   the VM. Must already exist.
+ * @param port       Optional TCP port to also listen on (in addition to the
+ *                   Unix socket). Enables remote `lifo attach <host>:<port>`.
  * @returns          The session ID (hex string) once the daemon is ready.
  * @throws           If the daemon fails to become ready within 5 seconds.
  */
-export async function startDaemon(mountPath: string): Promise<string> {
+export async function startDaemon(mountPath: string, port?: number): Promise<string> {
   const id = generateId();
   const socketPath = path.join(SESSIONS_DIR, `${id}.sock`);
 
   const { executable, prefixArgs } = getSpawnExecutable();
 
+  const extraArgs = port !== undefined ? ['--port', String(port)] : [];
+
   // Spawn the daemon detached with all stdio ignored so the parent can exit
   // freely without the child being affected.
   const child = cp.spawn(
     executable,
-    [...prefixArgs, process.argv[1]!, '--daemon', '--id', id, '--mount', mountPath],
+    [...prefixArgs, process.argv[1]!, '--daemon', '--id', id, '--mount', mountPath, ...extraArgs],
     {
       detached: true,
       stdio: 'ignore',   // daemon has no terminal

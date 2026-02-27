@@ -28,6 +28,13 @@ export interface Session {
   mountPath: string;
   /** ISO-8601 timestamp of when the daemon started. */
   startedAt: string;
+  /**
+   * TCP port the daemon is also listening on (when started with --port).
+   * Undefined for Unix-socket-only daemons. Allows remote attach via TCP.
+   * WARNING: TCP attach is unauthenticated — anyone who can reach this port
+   * can attach to the VM. Suitable for local/trusted-network use only.
+   */
+  port?: number;
 }
 
 /** Root directory for all session files on the host. Created on demand. */
