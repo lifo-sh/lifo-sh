@@ -10,7 +10,13 @@ import { createWatchCommand } from '../commands/system/watch.js';
 import { createHelpCommand } from '../commands/system/help.js';
 import { createNodeCommand } from '../commands/system/node.js';
 import { createCurlCommand } from '../commands/net/curl.js';
+import { createTunnelCommandV2 } from '../commands/net/tunnel-v2.js';
 import { createNpmCommand } from '../commands/system/npm.js';
+import { createIfconfigCommand } from '../commands/net/ifconfig.js';
+import { createRouteCommand } from '../commands/net/route.js';
+import { createNetstatCommand } from '../commands/net/netstat.js';
+import { createHostCommand } from '../commands/net/host.js';
+import { createIPCommand } from '../commands/net/ip.js';
 import { createLifoPkgCommand, bootLifoPackages } from '../commands/system/lifo.js';
 import type { VFS } from '../kernel/vfs/index.js';
 import { NativeFsProvider } from '../kernel/vfs/providers/NativeFsProvider.js';
@@ -121,7 +127,15 @@ export class Sandbox {
     registry.register('watch', createWatchCommand(registry));
     registry.register('help', createHelpCommand(registry));
     registry.register('node', createNodeCommand(kernel.portRegistry));
-    registry.register('curl', createCurlCommand(kernel.portRegistry));
+    registry.register('curl', createCurlCommand(kernel.portRegistry, kernel.networkStack));
+    registry.register('tunnel', createTunnelCommandV2(kernel.portRegistry, kernel.networkStack));
+
+    // Register network commands
+    registry.register('ifconfig', createIfconfigCommand(kernel.networkStack));
+    registry.register('route', createRouteCommand(kernel.networkStack));
+    registry.register('netstat', createNetstatCommand(kernel.networkStack, kernel.portRegistry));
+    registry.register('host', createHostCommand(kernel.networkStack));
+    registry.register('ip', createIPCommand(kernel.networkStack));
 
     // Register npm with shell execution support
     const npmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {

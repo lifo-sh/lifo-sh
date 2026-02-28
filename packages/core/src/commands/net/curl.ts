@@ -1,8 +1,12 @@
 import type { Command } from '../types.js';
 import { resolve } from '../../utils/path.js';
 import type { VirtualRequestHandler } from '../../kernel/index.js';
+import type { NetworkStack } from '../../kernel/network/index.js';
 
-function createCurlImpl(portRegistry?: Map<number, VirtualRequestHandler>): Command {
+function createCurlImpl(
+  portRegistry?: Map<number, VirtualRequestHandler>,
+  networkStack?: NetworkStack
+): Command {
   return async (ctx) => {
     let method = 'GET';
     const headers: Record<string, string> = {};
@@ -72,8 +76,18 @@ function createCurlImpl(portRegistry?: Map<number, VirtualRequestHandler>): Comm
     if (portRegistry) {
       try {
         const parsed = new URL(url);
-        const host = parsed.hostname;
+        let host = parsed.hostname;
         const port = parsed.port ? Number(parsed.port) : (parsed.protocol === 'http:' ? 80 : 443);
+
+        // Try DNS resolution first
+        if (networkStack && host !== '127.0.0.1' && host !== 'localhost') {
+          try {
+            const resolved = await networkStack.resolveHostname(host);
+            host = resolved;
+          } catch {
+            // DNS resolution failed, keep original hostname
+          }
+        }
 
         if ((host === 'localhost' || host === '127.0.0.1') && portRegistry.has(port)) {
           const handler = portRegistry.get(port)!;
@@ -171,8 +185,11 @@ function createCurlImpl(portRegistry?: Map<number, VirtualRequestHandler>): Comm
   };
 }
 
-export function createCurlCommand(portRegistry: Map<number, VirtualRequestHandler>): Command {
-  return createCurlImpl(portRegistry);
+export function createCurlCommand(
+  portRegistry: Map<number, VirtualRequestHandler>,
+  networkStack?: NetworkStack
+): Command {
+  return createCurlImpl(portRegistry, networkStack);
 }
 
 // Default command (no port registry -- always uses fetch)

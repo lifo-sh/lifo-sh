@@ -24,8 +24,14 @@ import {
 	createNodeCommand,
 	createCurlCommand,
 	createTunnelCommand,
+	createTunnelCommandV2,
 	createNpmCommand,
 	createLifoPkgCommand,
+	createIfconfigCommand,
+	createRouteCommand,
+	createNetstatCommand,
+	createHostCommand,
+	createIPCommand,
 } from '@lifo-sh/core';
 import gitCommand from 'lifo-pkg-git';
 import ffmpegCommand from 'lifo-pkg-ffmpeg';
@@ -675,6 +681,39 @@ async function bootHttp() {
 	httpKernel = new Kernel();
 	await httpKernel.boot({ persist: false });
 
+	// Register portRegistry with Vite proxy plugin
+	if (typeof (globalThis as any).__registerLifoPortRegistry === 'function') {
+		(globalThis as any).__registerLifoPortRegistry(httpKernel.portRegistry);
+	}
+
+	// Expose port access function globally for external access
+	(globalThis as unknown as Record<string, unknown>).accessLifoPort = async (port: number, path = '/') => {
+		const handler = httpKernel!.portRegistry.get(port);
+		if (!handler) {
+			return { error: `No server running on port ${port}` };
+		}
+
+		const req = {
+			method: 'GET',
+			url: path,
+			headers: { 'Host': `localhost:${port}` },
+			body: '',
+		};
+
+		const res = {
+			statusCode: 200,
+			headers: {} as Record<string, string>,
+			body: '',
+		};
+
+		try {
+			handler(req, res);
+			return { status: res.statusCode, headers: res.headers, body: res.body };
+		} catch (error) {
+			return { error: error instanceof Error ? error.message : String(error) };
+		}
+	};
+
 	// Write server.js to VFS
 	httpKernel.vfs.writeFile('/home/user/server.js', `const http = require('http');
 const server = http.createServer((req, res) => {
@@ -724,6 +763,41 @@ server.listen(3000, () => {
 	await addHttpTab('Server');
 	await addHttpTab('Client');
 	await addHttpTab('Client2');
+
+	// Set up external access UI
+	const accessBtn = document.getElementById('http-access-btn') as HTMLButtonElement;
+	const accessOutput = document.getElementById('http-access-output')!;
+	const copyBtn = document.getElementById('http-copy-url') as HTMLButtonElement;
+
+	// Copy URL button
+	copyBtn.addEventListener('click', async () => {
+		const url = `http://localhost:5173/proxy/3000/`;
+		try {
+			await navigator.clipboard.writeText(url);
+			copyBtn.textContent = 'Copied!';
+			setTimeout(() => {
+				copyBtn.textContent = 'Copy URL';
+			}, 2000);
+		} catch {
+			// Fallback for older browsers
+			copyBtn.textContent = 'Failed';
+			setTimeout(() => {
+				copyBtn.textContent = 'Copy URL';
+			}, 2000);
+		}
+	});
+
+	// Test via Fetch button
+	accessBtn.addEventListener('click', async () => {
+		accessOutput.textContent = 'Fetching /proxy/3000/...';
+		try {
+			const response = await fetch('/proxy/3000/');
+			const text = await response.text();
+			accessOutput.textContent = `✓ ${response.status}: ${text.trim()}`;
+		} catch (error) {
+			accessOutput.textContent = `❌ Error: ${error instanceof Error ? error.message : String(error)}`;
+		}
+	});
 }
 
 async function addHttpTab(label: string): Promise<HttpTab> {
@@ -751,8 +825,15 @@ async function addHttpTab(label: string): Promise<HttpTab> {
 
 	// Register node, curl, and tunnel with the shared portRegistry
 	registry.register('node', createNodeCommand(kernel.portRegistry));
-	registry.register('curl', createCurlCommand(kernel.portRegistry));
-	registry.register('tunnel', createTunnelCommand(kernel.portRegistry));
+	registry.register('curl', createCurlCommand(kernel.portRegistry, kernel.networkStack));
+	registry.register('tunnel', createTunnelCommandV2(kernel.portRegistry, kernel.networkStack));
+
+	// Register network commands (pass portRegistry to netstat to show HTTP servers)
+	registry.register('ifconfig', createIfconfigCommand(kernel.networkStack));
+	registry.register('route', createRouteCommand(kernel.networkStack));
+	registry.register('netstat', createNetstatCommand(kernel.networkStack, kernel.portRegistry));
+	registry.register('host', createHostCommand(kernel.networkStack));
+	registry.register('ip', createIPCommand(kernel.networkStack));
 
 	const env = kernel.getDefaultEnv();
 	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry);

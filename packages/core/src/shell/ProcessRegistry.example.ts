@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * ProcessRegistry Usage Examples
  *

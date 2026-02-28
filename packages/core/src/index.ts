@@ -12,6 +12,25 @@ export type {
 export { Kernel } from './kernel/index.js';
 export type { VirtualRequest, VirtualResponse, VirtualRequestHandler } from './kernel/index.js';
 
+// Network Stack
+export { NetworkStack } from './kernel/network/index.js';
+export type {
+  IPAddress,
+  SocketType,
+  SocketAddress,
+  NetworkInterface as INetworkInterface,
+  RouteEntry,
+  NetworkTunnel,
+  TunnelType,
+} from './kernel/network/index.js';
+
+// Tunnels
+export { VETHPair } from './kernel/network/tunnel/VETHPair.js';
+export { WebSocketTunnel } from './kernel/network/tunnel/WebSocketTunnel.js';
+
+// Bridge
+export { Bridge } from './kernel/network/Bridge.js';
+
 // VFS
 export { VFS, VFSError, ErrorCode } from './kernel/vfs/index.js';
 export { getMimeType, getFileCategory, isBinaryMime } from './kernel/vfs/index.js';
@@ -57,7 +76,12 @@ export { createWatchCommand } from './commands/system/watch.js';
 export { createHelpCommand } from './commands/system/help.js';
 export { createNodeCommand } from './commands/system/node.js';
 export { createCurlCommand } from './commands/net/curl.js';
-export { createTunnelCommand } from './commands/net/tunnel.js';
+export { createTunnelCommandV2 } from './commands/net/tunnel-v2.js';
+export { createIfconfigCommand } from './commands/net/ifconfig.js';
+export { createRouteCommand } from './commands/net/route.js';
+export { createNetstatCommand } from './commands/net/netstat.js';
+export { createHostCommand } from './commands/net/host.js';
+export { createIPCommand } from './commands/net/ip.js';
 export { createLifoPkgCommand, bootLifoPackages } from './commands/system/lifo.js';
 export { createNpmCommand } from './commands/system/npm.js';
 

@@ -5,6 +5,7 @@ import { PersistenceManager } from './persistence/PersistenceManager.js';
 import { IndexedDBPersistenceBackend } from './persistence/backends.js';
 import type { PersistenceBackend } from './persistence/backends.js';
 import { ProcessRegistry } from '../shell/ProcessRegistry.js';
+import { NetworkStack } from './network/NetworkStack.js';
 import { installSamples } from './samples.js';
 
 const MOTD = `\x1b[1;36m
@@ -32,6 +33,10 @@ alias cls='clear'
 alias h='history'
 `;
 
+const DEFAULT_HOSTS = `127.0.0.1       localhost
+::1             localhost ip6-localhost ip6-loopback
+`;
+
 export interface VirtualRequest {
   method: string;
   url: string;
@@ -51,11 +56,13 @@ export class Kernel {
   vfs: VFS;
   portRegistry: Map<number, VirtualRequestHandler> = new Map();
   processRegistry: ProcessRegistry;
+  networkStack: NetworkStack;
   private persistence: PersistenceManager;
 
   constructor(backend?: PersistenceBackend) {
     this.vfs = new VFS();
     this.processRegistry = new ProcessRegistry();
+    this.networkStack = new NetworkStack();
     this.persistence = new PersistenceManager(
       backend ?? new IndexedDBPersistenceBackend(),
     );
@@ -122,6 +129,17 @@ export class Kernel {
     }
     if (!this.vfs.exists('/home/user/.bashrc')) {
       this.vfs.writeFile('/home/user/.bashrc', DEFAULT_BASHRC);
+    }
+    if (!this.vfs.exists('/etc/hosts')) {
+      this.vfs.writeFile('/etc/hosts', DEFAULT_HOSTS);
+    }
+
+    // Load hosts file into DNS resolver
+    try {
+      const hostsContent = this.vfs.readFileString('/etc/hosts');
+      this.networkStack.getDNS().loadHostsFile(hostsContent);
+    } catch {
+      // Ignore if hosts file doesn't exist
     }
 
     // Install example files
