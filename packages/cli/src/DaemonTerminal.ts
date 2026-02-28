@@ -22,6 +22,9 @@
 import * as net from 'node:net';
 import type { ITerminal } from '@lifo-sh/core';
 
+/** Maximum per-client lineBuffer size (1 MB). Client is dropped on overflow. */
+const MAX_LINE_BUFFER = 1024 * 1024;
+
 /** Internal representation of one connected attach client. */
 interface DaemonClient {
   socket: net.Socket;
@@ -59,6 +62,11 @@ export class DaemonTerminal implements ITerminal {
 
     socket.on('data', (chunk: Buffer) => {
       lineBuffer += chunk.toString();
+      // Guard against a misbehaving client sending oversized messages.
+      if (lineBuffer.length > MAX_LINE_BUFFER) {
+        socket.destroy();
+        return;
+      }
       // Messages are newline-delimited — process every complete line.
       const lines = lineBuffer.split('\n');
       lineBuffer = lines.pop() ?? ''; // last element is the incomplete tail

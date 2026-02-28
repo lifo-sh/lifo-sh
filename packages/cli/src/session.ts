@@ -57,23 +57,43 @@ export function writeSession(session: Session): void {
 }
 
 /**
- * Removes the session JSON and socket file for a given ID.
+ * Removes the session JSON, socket, and startup log files for a given ID.
  * Called on daemon shutdown (SIGTERM/SIGHUP) and by `lifo stop`.
- * Both unlinks are best-effort — missing files are silently ignored.
+ * All unlinks are best-effort — missing files are silently ignored.
  */
 export function deleteSession(id: string): void {
   try { fs.unlinkSync(path.join(SESSIONS_DIR, `${id}.json`)); } catch { /* already gone */ }
   try { fs.unlinkSync(path.join(SESSIONS_DIR, `${id}.sock`)); } catch { /* already gone */ }
+  try { fs.unlinkSync(path.join(SESSIONS_DIR, `${id}.log`)); } catch { /* already gone */ }
+}
+
+/**
+ * Validates that a parsed JSON object has the required Session fields with
+ * correct types. Guards against corrupted session files crashing callers that
+ * use session.pid for process.kill() or session.socketPath for connect().
+ */
+function isValidSession(obj: unknown): obj is Session {
+  if (typeof obj !== 'object' || obj === null) return false;
+  const s = obj as Record<string, unknown>;
+  return (
+    typeof s.id === 'string' &&
+    typeof s.pid === 'number' &&
+    typeof s.socketPath === 'string' &&
+    typeof s.mountPath === 'string' &&
+    typeof s.startedAt === 'string' &&
+    (s.port === undefined || typeof s.port === 'number')
+  );
 }
 
 /**
  * Reads a single session record by ID.
- * Returns null if the file doesn't exist or is malformed.
+ * Returns null if the file doesn't exist, is malformed, or has wrong field types.
  */
 export function readSession(id: string): Session | null {
   try {
     const raw = fs.readFileSync(path.join(SESSIONS_DIR, `${id}.json`), 'utf-8');
-    return JSON.parse(raw) as Session;
+    const parsed = JSON.parse(raw);
+    return isValidSession(parsed) ? parsed : null;
   } catch {
     return null;
   }
@@ -106,9 +126,16 @@ export function listSessions(): Array<Session & { alive: boolean }> {
   for (const file of files) {
     try {
       const raw = fs.readFileSync(path.join(SESSIONS_DIR, file), 'utf-8');
-      const session = JSON.parse(raw) as Session;
-      const alive = isPidAlive(session.pid);
-      sessions.push({ ...session, alive });
+      const parsed = JSON.parse(raw);
+      if (!isValidSession(parsed)) continue;
+      const alive = isPidAlive(parsed.pid);
+      // Clean up the orphaned socket file for dead sessions so stale .sock
+      // files don't accumulate (the .json is kept so the user can see dead VMs
+      // via `lifo list` and clean them up with `lifo stop`).
+      if (!alive) {
+        try { fs.unlinkSync(path.join(SESSIONS_DIR, `${parsed.id}.sock`)); } catch { /* already gone */ }
+      }
+      sessions.push({ ...parsed, alive });
     } catch {
       // Skip malformed or unreadable session files.
     }
