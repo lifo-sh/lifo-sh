@@ -82,7 +82,7 @@ function getSpawnExecutable(): { executable: string; prefixArgs: string[] } {
  * @returns            The session ID (hex string) once the daemon is ready.
  * @throws             If the daemon fails to become ready within 5 seconds.
  */
-export async function startDaemon(mountPath: string, port?: number, snapshotPath?: string): Promise<string> {
+export async function startDaemon(mountPath: string, port?: number, snapshotPath?: string, scriptPath?: string): Promise<string> {
   const id = generateId();
   const jsonPath = path.join(SESSIONS_DIR, `${id}.json`);
   const daemonLogPath = logPath(id);
@@ -104,7 +104,7 @@ export async function startDaemon(mountPath: string, port?: number, snapshotPath
   // Spawn the daemon detached so the parent can exit without affecting it.
   const child = cp.spawn(
     executable,
-    [...prefixArgs, process.argv[1]!, '--daemon', '--id', id, '--mount', mountPath, ...extraArgs],
+    [...prefixArgs, scriptPath ?? process.argv[1]!, '--daemon', '--id', id, '--mount', mountPath, ...extraArgs],
     {
       detached: true,
       stdio: ['ignore', 'ignore', logFd],

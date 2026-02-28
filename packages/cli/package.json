@@ -24,6 +24,12 @@
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./session": "./dist/session.js",
+    "./daemon": "./dist/daemon.js",
+    "./auth": "./dist/auth.js"
+  },
   "files": [
     "dist"
   ],

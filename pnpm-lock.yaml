@@ -12,6 +12,25 @@ importers:
         specifier: ^2.29.8
         version: 2.29.8(@types/node@22.19.11)
 
+  apps/api-server:
+    dependencies:
+      lifo-sh:
+        specifier: workspace:*
+        version: link:../../packages/cli
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.11
+      tsup:
+        specifier: ^8.0.0
+        version: 8.5.1(@microsoft/api-extractor@7.57.3(@types/node@22.19.11))(jiti@2.6.1)(postcss@8.5.6)(tsx@4.21.0)(typescript@5.9.3)
+      tsx:
+        specifier: ^4.0.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+
   apps/desktop:
     dependencies:
       '@lifo-sh/core':
