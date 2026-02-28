@@ -1,0 +1,142 @@
+#desktop-root {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  font-family: var(--dt-font);
+  font-size: var(--dt-font-size);
+  color: var(--dt-text);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.lf-desktop {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, #0f0c29 0%, #1a1b3a 40%, #24243e 100%);
+  z-index: var(--z-desktop);
+}
+
+.lf-desktop-icons {
+  position: absolute;
+  top: calc(var(--dt-menubar-height) + 12px);
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 1;
+}
+
+.lf-desktop-icon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+  border-radius: 8px;
+  cursor: default;
+  width: 80px;
+  text-align: center;
+}
+
+.lf-desktop-icon:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.lf-desktop-icon.selected {
+  background: rgba(122, 162, 247, 0.25);
+}
+
+.lf-desktop-icon-emoji {
+  font-size: 36px;
+  line-height: 1;
+}
+
+.lf-desktop-icon-label {
+  font-size: 11px;
+  color: var(--dt-text-bright);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  word-break: break-word;
+  max-width: 72px;
+}
+
+.lf-window-layer {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-windows);
+  pointer-events: none;
+}
+
+.lf-window-layer > * {
+  pointer-events: auto;
+}
+
+/* ── Context Menu ── */
+
+.lf-context-menu {
+  position: fixed;
+  background: var(--dt-surface-solid);
+  border: 1px solid var(--dt-window-border);
+  border-radius: 6px;
+  padding: 4px 0;
+  min-width: 180px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  z-index: 100000;
+}
+
+.lf-context-menu-item {
+  padding: 6px 16px;
+  cursor: default;
+  display: flex;
+  justify-content: space-between;
+}
+
+.lf-context-menu-item:hover {
+  background: var(--dt-accent);
+  color: var(--dt-text-bright);
+}
+
+.lf-context-menu-separator {
+  height: 1px;
+  background: var(--dt-window-border);
+  margin: 4px 0;
+}
+
+/* ── Splash ── */
+
+.lf-splash {
+  position: fixed;
+  inset: 0;
+  background: #0f0c29;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--z-splash);
+  transition: opacity 0.6s ease;
+}
+
+.lf-splash.fade-out {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.lf-splash-logo {
+  font-size: 48px;
+  margin-bottom: 24px;
+}
+
+.lf-splash-bar {
+  width: 200px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.lf-splash-bar-fill {
+  height: 100%;
+  background: var(--dt-accent);
+  border-radius: 2px;
+  width: 0%;
+  transition: width 0.3s ease;
+}

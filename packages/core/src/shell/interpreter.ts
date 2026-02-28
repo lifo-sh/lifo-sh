@@ -568,6 +568,9 @@ export class Interpreter {
               stderr,
               signal: abortController.signal,
               stdin,
+              setRawMode: terminalStdin
+                ? (v: boolean) => { terminalStdin.rawMode = v; }
+                : undefined,
             };
 
             // Register process BEFORE executing so ps can see itself

@@ -24,13 +24,25 @@ const DEFAULT_PROFILE = `export PATH=/usr/bin:/bin
 export EDITOR=nano
 `;
 
-const DEFAULT_BASHRC = `# Aliases
+const DEFAULT_LIFORC = `# ~/.liforc - Lifo shell configuration
+# This file is sourced on shell startup. Edit it to customize your shell.
+# Changes take effect on next shell start (refresh the page).
+
+# ─── Aliases ───
 alias ll='ls -la'
 alias la='ls -a'
 alias l='ls -1'
 alias ..='cd ..'
+alias ...='cd ../..'
 alias cls='clear'
 alias h='history'
+alias q='exit'
+alias md='mkdir -p'
+alias rd='rmdir'
+
+# ─── Environment ───
+export EDITOR=nano
+export PAGER=less
 `;
 
 const DEFAULT_HOSTS = `127.0.0.1       localhost
@@ -127,8 +139,16 @@ export class Kernel {
     if (!this.vfs.exists('/etc/profile')) {
       this.vfs.writeFile('/etc/profile', DEFAULT_PROFILE);
     }
-    if (!this.vfs.exists('/home/user/.bashrc')) {
-      this.vfs.writeFile('/home/user/.bashrc', DEFAULT_BASHRC);
+    // Migrate old .bashrc to .liforc
+    if (this.vfs.exists('/home/user/.bashrc') && !this.vfs.exists('/home/user/.liforc')) {
+      // Preserve user's existing .bashrc content by renaming it
+      try {
+        const existing = this.vfs.readFileString('/home/user/.bashrc');
+        this.vfs.writeFile('/home/user/.liforc', existing);
+      } catch { /* ignore */ }
+    }
+    if (!this.vfs.exists('/home/user/.liforc')) {
+      this.vfs.writeFile('/home/user/.liforc', DEFAULT_LIFORC);
     }
     if (!this.vfs.exists('/etc/hosts')) {
       this.vfs.writeFile('/etc/hosts', DEFAULT_HOSTS);

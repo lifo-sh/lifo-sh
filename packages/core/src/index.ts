@@ -1,11 +1,11 @@
 // Sandbox (high-level API)
 export { Sandbox } from './sandbox/index.js';
 export type {
-  SandboxOptions,
-  RunOptions,
-  CommandResult,
-  SandboxCommands,
-  SandboxFs,
+	SandboxOptions,
+	RunOptions,
+	CommandResult,
+	SandboxCommands,
+	SandboxFs,
 } from './sandbox/index.js';
 
 // Kernel
@@ -15,13 +15,13 @@ export type { VirtualRequest, VirtualResponse, VirtualRequestHandler } from './k
 // Network Stack
 export { NetworkStack } from './kernel/network/index.js';
 export type {
-  IPAddress,
-  SocketType,
-  SocketAddress,
-  NetworkInterface as INetworkInterface,
-  RouteEntry,
-  NetworkTunnel,
-  TunnelType,
+	IPAddress,
+	SocketType,
+	SocketAddress,
+	NetworkInterface as INetworkInterface,
+	RouteEntry,
+	NetworkTunnel,
+	TunnelType,
 } from './kernel/network/index.js';
 
 // Tunnels
@@ -36,17 +36,17 @@ export { VFS, VFSError, ErrorCode } from './kernel/vfs/index.js';
 export { getMimeType, getFileCategory, isBinaryMime } from './kernel/vfs/index.js';
 export { NativeFsProvider } from './kernel/vfs/index.js';
 export type {
-  INode,
-  Stat,
-  Dirent,
-  FileType,
-  ErrorCodeType,
-  VirtualProvider,
-  MountProvider,
-  NativeFsModule,
-  VFSWatchEvent,
-  VFSWatchListener,
-  VFSEventType,
+	INode,
+	Stat,
+	Dirent,
+	FileType,
+	ErrorCodeType,
+	VirtualProvider,
+	MountProvider,
+	NativeFsModule,
+	VFSWatchEvent,
+	VFSWatchListener,
+	VFSEventType,
 } from './kernel/vfs/index.js';
 
 // Blob storage & content store
@@ -62,10 +62,10 @@ export type { PersistenceBackend } from './kernel/persistence/index.js';
 // Commands
 export { CommandRegistry, createDefaultRegistry } from './commands/registry.js';
 export type {
-  Command,
-  CommandContext,
-  CommandOutputStream,
-  CommandInputStream,
+	Command,
+	CommandContext,
+	CommandOutputStream,
+	CommandInputStream,
 } from './commands/types.js';
 
 // Factory commands
@@ -82,8 +82,10 @@ export { createRouteCommand } from './commands/net/route.js';
 export { createNetstatCommand } from './commands/net/netstat.js';
 export { createHostCommand } from './commands/net/host.js';
 export { createIPCommand } from './commands/net/ip.js';
+export { createTunnelCommand } from './commands/net/tunnel.js';
 export { createLifoPkgCommand, bootLifoPackages } from './commands/system/lifo.js';
 export { createNpmCommand } from './commands/system/npm.js';
+export { createLogoutCommand } from './commands/system/logout.js';
 
 // Shell
 export { Shell } from './shell/Shell.js';
@@ -111,30 +113,30 @@ export { resolve, dirname, join, normalize, basename, extname } from './utils/pa
 
 // Color utilities
 export {
-  RESET,
-  BOLD,
-  DIM,
-  ITALIC,
-  UNDERLINE,
-  RED,
-  GREEN,
-  YELLOW,
-  BLUE,
-  MAGENTA,
-  CYAN,
-  WHITE,
-  BRIGHT_RED,
-  BRIGHT_GREEN,
-  BRIGHT_YELLOW,
-  BRIGHT_BLUE,
-  BRIGHT_MAGENTA,
-  BRIGHT_CYAN,
-  red,
-  green,
-  yellow,
-  blue,
-  magenta,
-  cyan,
-  bold,
-  dim,
+	RESET,
+	BOLD,
+	DIM,
+	ITALIC,
+	UNDERLINE,
+	RED,
+	GREEN,
+	YELLOW,
+	BLUE,
+	MAGENTA,
+	CYAN,
+	WHITE,
+	BRIGHT_RED,
+	BRIGHT_GREEN,
+	BRIGHT_YELLOW,
+	BRIGHT_BLUE,
+	BRIGHT_MAGENTA,
+	BRIGHT_CYAN,
+	red,
+	green,
+	yellow,
+	blue,
+	magenta,
+	cyan,
+	bold,
+	dim,
 } from './utils/colors.js';

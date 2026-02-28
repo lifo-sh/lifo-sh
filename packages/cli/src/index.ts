@@ -2,160 +2,165 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import {
-  Kernel,
-  Shell,
-  NativeFsProvider,
-  createDefaultRegistry,
-  bootLifoPackages,
-  createLifoPkgCommand,
-  createNpmCommand,
-  createPsCommand,
-  createTopCommand,
-  createKillCommand,
-  createWatchCommand,
-  createHelpCommand,
-  createNodeCommand,
-  createCurlCommand,
-  createTunnelCommand,
+	Kernel,
+	Shell,
+	NativeFsProvider,
+	createDefaultRegistry,
+	bootLifoPackages,
+	createLifoPkgCommand,
+	createNpmCommand,
+	createPsCommand,
+	createTopCommand,
+	createKillCommand,
+	createWatchCommand,
+	createHelpCommand,
+	createNodeCommand,
+	createCurlCommand,
+	createTunnelCommand,
 } from '@lifo-sh/core';
 import { NodeTerminal } from './NodeTerminal.js';
+import { TOKEN_PATH, readToken, handleLogin, handleLogout, handleWhoami } from './auth.js';
 
 // ─── CLI argument parsing ───
 
 interface CliOptions {
-  mount?: string;   // --mount <path> : host directory to mount
+	mount?: string;
 }
 
 function parseArgs(argv: string[]): CliOptions {
-  const opts: CliOptions = {};
-  for (let i = 2; i < argv.length; i++) {
-    if ((argv[i] === '--mount' || argv[i] === '-m') && argv[i + 1]) {
-      opts.mount = path.resolve(argv[i + 1]);
-      i++; // skip next arg
-    }
-  }
-  return opts;
+	const opts: CliOptions = {};
+	for (let i = 2; i < argv.length; i++) {
+		if ((argv[i] === '--mount' || argv[i] === '-m') && argv[i + 1]) {
+			opts.mount = path.resolve(argv[i + 1]);
+			i++;
+		}
+	}
+	return opts;
 }
 
 // ─── Main ───
 
 async function main() {
-  const opts = parseArgs(process.argv);
-  const terminal = new NodeTerminal();
+	// Handle top-level auth commands before booting the shell
+	const cmd = process.argv[2];
+	if (cmd === 'login') { await handleLogin(); return; }
+	if (cmd === 'logout') { handleLogout(); return; }
+	if (cmd === 'whoami') { await handleWhoami(); return; }
 
-  // Resolve the host directory to mount
-  let hostDir: string;
-  let isTempSession = false;
+	const opts = parseArgs(process.argv);
+	const terminal = new NodeTerminal();
 
-  if (opts.mount) {
-    // Validate the provided path exists
-    if (!fs.existsSync(opts.mount)) {
-      console.error(`Error: mount path does not exist: ${opts.mount}`);
-      process.exit(1);
-    }
-    if (!fs.statSync(opts.mount).isDirectory()) {
-      console.error(`Error: mount path is not a directory: ${opts.mount}`);
-      process.exit(1);
-    }
-    hostDir = opts.mount;
-  } else {
-    // Create a temp directory for this session
-    hostDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lifo-'));
-    isTempSession = true;
-  }
+	// Resolve the host directory to mount
+	let hostDir: string;
+	let isTempSession = false;
 
-  // 1. Boot kernel
-  const kernel = new Kernel();
-  await kernel.boot({ persist: false });
+	if (opts.mount) {
+		if (!fs.existsSync(opts.mount)) {
+			console.error(`Error: mount path does not exist: ${opts.mount}`);
+			process.exit(1);
+		}
+		if (!fs.statSync(opts.mount).isDirectory()) {
+			console.error(`Error: mount path is not a directory: ${opts.mount}`);
+			process.exit(1);
+		}
+		hostDir = opts.mount;
+	} else {
+		hostDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lifo-'));
+		isTempSession = true;
+	}
 
-  // 2. Mount host directory at /mnt/host
-  const MOUNT_PATH = '/mnt/host';
-  kernel.vfs.mkdir('/mnt', { recursive: true });
-  const nativeProvider = new NativeFsProvider(hostDir, fs);
-  kernel.vfs.mount(MOUNT_PATH, nativeProvider);
+	// 1. Boot kernel
+	const kernel = new Kernel();
+	await kernel.boot({ persist: false });
 
-  // 3. Create command registry
-  const registry = createDefaultRegistry();
-  bootLifoPackages(kernel.vfs, registry);
+	// 2. Mount host directory at /mnt/host
+	const MOUNT_PATH = '/mnt/host';
+	kernel.vfs.mkdir('/mnt', { recursive: true });
+	const nativeProvider = new NativeFsProvider(hostDir, fs);
+	kernel.vfs.mount(MOUNT_PATH, nativeProvider);
 
-  // 4. Set up environment -- HOME and PWD point to the mounted directory
-  const env = kernel.getDefaultEnv();
-  env.PWD = MOUNT_PATH;
-  env.LIFO_HOST_DIR = hostDir;
+	// 3. Create command registry
+	const registry = createDefaultRegistry();
+	bootLifoPackages(kernel.vfs, registry);
 
-  // 5. Create shell
-  const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry);
+	// 4. Set up environment
+	const env = kernel.getDefaultEnv();
+	env.PWD = MOUNT_PATH;
+	env.LIFO_HOST_DIR = hostDir;
 
-  // 6. Register factory commands that need shell/kernel references
-  const jobTable = shell.getJobTable();
-  const processRegistry = shell.getProcessRegistry();
-  registry.register('ps', createPsCommand(processRegistry));
-  registry.register('top', createTopCommand(processRegistry));
-  registry.register('kill', createKillCommand(processRegistry));
-  registry.register('watch', createWatchCommand(registry));
-  registry.register('help', createHelpCommand(registry));
-  registry.register('node', createNodeCommand(kernel.portRegistry));
-  registry.register('curl', createCurlCommand(kernel.portRegistry));
-  registry.register('tunnel', createTunnelCommand(kernel.portRegistry));
+	// 5. Load auth token from host filesystem
+	const token = readToken();
+	if (token) env.LIFO_AUTH_TOKEN = token;
+	env.LIFO_TOKEN_PATH = TOKEN_PATH;
 
-  // npm + lifo package manager (need shell for npm install)
-  const npmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
-    const result = await shell.execute(cmd, {
-      cwd: cmdCtx.cwd,
-      env: cmdCtx.env,
-      onStdout: (data: string) => cmdCtx.stdout.write(data),
-      onStderr: (data: string) => cmdCtx.stderr.write(data),
-    });
-    return result.exitCode;
-  };
-  registry.register('npm', createNpmCommand(registry, npmShellExecute));
-  registry.register('lifo', createLifoPkgCommand(registry, npmShellExecute));
+	// 6. Create shell
+	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry);
 
-  // 7. Source config files
-  await shell.sourceFile('/etc/profile');
-  await shell.sourceFile(env.HOME + '/.bashrc');
+	// 7. Register factory commands
+	const jobTable = shell.getJobTable();
+	const processRegistry = shell.getProcessRegistry();
+	registry.register('ps', createPsCommand(processRegistry));
+	registry.register('top', createTopCommand(processRegistry));
+	registry.register('kill', createKillCommand(processRegistry));
+	registry.register('watch', createWatchCommand(registry));
+	registry.register('help', createHelpCommand(registry));
+	registry.register('node', createNodeCommand(kernel.portRegistry));
+	registry.register('curl', createCurlCommand(kernel.portRegistry));
+	registry.register('tunnel', createTunnelCommand(kernel.portRegistry));
 
-  // 8. Override exit to actually terminate the process
-  (shell as any).builtins.set(
-    'exit',
-    async () => {
-      terminal.write('logout\r\n');
-      cleanup();
-      return 0;
-    },
-  );
+	const npmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
+		const result = await shell.execute(cmd, {
+			cwd: cmdCtx.cwd,
+			env: cmdCtx.env,
+			onStdout: (data: string) => cmdCtx.stdout.write(data),
+			onStderr: (data: string) => cmdCtx.stderr.write(data),
+		});
+		return result.exitCode;
+	};
+	registry.register('npm', createNpmCommand(registry, npmShellExecute));
+	registry.register('lifo', createLifoPkgCommand(registry, npmShellExecute));
+	// 8. Source config files
+	await shell.sourceFile('/etc/profile');
+	await shell.sourceFile(env.HOME + '/.bashrc');
 
-  // 9. Display MOTD, then start interactive shell
-  const motd = kernel.vfs.readFileString('/etc/motd');
-  terminal.write(motd.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n'));
+	// 9. Override exit
+	(shell as any).builtins.set(
+		'exit',
+		async () => {
+			cleanup();
+			return 0;
+		},
+	);
 
-  if (isTempSession) {
-    terminal.write(`\x1b[2mTemp session: ${hostDir}\x1b[0m\r\n`);
-  } else {
-    terminal.write(`\x1b[2mMounted: ${hostDir} -> ${MOUNT_PATH}\x1b[0m\r\n`);
-  }
+	// 10. Display MOTD
+	const motd = kernel.vfs.readFileString('/etc/motd');
+	terminal.write(motd.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n'));
 
-  shell.start();
+	if (isTempSession) {
+		terminal.write(`\x1b[2mTemp session: ${hostDir}\x1b[0m\r\n`);
+	} else {
+		terminal.write(`\x1b[2mMounted: ${hostDir} -> ${MOUNT_PATH}\x1b[0m\r\n`);
+	}
 
-  // Cleanup handler
-  function cleanup() {
-    terminal.destroy();
-    // Clean up temp directory if it was a temp session
-    if (isTempSession) {
-      try {
-        fs.rmSync(hostDir, { recursive: true, force: true });
-      } catch {
-        // Best effort cleanup
-      }
-    }
-    process.exit(0);
-  }
+	shell.start();
 
-  process.on('SIGTERM', cleanup);
-  process.on('SIGHUP', cleanup);
+	function cleanup() {
+		terminal.destroy();
+		if (isTempSession) {
+			try {
+				fs.rmSync(hostDir, { recursive: true, force: true });
+			} catch {
+				// best effort
+			}
+		}
+		process.exit(0);
+	}
+
+	process.on('SIGTERM', cleanup);
+	process.on('SIGHUP', cleanup);
 }
 
 main().catch((err) => {
-  console.error(err);
-  process.exit(1);
+	console.error(err);
+	process.exit(1);
 });

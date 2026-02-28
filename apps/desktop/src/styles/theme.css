@@ -1,0 +1,51 @@
+:root {
+  /* ── Surface ── */
+  --dt-bg: #1a1b26;
+  --dt-surface: rgba(30, 31, 48, 0.85);
+  --dt-surface-solid: #1e1f30;
+  --dt-overlay: rgba(0, 0, 0, 0.4);
+
+  /* ── Text ── */
+  --dt-text: #c0caf5;
+  --dt-text-dim: #565f89;
+  --dt-text-bright: #ffffff;
+
+  /* ── Accent ── */
+  --dt-accent: #7aa2f7;
+  --dt-accent-hover: #89b4fa;
+
+  /* ── Traffic Lights ── */
+  --dt-close: #ff5f57;
+  --dt-minimize: #febc2e;
+  --dt-maximize: #28c840;
+  --dt-traffic-inactive: #3b3b4f;
+
+  /* ── Window ── */
+  --dt-window-bg: rgba(26, 27, 38, 0.92);
+  --dt-window-border: rgba(255, 255, 255, 0.08);
+  --dt-window-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --dt-window-radius: 10px;
+  --dt-titlebar-height: 38px;
+
+  /* ── Menu Bar ── */
+  --dt-menubar-height: 28px;
+  --dt-menubar-bg: rgba(30, 31, 48, 0.8);
+
+  /* ── Dock ── */
+  --dt-dock-bg: rgba(30, 31, 48, 0.7);
+  --dt-dock-height: 62px;
+  --dt-dock-icon-size: 48px;
+  --dt-dock-padding: 4px 8px;
+
+  /* ── Fonts ── */
+  --dt-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --dt-font-mono: "Cascadia Code", "Fira Code", "JetBrains Mono", Menlo, monospace;
+  --dt-font-size: 13px;
+
+  /* ── Z-index layers ── */
+  --z-desktop: 0;
+  --z-windows: 100;
+  --z-menubar: 10000;
+  --z-dock: 9999;
+  --z-splash: 99999;
+}

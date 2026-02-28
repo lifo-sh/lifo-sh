@@ -1,6 +1,6 @@
 {
   "name": "create-lifo-pkg",
-  "version": "0.4.3",
+  "version": "0.5.0",
   "description": "Scaffold a new lifo package -- npm create lifo-pkg my-tool",
   "license": "MIT",
   "repository": {

@@ -157,10 +157,19 @@ export class Shell {
    * Programmatic command execution with captured stdout/stderr.
    * Used by Sandbox.commands.run() for headless mode.
    */
+  private _executeDepth = 0;
+
   async execute(
     cmd: string,
     options?: ExecuteOptions,
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+    this._executeDepth++;
+    if (this._executeDepth > 10) {
+      this._executeDepth--;
+      const msg = `shell.execute: recursion depth exceeded (cmd="${cmd}")\n`;
+      options?.onStderr?.(msg);
+      return { stdout: '', stderr: msg, exitCode: 1 };
+    }
     let stdoutBuf = '';
     let stderrBuf = '';
 
@@ -211,10 +220,12 @@ export class Shell {
       const exitCode = await this.interpreter.executeLine(cmd, terminalStdin);
       return { stdout: stdoutBuf, stderr: stderrBuf, exitCode };
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = e instanceof Error ? (e.stack || e.message) : String(e);
       stderrBuf += msg + '\n';
+      options?.onStderr?.(msg + '\n');
       return { stdout: stdoutBuf, stderr: stderrBuf, exitCode: 1 };
     } finally {
+      this._executeDepth--;
       // Restore state
       this.interpreterConfig.defaultStdout = prevDefaultStdout;
       this.interpreterConfig.defaultStderr = prevDefaultStderr;
@@ -242,7 +253,32 @@ export class Shell {
     });
 
     this.terminal.onData((data) => this.handleInput(data));
-    this.printPrompt();
+
+    // Source rc files on startup (like bash/zsh)
+    this.sourceRcFiles().then(() => {
+      this.printPrompt();
+    });
+  }
+
+  private async sourceRcFiles(): Promise<void> {
+    const home = this.env['HOME'] ?? '/home/user';
+
+    // Source system-wide profile first
+    await this.sourceFile('/etc/profile');
+
+    // Then user rc files (first one found wins, like bash)
+    const rcFiles = [
+      `${home}/.liforc`,
+      `${home}/.bashrc`,
+      `${home}/.profile`,
+    ];
+
+    for (const rc of rcFiles) {
+      if (this.vfs.exists(rc)) {
+        await this.sourceFile(rc);
+        break;
+      }
+    }
   }
 
   private printPrompt(): void {
@@ -270,6 +306,12 @@ export class Shell {
   }
 
   private handleInput(data: string): void {
+    // Raw mode: bypass all shell line editing, deliver keypresses directly
+    if (this.running && this.terminalStdin?.rawMode) {
+      this.terminalStdin.feed(data);
+      return;
+    }
+
     // ESC sequences
     if (data === '\x1b[D') { this.moveCursorLeft(); return; }
     if (data === '\x1b[C') { this.moveCursorRight(); return; }
