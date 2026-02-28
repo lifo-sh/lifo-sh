@@ -153,11 +153,7 @@ export class Sandbox {
 		registry.register('lifo', createLifoPkgCommand(registry, npmShellExecute));
 		// 7b. Service manager & systemctl
 		kernel.initServiceManager(registry, env);
-		registry.register('systemctl', createSystemctlCommand(kernel.serviceManager!));
-
-		// 8. Source config files
-		await shell.sourceFile('/etc/profile');
-		await shell.sourceFile(env.HOME + '/.bashrc');
+		registry.register('systemctl', createSystemctlCommand(kernel));
 
 		// 8. Source config files
 		await shell.sourceFile('/etc/profile');
@@ -169,12 +165,6 @@ export class Sandbox {
 		}
 		// 9b. Boot enabled services
 		await kernel.bootServices();
-
-		// 10. Start shell (for visual mode, enables interactive input)
-		if (isVisual) {
-			shell.start();
-			shellTerminal.focus();
-		}
 
 		// 10. Start shell (for visual mode, enables interactive input)
 		if (isVisual) {

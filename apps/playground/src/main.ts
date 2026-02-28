@@ -32,6 +32,7 @@ import {
 	createIPCommand,
 	createNpmCommand,
 	createLifoPkgCommand,
+	createSystemctlCommand,
 } from '@lifo-sh/core';
 import gitCommand from 'lifo-pkg-git';
 import ffmpegCommand from 'lifo-pkg-ffmpeg';
@@ -682,6 +683,32 @@ async function bootHttp() {
 	httpKernel = new Kernel();
 	await httpKernel.boot({ persist: false });
 
+	// Initialize service manager for systemctl support
+	const env = httpKernel.getDefaultEnv();
+	const tempRegistry = createDefaultRegistry();
+	httpKernel.initServiceManager(tempRegistry, env);
+
+	// Create tunnel systemd service unit
+	httpKernel.vfs.mkdir('/etc/systemd/system', { recursive: true });
+	httpKernel.vfs.writeFile('/etc/systemd/system/tunnel.service', `[Unit]
+Description=WebSocket Tunnel Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=tunnel --server ws://localhost:3005
+Restart=alway
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+`);
+
+	// Enable the tunnel service so it can be started with systemctl
+	if (httpKernel.serviceManager) {
+		httpKernel.serviceManager.enable('tunnel');
+	}
+
 	// Write server.js to VFS
 	httpKernel.vfs.writeFile('/home/user/server.js', `const http = require('http');
 const server = http.createServer((req, res) => {
@@ -769,9 +796,11 @@ async function addHttpTab(label: string): Promise<HttpTab> {
 	registry.register('host', createHostCommand(kernel));
 	registry.register('ip', createIPCommand(kernel));
 
+	// Register systemctl command
+	registry.register('systemctl', createSystemctlCommand(kernel));
 
 	const env = kernel.getDefaultEnv();
-	const shell = new Shell(terminal, kernel.vfs, registry, env);
+	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry);
 
 	const jobTable = shell.getJobTable();
 	const processRegistry = shell.getProcessRegistry();
@@ -780,6 +809,7 @@ async function addHttpTab(label: string): Promise<HttpTab> {
 	registry.register('kill', createKillCommand(processRegistry));
 	registry.register('watch', createWatchCommand(registry));
 	registry.register('help', createHelpCommand(registry));
+
 
 	const httpNpmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
 		const result = await shell.execute(cmd, {
@@ -795,6 +825,7 @@ async function addHttpTab(label: string): Promise<HttpTab> {
 
 	await shell.sourceFile('/etc/profile');
 	await shell.sourceFile(env.HOME + '/.bashrc');
+	await kernel.bootServices();
 	shell.start();
 
 	const tab: HttpTab = { id, tabBtn, panel, terminal, shell };

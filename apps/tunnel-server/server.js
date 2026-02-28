@@ -1,15 +1,15 @@
-import http from 'http';
-import { WebSocketServer } from 'ws';
-import crypto from 'crypto';
+import http from "http";
+import { WebSocketServer } from "ws";
+import crypto from "crypto";
 
-const PORT = 3001;
+const PORT = 3005;
 const pendingRequests = new Map();
 let tunnelClient = null;
 
 // Create HTTP server
 const server = http.createServer(async (req, res) => {
   // Handle WebSocket upgrade separately
-  if (req.headers.upgrade === 'websocket') {
+  if (req.headers.upgrade === "websocket") {
     return;
   }
 
@@ -17,8 +17,8 @@ const server = http.createServer(async (req, res) => {
 
   // Check if tunnel client is connected
   if (!tunnelClient || tunnelClient.readyState !== 1) {
-    res.writeHead(503, { 'Content-Type': 'text/plain' });
-    res.end('Tunnel client not connected');
+    res.writeHead(503, { "Content-Type": "text/plain" });
+    res.end("Tunnel client not connected");
     return;
   }
 
@@ -30,13 +30,13 @@ const server = http.createServer(async (req, res) => {
   for await (const chunk of req) {
     chunks.push(chunk);
   }
-  const body = Buffer.concat(chunks).toString('base64');
+  const body = Buffer.concat(chunks).toString("base64");
 
   // Create promise for the response
   const responsePromise = new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       pendingRequests.delete(requestId);
-      reject(new Error('Request timeout'));
+      reject(new Error("Request timeout"));
     }, 30000);
 
     pendingRequests.set(requestId, {
@@ -47,18 +47,18 @@ const server = http.createServer(async (req, res) => {
       reject: (error) => {
         clearTimeout(timeout);
         reject(error);
-      }
+      },
     });
   });
 
   // Send request to tunnel client
   const tunnelRequest = {
-    type: 'request',
+    type: "request",
     requestId,
     method: req.method,
     url: req.url,
     headers: req.headers,
-    body
+    body,
   };
 
   tunnelClient.send(JSON.stringify(tunnelRequest));
@@ -69,56 +69,56 @@ const server = http.createServer(async (req, res) => {
 
     // Send response back to original requester
     res.writeHead(response.statusCode, response.headers);
-    res.end(Buffer.from(response.body, 'base64'));
+    res.end(Buffer.from(response.body, "base64"));
   } catch (error) {
-    console.error('[HTTP] Error:', error.message);
-    res.writeHead(500, { 'Content-Type': 'text/plain' });
-    res.end('Tunnel error: ' + error.message);
+    console.error("[HTTP] Error:", error.message);
+    res.writeHead(500, { "Content-Type": "text/plain" });
+    res.end("Tunnel error: " + error.message);
   }
 });
 
 // Create WebSocket server
 const wss = new WebSocketServer({ server });
 
-wss.on('connection', (ws) => {
-  console.log('[WebSocket] Tunnel client connected');
+wss.on("connection", (ws) => {
+  console.log("[WebSocket] Tunnel client connected");
   tunnelClient = ws;
 
-  ws.on('message', (data) => {
+  ws.on("message", (data) => {
     try {
       const message = JSON.parse(data.toString());
 
-      if (message.type === 'response') {
+      if (message.type === "response") {
         const pending = pendingRequests.get(message.requestId);
         if (pending) {
           pendingRequests.delete(message.requestId);
           pending.resolve({
             statusCode: message.statusCode,
             headers: message.headers,
-            body: message.body
+            body: message.body,
           });
         }
       }
     } catch (error) {
-      console.error('[WebSocket] Error parsing message:', error);
+      console.error("[WebSocket] Error parsing message:", error);
     }
   });
 
-  ws.on('close', () => {
-    console.log('[WebSocket] Tunnel client disconnected');
+  ws.on("close", () => {
+    console.log("[WebSocket] Tunnel client disconnected");
     if (tunnelClient === ws) {
       tunnelClient = null;
     }
 
     // Reject all pending requests
     for (const [requestId, pending] of pendingRequests.entries()) {
-      pending.reject(new Error('Tunnel client disconnected'));
+      pending.reject(new Error("Tunnel client disconnected"));
       pendingRequests.delete(requestId);
     }
   });
 
-  ws.on('error', (error) => {
-    console.error('[WebSocket] Error:', error);
+  ws.on("error", (error) => {
+    console.error("[WebSocket] Error:", error);
   });
 });
 
