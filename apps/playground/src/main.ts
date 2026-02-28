@@ -756,18 +756,18 @@ async function addHttpTab(label: string): Promise<HttpTab> {
 	const registry = createDefaultRegistry();
 	bootLifoPackages(kernel.vfs, registry);
 
-	// Register node, curl, and tunnel with the shared portRegistry
-	registry.register('node', createNodeCommand(kernel.portRegistry));
-	registry.register('curl', createCurlCommand(kernel.portRegistry, kernel.networkStack));
-	registry.register('tunnel', createTunnelCommandV2(kernel.portRegistry, kernel.networkStack));
+	// Register node, curl, and tunnel with kernel
+	registry.register('node', createNodeCommand(kernel));
+	registry.register('curl', createCurlCommand(kernel));
+	registry.register('tunnel', createTunnelCommandV2(kernel));
 
 
-	// Register network commands (pass portRegistry to netstat to show HTTP servers)
-	registry.register('ifconfig', createIfconfigCommand(kernel.networkStack));
-	registry.register('route', createRouteCommand(kernel.networkStack));
-	registry.register('netstat', createNetstatCommand(kernel.networkStack, kernel.portRegistry));
-	registry.register('host', createHostCommand(kernel.networkStack));
-	registry.register('ip', createIPCommand(kernel.networkStack));
+	// Register network commands
+	registry.register('ifconfig', createIfconfigCommand(kernel));
+	registry.register('route', createRouteCommand(kernel));
+	registry.register('netstat', createNetstatCommand(kernel));
+	registry.register('host', createHostCommand(kernel));
+	registry.register('ip', createIPCommand(kernel));
 
 
 	const env = kernel.getDefaultEnv();

@@ -24,6 +24,12 @@
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./session": "./dist/session.js",
+    "./daemon": "./dist/daemon.js",
+    "./auth": "./dist/auth.js"
+  },
   "files": [
     "dist"
   ],
@@ -32,9 +38,11 @@
     "dev": "NODE_ENV=development tsx src/index.ts"
   },
   "dependencies": {
-    "@lifo-sh/core": "workspace:*"
+    "@lifo-sh/core": "workspace:*",
+    "adm-zip": "^0.5.10"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.5",
     "@types/node": "^22.0.0",
     "tsup": "^8.0.0",
     "tsx": "^4.0.0",
