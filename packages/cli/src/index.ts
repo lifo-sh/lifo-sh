@@ -352,6 +352,10 @@ async function runDaemon(id: string, mountPath: string, port?: number, snapshotP
     const welcome = JSON.stringify({ type: 'output', data: motdText + mountInfo }) + '\n';
     socket.write(welcome);
     daemonTerminal.addClient(socket);
+    // If the shell is idle (e.g. after a previous client typed `exit`), the
+    // prompt was printed when no one was listening. Re-print it now so the
+    // newly attached client sees a prompt immediately.
+    shell.reprompt();
   }
 
   const server = net.createServer(handleClient);
