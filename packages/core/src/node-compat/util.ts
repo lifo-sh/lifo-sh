@@ -76,7 +76,14 @@ export function promisify<T>(fn: (...args: [...unknown[], (err: unknown, result:
   });
 }
 
-export function inherits(ctor: { prototype: object }, superCtor: { prototype: object }): void {
+export function inherits(ctor: { prototype: object; super_?: unknown }, superCtor: { prototype: object } | null | undefined): void {
+  if (superCtor === undefined || superCtor === null) {
+    throw new TypeError('The super constructor to "inherits" must not be null or undefined');
+  }
+  if (typeof superCtor.prototype === 'undefined') {
+    throw new TypeError('The super constructor to "inherits" must have a prototype');
+  }
+  ctor.super_ = superCtor;
   Object.setPrototypeOf(ctor.prototype, superCtor.prototype);
 }
 
@@ -99,4 +106,13 @@ export function types() {
   };
 }
 
-export default { format, inspect, promisify, inherits, deprecate, types };
+/** Strip ANSI/VT control sequences from a string (ESC[...m, etc.) */
+export function stripVTControlCharacters(str: string): string {
+  // eslint-disable-next-line no-control-regex
+  return str.replace(/\x1B\[[0-9;]*[a-zA-Z]|\x1B\].*?(?:\x07|\x1B\\)/g, '');
+}
+
+export const TextDecoder = globalThis.TextDecoder;
+export const TextEncoder = globalThis.TextEncoder;
+
+export default { format, inspect, promisify, inherits, deprecate, types, stripVTControlCharacters, TextDecoder, TextEncoder };

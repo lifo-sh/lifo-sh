@@ -10,6 +10,7 @@ import { createWatchCommand } from '../commands/system/watch.js';
 import { createHelpCommand } from '../commands/system/help.js';
 import { createNodeCommand } from '../commands/system/node.js';
 import { createCurlCommand } from '../commands/net/curl.js';
+import { createTunnelCommand } from '../commands/net/tunnel.js';
 import { createNpmCommand, createNpxCommand } from '../commands/system/npm.js';
 import { createLifoPkgCommand, bootLifoPackages } from '../commands/system/lifo.js';
 import type { VFS } from '../kernel/vfs/index.js';
@@ -122,6 +123,7 @@ export class Sandbox {
     registry.register('help', createHelpCommand(registry));
     registry.register('node', createNodeCommand(kernel.portRegistry));
     registry.register('curl', createCurlCommand(kernel.portRegistry));
+    registry.register('tunnel', createTunnelCommand(kernel.portRegistry));
 
     // Register npm with shell execution support
     const npmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {

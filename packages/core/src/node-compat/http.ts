@@ -1,5 +1,10 @@
 import { EventEmitter } from './events.js';
-import type { VirtualRequestHandler } from '../kernel/index.js';
+import type { VirtualRequestHandler, VirtualResponse } from '../kernel/index.js';
+
+/** Extended VirtualResponse with a done promise for async middleware */
+export interface VirtualResponseWithDone extends VirtualResponse {
+  _donePromise?: Promise<void>;
+}
 
 interface RequestOptions {
   hostname?: string;
@@ -17,15 +22,54 @@ class IncomingMessage extends EventEmitter {
   headers: Record<string, string>;
   method?: string;
   url?: string;
+  httpVersion = '1.1';
+  httpVersionMajor = 1;
+  httpVersionMinor = 1;
+  complete = false;
+  aborted = false;
+  readable = true;
+  // Minimal socket stub that Vite/Connect middleware expects
+  socket: {
+    remoteAddress: string;
+    remotePort: number;
+    encrypted: boolean;
+    destroy: () => void;
+  };
+  connection: {
+    remoteAddress: string;
+    encrypted: boolean;
+  };
 
   constructor(statusCode: number, statusMessage: string, headers: Record<string, string>) {
     super();
     this.statusCode = statusCode;
     this.statusMessage = statusMessage;
     this.headers = headers;
+    const socketStub = {
+      remoteAddress: '127.0.0.1',
+      remotePort: 0,
+      encrypted: false,
+      destroy: () => {},
+    };
+    this.socket = socketStub;
+    this.connection = socketStub;
   }
 
   setEncoding(_enc: string): this {
+    return this;
+  }
+
+  // Stream-like methods that middleware may call
+  resume(): this {
+    return this;
+  }
+
+  pause(): this {
+    return this;
+  }
+
+  destroy(): this {
+    this.aborted = true;
     return this;
   }
 }
@@ -132,45 +176,146 @@ class ClientRequest extends EventEmitter {
 
 // --- ServerResponse class ---
 
-class ServerResponse {
+class ServerResponse extends EventEmitter {
   statusCode = 200;
-  private _headers: Record<string, string> = {};
+  statusMessage = 'OK';
+  headersSent = false;
+  finished = false;
+  writableEnded = false;
+  writableFinished = false;
+  private _headers: Record<string, string | string[]> = {};
   private _body = '';
   private _vRes: { statusCode: number; headers: Record<string, string>; body: string };
+  // Minimal socket stub that middleware may reference
+  socket: { destroy: () => void; writable: boolean; readable: boolean; remoteAddress: string } | null;
+  // Promise that resolves when end() is called (for async middleware)
+  _donePromise: Promise<void>;
+  private _doneResolve!: () => void;
 
   constructor(vRes: { statusCode: number; headers: Record<string, string>; body: string }) {
+    super();
     this._vRes = vRes;
+    this._donePromise = new Promise<void>((resolve) => {
+      this._doneResolve = resolve;
+    });
+    // Socket stub that resolves _donePromise on destroy (error abort path)
+    this.socket = {
+      writable: true,
+      readable: true,
+      remoteAddress: '127.0.0.1',
+      destroy: () => {
+        this.socket!.writable = false;
+        if (!this.finished) {
+          this._vRes.statusCode = this.statusCode || 500;
+          this._vRes.headers = {};
+          this._vRes.body = '';
+          this.finished = true;
+          this._doneResolve();
+        }
+      },
+    };
   }
 
-  writeHead(statusCode: number, headers?: Record<string, string>): this {
+  writeHead(statusCode: number, reasonOrHeaders?: string | Record<string, string | string[]>, headers?: Record<string, string | string[]>): this {
     this.statusCode = statusCode;
-    if (headers) {
-      Object.assign(this._headers, headers);
+    let h: Record<string, string | string[]> | undefined;
+    if (typeof reasonOrHeaders === 'string') {
+      this.statusMessage = reasonOrHeaders;
+      h = headers;
+    } else {
+      h = reasonOrHeaders;
     }
+    if (h) {
+      for (const [k, v] of Object.entries(h)) {
+        this._headers[k.toLowerCase()] = v;
+      }
+    }
+    this.headersSent = true;
     return this;
   }
 
-  setHeader(name: string, value: string): this {
+  setHeader(name: string, value: string | string[]): this {
     this._headers[name.toLowerCase()] = value;
     return this;
   }
 
-  getHeader(name: string): string | undefined {
+  getHeader(name: string): string | string[] | undefined {
     return this._headers[name.toLowerCase()];
   }
 
-  write(data: string): boolean {
-    this._body += data;
+  getHeaders(): Record<string, string | string[]> {
+    return { ...this._headers };
+  }
+
+  getHeaderNames(): string[] {
+    return Object.keys(this._headers);
+  }
+
+  hasHeader(name: string): boolean {
+    return name.toLowerCase() in this._headers;
+  }
+
+  removeHeader(name: string): void {
+    delete this._headers[name.toLowerCase()];
+  }
+
+  appendHeader(name: string, value: string | string[]): this {
+    const key = name.toLowerCase();
+    const existing = this._headers[key];
+    if (existing === undefined) {
+      this._headers[key] = value;
+    } else if (Array.isArray(existing)) {
+      this._headers[key] = existing.concat(value);
+    } else {
+      this._headers[key] = Array.isArray(value) ? [existing, ...value] : [existing, value];
+    }
+    return this;
+  }
+
+  flushHeaders(): void {
+    this.headersSent = true;
+  }
+
+  write(data: string | Uint8Array): boolean {
+    if (typeof data === 'string') {
+      this._body += data;
+    } else {
+      this._body += new TextDecoder().decode(data);
+    }
     return true;
   }
 
-  end(data?: string): void {
-    if (data) this._body += data;
+  end(data?: string | Uint8Array | (() => void), _encoding?: string, cb?: () => void): void {
+    if (typeof data === 'function') {
+      cb = data;
+      data = undefined;
+    }
+    if (typeof data === 'string') {
+      this._body += data;
+    } else if (data instanceof Uint8Array) {
+      this._body += new TextDecoder().decode(data);
+    }
+    this.finished = true;
+    this.writableEnded = true;
+    this.writableFinished = true;
+    // Flatten header arrays to comma-separated strings for the virtual response
+    const flatHeaders: Record<string, string> = {};
+    for (const [k, v] of Object.entries(this._headers)) {
+      flatHeaders[k] = Array.isArray(v) ? v.join(', ') : v;
+    }
     // Flush to virtual response
     this._vRes.statusCode = this.statusCode;
-    this._vRes.headers = { ...this._headers };
+    this._vRes.headers = flatHeaders;
     this._vRes.body = this._body;
+    this.headersSent = true;
+    this.emit('finish');
+    this._doneResolve();
+    if (cb) cb();
   }
+
+  // Cork/uncork stubs (used by some frameworks)
+  cork(): void {}
+  uncork(): void {}
 }
 
 // --- Server class ---
@@ -221,17 +366,29 @@ class Server extends EventEmitter {
       req.url = vReq.url;
 
       const res = new ServerResponse(vRes);
+      // Attach the done promise to vRes so consumers (tunnel, curl) can await async middleware
+      (vRes as VirtualResponseWithDone)._donePromise = res._donePromise;
       this.emit('request', req, res);
+
+      // Emit body data + end so middleware that reads the request body works
+      queueMicrotask(() => {
+        if (vReq.body) {
+          req.emit('data', vReq.body);
+        }
+        req.complete = true;
+        req.emit('end');
+      });
     };
     this.portRegistry.set(port, handler);
 
     // Track this server
     this._activeServers.push(this);
 
-    if (callback) {
-      // Call callback asynchronously like Node does
-      queueMicrotask(callback);
-    }
+    // Emit 'listening' event asynchronously (like Node does) and call callback
+    queueMicrotask(() => {
+      this.emit('listening');
+      if (callback) callback();
+    });
 
     return this;
   }

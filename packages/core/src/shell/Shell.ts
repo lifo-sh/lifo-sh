@@ -146,10 +146,19 @@ export class Shell {
    * Programmatic command execution with captured stdout/stderr.
    * Used by Sandbox.commands.run() for headless mode.
    */
+  private _executeDepth = 0;
+
   async execute(
     cmd: string,
     options?: ExecuteOptions,
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+    this._executeDepth++;
+    if (this._executeDepth > 10) {
+      this._executeDepth--;
+      const msg = `shell.execute: recursion depth exceeded (cmd="${cmd}")\n`;
+      options?.onStderr?.(msg);
+      return { stdout: '', stderr: msg, exitCode: 1 };
+    }
     let stdoutBuf = '';
     let stderrBuf = '';
 
@@ -200,10 +209,12 @@ export class Shell {
       const exitCode = await this.interpreter.executeLine(cmd, terminalStdin);
       return { stdout: stdoutBuf, stderr: stderrBuf, exitCode };
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = e instanceof Error ? (e.stack || e.message) : String(e);
       stderrBuf += msg + '\n';
+      options?.onStderr?.(msg + '\n');
       return { stdout: stdoutBuf, stderr: stderrBuf, exitCode: 1 };
     } finally {
+      this._executeDepth--;
       // Restore state
       this.interpreterConfig.defaultStdout = prevDefaultStdout;
       this.interpreterConfig.defaultStderr = prevDefaultStderr;

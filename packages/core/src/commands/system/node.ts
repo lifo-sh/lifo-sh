@@ -11,6 +11,47 @@ import type { VirtualRequestHandler } from '../../kernel/index.js';
 
 const NODE_VERSION = 'v20.0.0';
 
+// ── Rollup / esbuild CJS-ESM interop helpers ──
+// Bundled npm packages (Vite, Rollup, etc.) reference these helpers at the module
+// scope.  When our ESM→CJS transform converts imports, the helpers may lose their
+// binding.  Making them available on globalThis acts as a fallback – if the module
+// defines its own copy the local declaration naturally shadows the global.
+//
+// Complete set from @rollup/plugin-commonjs interop:
+const _rollupHelpers: Record<string, (...args: unknown[]) => unknown> = {
+  getDefaultExportFromCjs(x: unknown): unknown {
+    const o = x as Record<string, unknown>;
+    return o && o.__esModule && Object.prototype.hasOwnProperty.call(o, 'default') ? o.default : o;
+  },
+  getDefaultExportFromNamespaceIfPresent(n: unknown): unknown {
+    const o = n as Record<string, unknown>;
+    return o && Object.prototype.hasOwnProperty.call(o, 'default') && Object.keys(o).length === 1 ? o.default : o;
+  },
+  getAugmentedNamespace(n: unknown): unknown {
+    const o = n as Record<string, unknown>;
+    if (o.__esModule) return o;
+    const a: Record<string, unknown> = Object.defineProperty({}, '__esModule', { value: true });
+    Object.keys(o).forEach(function (k) {
+      const d = Object.getOwnPropertyDescriptor(o, k);
+      Object.defineProperty(a, k, d && d.get ? d : { enumerable: true, get() { return o[k]; } });
+    });
+    a.default = n;
+    return Object.freeze(a);
+  },
+  _mergeNamespaces(n: unknown, ...ms: unknown[]): unknown {
+    const o = n as Record<string, unknown>;
+    const modules = ms.flat() as Array<Record<string, unknown>>;
+    for (const m of modules) {
+      for (const k of Object.keys(m)) {
+        if (k !== 'default' && !(k in o)) {
+          Object.defineProperty(o, k, { enumerable: true, get: () => m[k] });
+        }
+      }
+    }
+    return Object.freeze(o);
+  },
+};
+
 /** Strip shebang line (e.g. #!/usr/bin/env node) – replace with blank to preserve line numbers */
 function stripShebang(src: string): string {
   if (src.charCodeAt(0) === 0x23 /* # */ && src.charCodeAt(1) === 0x21 /* ! */) {
@@ -23,80 +64,316 @@ function stripShebang(src: string): string {
 
 /** Check if source contains ESM import/export syntax */
 function isEsmSource(source: string): boolean {
-  // Match import/export at line start (possibly after whitespace)
-  return /(?:^|\n)\s*(?:import\s+|export\s+|export\s*\{)/.test(source);
+  // Match import/export at line start, after semicolon, or minified (import{, import*)
+  return /(?:^|\n|;)\s*(?:import\s*[\w{*('".]|export\s+|export\s*\{)/.test(source);
 }
 
-/** Determine if source should be treated as ESM based on filename and content */
-function shouldTreatAsEsm(source: string, filename: string): boolean {
+/** Determine if source should be treated as ESM based on filename, content, and package.json type */
+function shouldTreatAsEsm(source: string, filename: string, vfs?: { exists(p: string): boolean; readFileString(p: string): string }): boolean {
   const ext = extname(filename);
   if (ext === '.mjs') return true;
   if (ext === '.cjs') return false;
+  // Check nearest package.json "type" field (Node.js semantics)
+  if (vfs && ext === '.js') {
+    let dir = dirname(filename);
+    for (;;) {
+      const pkgPath = join(dir, 'package.json');
+      if (vfs.exists(pkgPath)) {
+        try {
+          const pkg = JSON.parse(vfs.readFileString(pkgPath));
+          if (pkg.type === 'module') return true;
+          if (pkg.type === 'commonjs') return false;
+        } catch { /* ignore */ }
+        break;
+      }
+      const parent = dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+  }
   return isEsmSource(source);
+}
+
+// Names that collide with the new Function() CJS wrapper parameters.
+// Using `const` for these would throw "Identifier X has already been declared",
+// so we emit `var` instead (var can shadow function params in non-strict mode).
+const CJS_WRAPPER_PARAMS = new Set([
+  'exports', 'require', 'module', '__filename', '__dirname',
+  'console', 'process', 'Buffer', 'setTimeout', 'setInterval',
+  'clearTimeout', 'clearInterval', 'global',
+  '__importMetaUrl', '__importMeta', '__importMetaResolve',
+]);
+function cjsDecl(name: string): string {
+  return CJS_WRAPPER_PARAMS.has(name) ? 'var' : 'const';
+}
+
+/**
+ * Mask string/template literals with safe placeholders so that
+ * import/export regexes don't match keywords inside string content.
+ * Returns the masked source and an array of original literals for restoration.
+ */
+function maskStringLiterals(src: string): { masked: string; literals: string[] } {
+  const literals: string[] = [];
+  let masked = '';
+  let i = 0;
+
+  while (i < src.length) {
+    const ch = src[i];
+
+    // Skip single-line comments (may contain unmatched quotes)
+    if (ch === '/' && i + 1 < src.length && src[i + 1] === '/') {
+      const nl = src.indexOf('\n', i);
+      const end = nl === -1 ? src.length : nl;
+      masked += src.slice(i, end);
+      i = end;
+      continue;
+    }
+    // Skip multi-line comments
+    if (ch === '/' && i + 1 < src.length && src[i + 1] === '*') {
+      const end = src.indexOf('*/', i + 2);
+      const close = end === -1 ? src.length : end + 2;
+      masked += src.slice(i, close);
+      i = close;
+      continue;
+    }
+
+    // Regex literals — skip to avoid confusing backticks inside /regex/ with templates
+    if (ch === '/' && i + 1 < src.length && src[i + 1] !== '/' && src[i + 1] !== '*') {
+      // Heuristic: '/' is a regex if preceded by an operator, keyword, or start-of-line.
+      // IMPORTANT: We include ')' and '}' even though they can precede division too,
+      // because under-detection is catastrophic: a backtick inside an undetected
+      // regex triggers the template-literal parser which can eat the rest of the file.
+      // Over-detection is harmless: the regex scanner copies content as-is and stops
+      // at newline, so the output is identical either way.
+      let k = i - 1;
+      while (k >= 0 && (src[k] === ' ' || src[k] === '\t' || src[k] === '\n' || src[k] === '\r')) k--;
+      const prev = k >= 0 ? src[k] : '\0';
+      if ('\0=([{,;!&|^~?:+-*%<>/)]}'.includes(prev) ||
+          (k >= 1 && /\b(?:return|typeof|void|delete|throw|new|case|of|in|yield|await)\s*$/.test(src.slice(Math.max(0, k - 11), k + 1)))) {
+        const regStart = i;
+        i++; // skip opening /
+        while (i < src.length && src[i] !== '\n') {
+          if (src[i] === '\\') { i += 2; continue; }
+          if (src[i] === '/') { i++; break; }
+          if (src[i] === '[') { // character class — / doesn't end regex inside [...]
+            i++;
+            while (i < src.length && src[i] !== ']' && src[i] !== '\n') {
+              if (src[i] === '\\') i++;
+              i++;
+            }
+            if (i < src.length && src[i] === ']') i++;
+            continue;
+          }
+          i++;
+        }
+        while (i < src.length && /[gimsuyv]/.test(src[i])) i++; // flags
+        masked += src.slice(regStart, i);
+        continue;
+      }
+    }
+
+    // String/template literals
+    if (ch === '"' || ch === "'" || ch === '`') {
+      const start = i;
+      const quote = ch;
+      i++; // skip opening quote
+      while (i < src.length) {
+        if (src[i] === '\\') { i += 2; continue; }
+        if (src[i] === quote) { i++; break; }
+        // Template literal ${...} expressions — skip with depth tracking
+        if (quote === '`' && src[i] === '$' && i + 1 < src.length && src[i + 1] === '{') {
+          let depth = 1;
+          i += 2;
+          while (i < src.length && depth > 0) {
+            if (src[i] === '{') depth++;
+            else if (src[i] === '}') depth--;
+            else if (src[i] === '\\') i++;
+            else if (src[i] === "'" || src[i] === '"') {
+              const q = src[i]; i++;
+              while (i < src.length && src[i] !== q) {
+                if (src[i] === '\\') i++;
+                i++;
+              }
+              if (i < src.length) i++; // skip closing quote
+              continue;
+            } else if (src[i] === '`') {
+              // Nested template literal inside expression
+              i++;
+              while (i < src.length && src[i] !== '`') {
+                if (src[i] === '\\') i++;
+                i++;
+              }
+              if (i < src.length) i++;
+              continue;
+            }
+            i++;
+          }
+          continue;
+        }
+        i++;
+      }
+
+      const literal = src.slice(start, i);
+      const idx = literals.length;
+      literals.push(literal);
+
+      // Placeholder uses same quote style so import regexes that capture
+      // ['"][^'"]+['"] still work (they see e.g. "__LIFO_S0__").
+      masked += quote + '__LIFO_S' + idx + '__' + quote;
+      continue;
+    }
+
+    masked += ch;
+    i++;
+  }
+
+  return { masked, literals };
+}
+
+/**
+ * Restore original string/template literals from masked placeholders.
+ */
+function unmaskStringLiterals(src: string, literals: string[]): string {
+  return src.replace(
+    /(['"`])__LIFO_S(\d+)__\1/g,
+    (_match, _quote, idxStr) => literals[parseInt(idxStr, 10)]
+  );
 }
 
 /** Transform ESM import/export syntax to CJS require/exports equivalents */
 function transformEsmToCjs(source: string): string {
-  let result = source;
+  // Normalize \r\n → \n so regexes anchored on \n work with Windows line endings
+  let result = source.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  // import.meta.* replacements MUST run before masking.
+  // The masker may incorrectly consume code regions (e.g. regex literals with
+  // backticks), so import.meta must be replaced on the raw source first.
+  // These are safe on raw source: replacements are plain identifiers that won't
+  // cause issues even if they accidentally match inside string literals.
+  result = result.split('import.meta.url').join('__importMetaUrl');
+  result = result.split('import.meta.dirname').join('__dirname');
+  result = result.split('import.meta.filename').join('__filename');
+  result = result.split('import.meta.require').join('require');
+  result = result.split('import.meta.resolve').join('__importMetaResolve');
+  // Bare import.meta (catch-all, must come AFTER specific property replacements)
+  result = result.split('import.meta').join('__importMeta');
+
+  // Mask string/template literal contents so import/export regexes don't
+  // match keywords inside strings (e.g. const HELPERS = `export function ...`)
+  const { masked, literals } = maskStringLiterals(result);
+
+  result = masked;
+  // Split semicolon-separated import/export onto their own lines
+  // so that the (?:^|\n) anchored regexes below can find them in minified code
+  result = result.replace(
+    /;([ \t]*(?:import\s*[\w${*('".]|export[\s{*]))/g,
+    ';\n$1'
+  );
   const trailingExports: string[] = [];
   let hasDefaultExport = false;
   let hasNamedExport = false;
+  // Track import sources: localName → { modRef, prop } for live-binding exports
+  const importSources = new Map<string, { modRef: string; prop: string }>();
 
   // Scan for export types to decide default export strategy
   hasDefaultExport = /(?:^|\n)\s*export\s+default\s+/.test(result);
   hasNamedExport = /(?:^|\n)\s*export\s+(?:const|let|var|function|class|\{|\*\s+from)/.test(result);
 
   // --- Import transforms ---
+  // NOTE: JS identifiers can contain $ (e.g. fs$8, path$b in esbuild bundles).
+  // We use [\w$]+ instead of \w+ throughout to match these correctly.
+
+  // Combined: import X, { a, b as c } from 'mod'
+  result = result.replace(
+    /(?:^|\n)([ \t]*)import\s+([\w$]+)\s*,\s*\{([^}]+)\}\s*from\s*(['"][^'"]+['"])[ \t]*;?/g,
+    (match, indent, defaultName, imports, mod) => {
+      // Guard: ${ in captured names means regex matched inside a template literal
+      if (imports.includes('${')) return match;
+      const tmp = '__mod_' + defaultName;
+      const mapped = imports.split(',').map((s: string) => {
+        const parts = s.trim().split(/\s+as\s+/);
+        const sourceProp = parts[0].trim();
+        const localName = parts.length === 2 ? parts[1].trim() : sourceProp;
+        if (localName) importSources.set(localName, { modRef: tmp, prop: sourceProp });
+        if (parts.length === 2) return `${sourceProp}: ${localName}`;
+        return sourceProp;
+      }).filter((s: string) => s).join(', ');
+      return `\n${indent}${cjsDecl(tmp)} ${tmp} = require(${mod});\n${indent}${cjsDecl(defaultName)} ${defaultName} = ${tmp}.default || ${tmp};\n${indent}const { ${mapped} } = ${tmp};`;
+    }
+  );
+
+  // Combined: import X, * as Y from 'mod'
+  result = result.replace(
+    /(?:^|\n)([ \t]*)import\s+([\w$]+)\s*,\s*\*\s*as\s+([\w$]+)\s+from\s*(['"][^'"]+['"])[ \t]*;?/g,
+    (_match, indent, defaultName, nsName, mod) => {
+      return `\n${indent}${cjsDecl(nsName)} ${nsName} = require(${mod});\n${indent}${cjsDecl(defaultName)} ${defaultName} = ${nsName}.default || ${nsName};`;
+    }
+  );
 
   // import { a, b as c } from 'mod'
   result = result.replace(
-    /(?:^|\n)([ \t]*)import\s*\{([^}]+)\}\s*from\s*(['"][^'"]+['"])\s*;?/g,
-    (_match, indent, imports, mod) => {
+    /(?:^|\n)([ \t]*)import\s*\{([^}]+)\}\s*from\s*(['"][^'"]+['"])[ \t]*;?/g,
+    (match, indent, imports, mod) => {
+      // Guard: ${ in captured names means regex matched inside a template literal
+      if (imports.includes('${')) return match;
+      const modRef = '__imp_' + Math.random().toString(36).slice(2, 8);
       const mapped = imports.split(',').map((s: string) => {
         const parts = s.trim().split(/\s+as\s+/);
-        if (parts.length === 2) return `${parts[0].trim()}: ${parts[1].trim()}`;
-        return parts[0].trim();
+        const sourceProp = parts[0].trim();
+        const localName = parts.length === 2 ? parts[1].trim() : sourceProp;
+        if (localName) importSources.set(localName, { modRef, prop: sourceProp });
+        if (parts.length === 2) return `${sourceProp}: ${localName}`;
+        return sourceProp;
       }).filter((s: string) => s).join(', ');
-      return `\n${indent}const { ${mapped} } = require(${mod});`;
+      return `\n${indent}const ${modRef} = require(${mod});\n${indent}const { ${mapped} } = ${modRef};`;
     }
   );
 
   // import * as X from 'mod'
   result = result.replace(
-    /(?:^|\n)([ \t]*)import\s*\*\s*as\s+(\w+)\s+from\s*(['"][^'"]+['"])\s*;?/g,
-    (_match, indent, name, mod) => `\n${indent}const ${name} = require(${mod});`
+    /(?:^|\n)([ \t]*)import\s*\*\s*as\s+([\w$]+)\s+from\s*(['"][^'"]+['"])[ \t]*;?/g,
+    (_match, indent, name, mod) => `\n${indent}${cjsDecl(name)} ${name} = require(${mod});`
   );
 
   // import X from 'mod' (default import)
   result = result.replace(
-    /(?:^|\n)([ \t]*)import\s+(\w+)\s+from\s*(['"][^'"]+['"])\s*;?/g,
-    (_match, indent, name, mod) => `\n${indent}const ${name} = require(${mod});`
+    /(?:^|\n)([ \t]*)import\s+([\w$]+)\s+from\s*(['"][^'"]+['"])[ \t]*;?/g,
+    (_match, indent, name, mod) => `\n${indent}${cjsDecl(name)} ${name} = require(${mod});`
   );
 
   // import 'mod' (side-effect)
   result = result.replace(
-    /(?:^|\n)([ \t]*)import\s*(['"][^'"]+['"])\s*;?/g,
+    /(?:^|\n)([ \t]*)import\s*(['"][^'"]+['"])[ \t]*;?/g,
     (_match, indent, mod) => `\n${indent}require(${mod});`
   );
 
   // --- Export transforms ---
 
-  // export * from 'mod'
+  // Strip empty export{} (bundler ESM marker, no-op)
+  result = result.replace(/(?:^|\n)[ \t]*export\s*\{\s*\}[ \t]*;?/g, '');
+
+  // export * from 'mod' — use getter-based forwarding for live bindings
   result = result.replace(
-    /(?:^|\n)([ \t]*)export\s*\*\s*from\s*(['"][^'"]+['"])\s*;?/g,
-    (_match, indent, mod) => `\n${indent}Object.assign(exports, require(${mod}));`
+    /(?:^|\n)([ \t]*)export\s*\*\s*from\s*(['"][^'"]+['"])[ \t]*;?/g,
+    (_match, indent, mod) => {
+      const tmpVar = '__star_' + Math.random().toString(36).slice(2, 8);
+      return `\n${indent}const ${tmpVar} = require(${mod});\n${indent}Object.keys(${tmpVar}).forEach(function(k) { if (k !== 'default' && !exports.hasOwnProperty(k)) Object.defineProperty(exports, k, { get: function() { return ${tmpVar}[k]; }, enumerable: true, configurable: true }); });`;
+    }
   );
 
-  // export { a, b } from 'mod' (re-export)
+  // export { a, b } from 'mod' (re-export) — use getters for live bindings
+  // (handles circular dependencies where source module isn't fully populated yet)
   result = result.replace(
-    /(?:^|\n)([ \t]*)export\s*\{([^}]+)\}\s*from\s*(['"][^'"]+['"])\s*;?/g,
-    (_match, indent, names, mod) => {
+    /(?:^|\n)([ \t]*)export\s*\{([^}]+)\}\s*from\s*(['"][^'"]+['"])[ \t]*;?/g,
+    (match, indent, names, mod) => {
+      // Guard: ${ in captured names means regex matched inside a template literal
+      if (names.includes('${')) return match;
       const tmpVar = '__re_' + Math.random().toString(36).slice(2, 8);
       const assignments = names.split(',').map((s: string) => {
         const parts = s.trim().split(/\s+as\s+/);
         const local = parts[0].trim();
         const exported = parts.length === 2 ? parts[1].trim() : local;
-        return `${indent}exports.${exported} = ${tmpVar}.${local};`;
+        return `${indent}Object.defineProperty(exports, '${exported}', { get() { return ${tmpVar}.${local}; }, enumerable: true, configurable: true });`;
       }).join('\n');
       return `\n${indent}const ${tmpVar} = require(${mod});\n${assignments}`;
     }
@@ -117,52 +394,141 @@ function transformEsmToCjs(source: string): string {
 
   // export const/let/var x = ...
   result = result.replace(
-    /(?:^|\n)([ \t]*)export\s+(const|let|var)\s+(\w+)\s*=/g,
-    (_match, indent, keyword, name) => `\n${indent}${keyword} ${name} = exports.${name} =`
+    /(?:^|\n)([ \t]*)export\s+(const|let|var)\s+([\w$]+)\s*=/g,
+    (match, indent, keyword, name) => {
+      // Guard: ${ means regex matched inside a template literal
+      if (match.includes('${')) return match;
+      return `\n${indent}${keyword} ${name} = exports.${name} =`;
+    }
   );
 
-  // export function f(...) / export class C
+  // export function f(...) / export async function f(...) / export class C
   result = result.replace(
-    /(?:^|\n)([ \t]*)export\s+(function\s+(\w+)|class\s+(\w+))/g,
-    (_match, indent, decl, fnName, className) => {
-      const name = fnName || className;
+    /(?:^|\n)([ \t]*)export\s+(async\s+function\s+([\w$]+)|function\s+([\w$]+)|class\s+([\w$]+))/g,
+    (match, indent, decl, asyncFnName, fnName, className, offset: number) => {
+      // Guard: if char after match is '{', it's a template literal `export function ${fn}`
+      // Real exports have '(' after function name or '{' after class + whitespace
+      const nextChar = result.charAt(offset + match.length);
+      if (nextChar === '{') return match;
+      const name = asyncFnName || fnName || className;
       trailingExports.push(`exports.${name} = ${name};`);
       return `\n${indent}${decl}`;
     }
   );
 
-  // export { a, b as c } (local re-exports, no from)
+  // export { a, b as c } (local exports, no from)
+  // Use trailing exports to ensure declarations are fully initialized.
+  // For names that were imported from another module, use getters pointing
+  // back to the source module reference — this creates ESM-like live bindings
+  // that survive circular dependencies.
   result = result.replace(
-    /(?:^|\n)([ \t]*)export\s*\{([^}]+)\}\s*;?/g,
-    (_match, indent, names) => {
-      const assignments = names.split(',').map((s: string) => {
+    /(?:^|\n)([ \t]*)export\s*\{([^}]+)\}[ \t]*;?/g,
+    (match, _indent, names) => {
+      // Guard: ${ in captured names means regex matched inside a template literal
+      if (names.includes('${')) return match;
+      names.split(',').forEach((s: string) => {
         const parts = s.trim().split(/\s+as\s+/);
         const local = parts[0].trim();
         const exported = parts.length === 2 ? parts[1].trim() : local;
-        return `${indent}exports.${exported} = ${local};`;
-      }).join('\n');
-      return `\n${assignments}`;
+        if (!local) return;
+        const src = importSources.get(local);
+        if (src) {
+          // Imported name → lazy getter reading from source module reference
+          trailingExports.push(`Object.defineProperty(exports, '${exported}', { get: function() { return ${src.modRef}.${src.prop}; }, enumerable: true, configurable: true });`);
+        } else {
+          // Locally defined → direct assignment at end of file
+          trailingExports.push(`exports.${exported} = ${local};`);
+        }
+      });
+      return '';
     }
   );
 
   // --- Other transforms ---
 
-  // Dynamic import() → Promise.resolve(require())
+  // Dynamic import() with string literal → Promise.resolve(require())
+  // Negative lookbehind: skip obj.import('...') where '.' precedes import
   result = result.replace(
-    /\bimport\s*\(\s*(['"][^'"]+['"])\s*\)/g,
+    /(?<!\.)(?<!\w)\bimport\s*\(\s*(['"][^'"]+['"])\s*\)/g,
     (_match, mod) => `Promise.resolve(require(${mod}))`
   );
 
-  // import.meta.url → file:// URL
+  // Dynamic import() with any expression (variables, template literals, nested parens, etc.)
+  // Must come AFTER the string-literal version above.
+  // Use programmatic paren-balancing since regex can't handle nested parens.
+  {
+    let i = 0;
+    let out = '';
+    while (i < result.length) {
+      // Look for `import(`
+      const importIdx = result.indexOf('import(', i);
+      if (importIdx === -1) { out += result.slice(i); break; }
+      // Check word boundary: char before 'import' must not be [\w$.] (dot = method call)
+      if (importIdx > 0 && /[\w$.]/.test(result[importIdx - 1])) {
+        out += result.slice(i, importIdx + 7);
+        i = importIdx + 7;
+        continue;
+      }
+      // Skip class/object method definitions like `async import(url) {` or `import(url) {`
+      // Method definitions have `) {` after the parameter list (opening method body).
+      // Dynamic imports NEVER have `{` directly after `)`.
+      {
+        let depth = 1;
+        let k = importIdx + 7;
+        while (k < result.length && depth > 0) {
+          if (result[k] === '(') depth++;
+          else if (result[k] === ')') depth--;
+          k++;
+        }
+        if (depth === 0) {
+          let afterClose = k;
+          while (afterClose < result.length && /[ \t]/.test(result[afterClose])) afterClose++;
+          if (result[afterClose] === '{') {
+            // This is a method/function definition, not a dynamic import — skip
+            out += result.slice(i, importIdx + 7);
+            i = importIdx + 7;
+            continue;
+          }
+        }
+      }
+      out += result.slice(i, importIdx);
+      // Find matching close paren with depth tracking
+      let depth = 1;
+      let j = importIdx + 7; // after 'import('
+      while (j < result.length && depth > 0) {
+        if (result[j] === '(') depth++;
+        else if (result[j] === ')') depth--;
+        j++;
+      }
+      if (depth === 0) {
+        const arg = result.slice(importIdx + 7, j - 1);
+        out += `Promise.resolve().then(function() { return require(${arg}); })`;
+      } else {
+        // Unbalanced — leave as-is
+        out += result.slice(importIdx, j);
+      }
+      i = j;
+    }
+    result = out;
+  }
+
+  // --- Final fixups ---
+
+  // Replace const/let declarations of CJS wrapper param names with var.
+  // esbuild bundles often emit `const __dirname = ...` which collides with
+  // the new Function() wrapper parameters. `var` can shadow them safely.
   result = result.replace(
-    /\bimport\.meta\.url\b/g,
-    "('file://' + __filename)"
+    /\b(const|let)\s+(__dirname|__filename|exports|require|module|console|process|Buffer|global)\b/g,
+    (_match, _kw, name) => `var ${name}`
   );
 
   // Append trailing exports for exported functions/classes
   if (trailingExports.length > 0) {
     result += '\n' + trailingExports.join('\n');
   }
+
+  // Restore original string/template literal contents
+  result = unmaskStringLiterals(result, literals);
 
   return result;
 }
@@ -241,7 +607,35 @@ function createNodeImpl(portRegistry?: Map<number, VirtualRequestHandler>): Comm
     const moduleMap = createModuleMap(nodeCtx);
     const moduleCache = new Map<string, unknown>();
 
-    // Build require function
+    // Stub for @rollup/rollup-* native binary packages (platform-specific NAPI addons).
+    // These can't work in a browser environment. Provide shims for the exported functions.
+    // Vite's dev server primarily uses es-module-lexer, not rollup's parser, so these
+    // may never be called. If they are, hash stubs return safe defaults; parse stubs throw.
+    const rollupNativeStub = {
+      parse: () => { throw new Error('[lifo] rollup native parser is not available in browser'); },
+      parseAsync: () => Promise.reject(new Error('[lifo] rollup native parser is not available in browser')),
+      xxhashBase64Url: (data: unknown) => {
+        // Simple fallback hash — not cryptographically equivalent but sufficient for cache keys
+        const s = typeof data === 'string' ? data : String(data);
+        let h = 0;
+        for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+        return (h >>> 0).toString(36);
+      },
+      xxhashBase36: (data: unknown) => {
+        const s = typeof data === 'string' ? data : String(data);
+        let h = 0;
+        for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+        return (h >>> 0).toString(36);
+      },
+      xxhashBase16: (data: unknown) => {
+        const s = typeof data === 'string' ? data : String(data);
+        let h = 0;
+        for (let i = 0; i < s.length; i++) h = (Math.imul(31, h) + s.charCodeAt(i)) | 0;
+        return (h >>> 0).toString(16);
+      },
+    };
+
+    // Build require function (declared first, module shim overrides below)
     function nodeRequire(name: string): unknown {
       // Strip node: prefix
       if (name.startsWith('node:')) name = name.slice(5);
@@ -254,6 +648,18 @@ function createNodeImpl(portRegistry?: Map<number, VirtualRequestHandler>): Comm
         const mod = moduleMap[name]();
         moduleCache.set(name, mod);
         return mod;
+      }
+
+      // Subpath imports (#specifier)
+      if (name.startsWith('#')) {
+        const resolved = resolvePackageImport(name, dir);
+        if (resolved) {
+          const cached = moduleCache.get(resolved.path);
+          if (cached) return cached;
+          const modSource = ctx.vfs.readFileString(resolved.path);
+          return executeModule(modSource, resolved.path, resolved.path);
+        }
+        throw new Error(`Cannot find module '${name}'`);
       }
 
       // Relative VFS files
@@ -294,8 +700,22 @@ function createNodeImpl(portRegistry?: Map<number, VirtualRequestHandler>): Comm
         return executeModule(modSource, nmResolved.path, nmResolved.path);
       }
 
+      // Stub for rollup native binary packages
+      if (name.startsWith('@rollup/rollup-')) return rollupNativeStub;
+
       throw new Error(`Cannot find module '${name}'`);
     }
+
+    // Override module shim so createRequire returns nodeRequire (resolves VFS + node_modules)
+    moduleMap.module = () => {
+      const createRequire = (_filename: string | URL) => nodeRequire;
+      const builtinNames = Object.keys(moduleMap);
+      const isBuiltin = (s: string) => {
+        const n = s.startsWith('node:') ? s.slice(5) : s;
+        return builtinNames.includes(n);
+      };
+      return { createRequire, builtinModules: builtinNames, isBuiltin, default: { createRequire } };
+    };
 
     function resolveVfsModule(name: string, fromDir: string): { path: string } | null {
       const absPath = resolve(fromDir, name);
@@ -326,6 +746,36 @@ function createNodeImpl(portRegistry?: Map<number, VirtualRequestHandler>): Comm
         return { path: absPath + '.json' };
       }
 
+      return null;
+    }
+
+    // ── Subpath imports (#specifier) resolution ──
+    // Node.js package.json "imports" field: #name → conditional file path
+
+    function resolvePackageImport(name: string, fromDir: string): { path: string } | null {
+      // Walk up to find the nearest package.json with an "imports" field
+      let current = fromDir;
+      for (;;) {
+        const pkgPath = join(current, 'package.json');
+        if (ctx.vfs.exists(pkgPath)) {
+          try {
+            const pkg = JSON.parse(ctx.vfs.readFileString(pkgPath));
+            if (pkg.imports && typeof pkg.imports === 'object') {
+              const importsMap = pkg.imports as Record<string, unknown>;
+              if (name in importsMap) {
+                const target = resolveExportsCondition(importsMap[name]);
+                if (target) {
+                  return resolveVfsModule(target, current);
+                }
+              }
+            }
+          } catch { /* ignore parse errors */ }
+          break; // Stop at nearest package.json (Node.js semantics)
+        }
+        const parent = dirname(current);
+        if (parent === current) break;
+        current = parent;
+      }
       return null;
     }
 
@@ -381,24 +831,94 @@ function createNodeImpl(portRegistry?: Map<number, VirtualRequestHandler>): Comm
       return null;
     }
 
+    /** Resolve a conditional exports value (string | { require, import, default, ... }) */
+    function resolveExportsCondition(value: unknown): string | null {
+      if (typeof value === 'string') return value;
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const cond = value as Record<string, unknown>;
+        // Prefer require (CJS), then default, then import (ESM)
+        if (typeof cond.require === 'string') return cond.require;
+        if (typeof cond.default === 'string') return cond.default;
+        if (typeof cond.import === 'string') return cond.import;
+        // Recurse into nested conditions (e.g. { node: { require: ... } })
+        for (const key of Object.keys(cond)) {
+          if (key === 'types') continue; // skip TS declarations
+          const nested = resolveExportsCondition(cond[key]);
+          if (nested) return nested;
+        }
+      }
+      return null;
+    }
+
     function resolvePackageEntry(pkgDir: string, subpath: string | null): { path: string } | null {
+      const pkgJsonPath = join(pkgDir, 'package.json');
+      let pkgJson: Record<string, unknown> | null = null;
+      if (ctx.vfs.exists(pkgJsonPath)) {
+        try { pkgJson = JSON.parse(ctx.vfs.readFileString(pkgJsonPath)); } catch { /* ignore */ }
+      }
+
+      // --- Subpath resolution (e.g. require('rollup/parseAst')) ---
       if (subpath) {
+        // 1. Check exports map first (Node.js subpath exports)
+        if (pkgJson?.exports && typeof pkgJson.exports === 'object') {
+          const exportsMap = pkgJson.exports as Record<string, unknown>;
+          const key = './' + subpath;
+          if (key in exportsMap) {
+            const target = resolveExportsCondition(exportsMap[key]);
+            if (target) {
+              const resolved = resolveVfsModule(target, pkgDir);
+              if (resolved) return resolved;
+            }
+          }
+          // Also try wildcard/glob patterns like "./dist/*": "./dist/*"
+          for (const pattern of Object.keys(exportsMap)) {
+            if (pattern.endsWith('/*') && key.startsWith(pattern.slice(0, -1))) {
+              const targetPattern = resolveExportsCondition(exportsMap[pattern]);
+              if (targetPattern && targetPattern.endsWith('/*')) {
+                const suffix = key.slice(pattern.length - 1);
+                const target = targetPattern.slice(0, -1) + suffix;
+                const resolved = resolveVfsModule(target, pkgDir);
+                if (resolved) return resolved;
+              }
+            }
+          }
+        }
+        // 2. Fall back to direct file resolution
         return resolveVfsModule('./' + subpath, pkgDir);
       }
 
-      // Check package.json main field
-      const pkgJsonPath = join(pkgDir, 'package.json');
-      if (ctx.vfs.exists(pkgJsonPath)) {
-        try {
-          const pkgJson = JSON.parse(ctx.vfs.readFileString(pkgJsonPath));
-          if (pkgJson.main) {
-            const resolved = resolveVfsModule('./' + pkgJson.main, pkgDir);
+      // --- Root resolution (e.g. require('rollup')) ---
+
+      // 1. Check exports["."] first
+      if (pkgJson?.exports) {
+        const exportsVal = pkgJson.exports;
+        let rootExport: unknown = null;
+        if (typeof exportsVal === 'string') {
+          rootExport = exportsVal;
+        } else if (typeof exportsVal === 'object' && !Array.isArray(exportsVal)) {
+          const exportsMap = exportsVal as Record<string, unknown>;
+          rootExport = exportsMap['.'] ?? null;
+          // Handle case where exports IS the condition map (no "." key)
+          if (!rootExport && ('require' in exportsMap || 'import' in exportsMap || 'default' in exportsMap)) {
+            rootExport = exportsMap;
+          }
+        }
+        if (rootExport) {
+          const target = resolveExportsCondition(rootExport);
+          if (target) {
+            const resolved = resolveVfsModule(target, pkgDir);
             if (resolved) return resolved;
           }
-        } catch { /* ignore parse errors */ }
+        }
       }
 
-      // Default to index.js
+      // 2. Check main field
+      if (pkgJson?.main && typeof pkgJson.main === 'string') {
+        const resolved = resolveVfsModule('./' + pkgJson.main, pkgDir);
+        if (resolved) return resolved;
+      }
+
+      // 3. Default to index.js
       const indexPath = join(pkgDir, 'index.js');
       if (ctx.vfs.exists(indexPath)) return { path: indexPath };
 
@@ -439,6 +959,18 @@ function createNodeImpl(portRegistry?: Map<number, VirtualRequestHandler>): Comm
           return mod;
         }
 
+        // Subpath imports (#specifier)
+        if (name.startsWith('#')) {
+          const resolved = resolvePackageImport(name, modDir);
+          if (resolved) {
+            const cached = moduleCache.get(resolved.path);
+            if (cached) return cached;
+            const childSource = ctx.vfs.readFileString(resolved.path);
+            return executeModule(childSource, resolved.path, resolved.path);
+          }
+          throw new Error(`Cannot find module '${name}'`);
+        }
+
         if (name.startsWith('./') || name.startsWith('../') || name.startsWith('/')) {
           const resolved = resolveVfsModule(name, modDir);
           if (resolved) {
@@ -475,24 +1007,97 @@ function createNodeImpl(portRegistry?: Map<number, VirtualRequestHandler>): Comm
           return executeModule(childSource, nmResolved.path, nmResolved.path);
         }
 
+        // Stub for rollup native binary packages
+        if (name.startsWith('@rollup/rollup-')) return rollupNativeStub;
+
         throw new Error(`Cannot find module '${name}'`);
       }
 
+      // Override module shim so createRequire returns modRequire (resolves VFS + node_modules too)
+      modModuleMap.module = () => {
+        const createRequire = (_filename: string | URL) => modRequire;
+        const builtinNames = Object.keys(modModuleMap);
+        const isBuiltin = (s: string) => {
+          const n = s.startsWith('node:') ? s.slice(5) : s;
+          return builtinNames.includes(n);
+        };
+        return { createRequire, builtinModules: builtinNames, isBuiltin, default: { createRequire } };
+      };
+
       let cleanSource = stripShebang(modSource);
-      if (shouldTreatAsEsm(cleanSource, modFilename)) {
+      if (shouldTreatAsEsm(cleanSource, modFilename, ctx.vfs)) {
         cleanSource = transformEsmToCjs(cleanSource);
       }
-      const wrapped = `(function(exports, require, module, __filename, __dirname, console, process, Buffer, setTimeout, setInterval, clearTimeout, clearInterval, global) {\n${cleanSource}\n})`;
+      const wrapped = `(function(exports, require, module, __filename, __dirname, console, process, Buffer, setTimeout, setInterval, clearTimeout, clearInterval, global, __importMetaUrl, __importMeta, __importMetaResolve) {\n${cleanSource}\n})`;
 
-      const fn = new Function('return ' + wrapped)();
-      const global = {};
-      fn(
-        modExports, modRequire, modModule, modFilename, modDir,
-        modConsole, modProcess, Buffer,
-        globalThis.setTimeout, globalThis.setInterval,
-        globalThis.clearTimeout, globalThis.clearInterval,
-        global,
-      );
+      let fn: (...args: unknown[]) => void;
+      try {
+        fn = new Function('return ' + wrapped)();
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        ctx.stderr.write(`[ESM-FAIL] file=${modFilename} srcLen=${modSource.length} err=${err.message}\n`);
+        // Binary search for exact error location, matching specific error
+        const lines = cleanSource.split('\n');
+        const targetErr = err.message;
+        let lo = 0, hi = lines.length;
+        while (hi - lo > 3) {
+          const mid = (lo + hi) >>> 1;
+          const partial = lines.slice(0, mid).join('\n');
+          try { new Function(partial); lo = mid; } catch (e2) {
+            if (e2 instanceof Error && e2.message === targetErr) hi = mid;
+            else lo = mid; // Different error (e.g. unclosed), keep going
+          }
+        }
+        ctx.stderr.write(`[ESM-FAIL] error at L${lo}-${hi}, showing L${Math.max(1,lo-25)} to L${hi+3}:\n`);
+        for (let li = Math.max(0, lo - 25); li < Math.min(lines.length, hi + 3); li++) {
+          ctx.stderr.write(`[ESM-FAIL] ${li + 1 === lo || li + 1 === hi ? '>>>' : '   '} L${li + 1}: ${lines[li]?.slice(0, 200)}\n`);
+        }
+        err.message = `[${modFilename}] ${err.message}`;
+        throw err;
+      }
+      const global = { process: modProcess, Buffer, console: modConsole };
+      // Many npm bundles access globalThis.process directly (not the wrapper param).
+      // Only override in browser-like envs; skip in real Node.js (test runner).
+      const ga = globalThis as Record<string, unknown>;
+      const isRealNode = typeof (ga.process as Record<string, unknown>)?.pid === 'number';
+      const savedProcess = ga.process;
+      const savedBuffer = ga.Buffer;
+      const savedConsole = ga.console;
+      if (!isRealNode) {
+        ga.process = modProcess;
+        ga.Buffer = Buffer;
+        ga.console = modConsole;
+      }
+      // Inject Rollup/esbuild interop helpers so bundled npm packages can find them
+      const savedHelpers: Record<string, unknown> = {};
+      for (const k of Object.keys(_rollupHelpers)) { savedHelpers[k] = ga[k]; ga[k] = _rollupHelpers[k]; }
+      const importMetaUrl = 'file://' + modFilename;
+      const importMeta = { url: importMetaUrl, dirname: modDir, filename: modFilename };
+      const importMetaResolve = (specifier: string) => { throw new Error(`import.meta.resolve('${specifier}') is not supported`); };
+      try {
+        fn(
+          modExports, modRequire, modModule, modFilename, modDir,
+          modConsole, modProcess, Buffer,
+          globalThis.setTimeout, globalThis.setInterval,
+          globalThis.clearTimeout, globalThis.clearInterval,
+          global,
+          importMetaUrl, importMeta, importMetaResolve,
+        );
+      } catch (e) {
+        if (e instanceof ProcessExitError) throw e;
+        const err = e instanceof Error ? e : new Error(String(e));
+        if (!err.message.includes('[/')) {
+          err.message = `[${modFilename}] ${err.message}`;
+        }
+        throw err;
+      } finally {
+        for (const k of Object.keys(savedHelpers)) ga[k] = savedHelpers[k];
+        if (!isRealNode) {
+          ga.process = savedProcess;
+          ga.Buffer = savedBuffer;
+          ga.console = savedConsole;
+        }
+      }
 
       // Update cache if module.exports was reassigned (not just mutated)
       if (cacheAs && modModule.exports !== modExports) {
@@ -514,19 +1119,48 @@ function createNodeImpl(portRegistry?: Map<number, VirtualRequestHandler>): Comm
 
     const module = { exports: {} as Record<string, unknown> };
     const exports = module.exports;
-    const global = {};
+    const global = { process, Buffer, console: nodeConsole };
 
     let cleanMainSource = stripShebang(source);
-    const isEsm = shouldTreatAsEsm(cleanMainSource, filename);
+    const isEsm = shouldTreatAsEsm(cleanMainSource, filename, ctx.vfs);
     if (isEsm) {
       cleanMainSource = transformEsmToCjs(cleanMainSource);
     }
 
     // Use async IIFE for ESM (supports top-level await)
     const wrapped = isEsm
-      ? `(async function(exports, require, module, __filename, __dirname, console, process, Buffer, setTimeout, setInterval, clearTimeout, clearInterval, global) {\n${cleanMainSource}\n})`
-      : `(function(exports, require, module, __filename, __dirname, console, process, Buffer, setTimeout, setInterval, clearTimeout, clearInterval, global) {\n${cleanMainSource}\n})`;
+      ? `(async function(exports, require, module, __filename, __dirname, console, process, Buffer, setTimeout, setInterval, clearTimeout, clearInterval, global, __importMetaUrl, __importMeta, __importMetaResolve) {\n${cleanMainSource}\n})`
+      : `(function(exports, require, module, __filename, __dirname, console, process, Buffer, setTimeout, setInterval, clearTimeout, clearInterval, global, __importMetaUrl, __importMeta, __importMetaResolve) {\n${cleanMainSource}\n})`;
 
+    // Many npm bundles access globalThis.process directly (not the wrapper param).
+    // Only override in browser-like envs; skip in real Node.js (test runner).
+    const ga = globalThis as Record<string, unknown>;
+    const isRealNode = typeof (ga.process as Record<string, unknown>)?.pid === 'number';
+    const savedProcess = ga.process;
+    const savedBuffer = ga.Buffer;
+    const savedConsole = ga.console;
+    if (!isRealNode) {
+      ga.process = process;
+      ga.Buffer = Buffer;
+      ga.console = nodeConsole;
+    }
+    // Inject Rollup/esbuild interop helpers so bundled npm packages can find them
+    const savedHelpers: Record<string, unknown> = {};
+    for (const k of Object.keys(_rollupHelpers)) { savedHelpers[k] = ga[k]; ga[k] = _rollupHelpers[k]; }
+    // Capture unhandled promise rejections from fire-and-forget async actions
+    let pendingRejection: unknown = null;
+    const rejectionHandler = (event: PromiseRejectionEvent) => {
+      pendingRejection = event.reason;
+      event.preventDefault(); // prevent browser default logging
+      ctx.stderr.write(`[unhandledRejection] ${event.reason instanceof Error ? event.reason.stack || event.reason.message : String(event.reason)}\n`);
+    };
+    if (typeof globalThis.addEventListener === 'function') {
+      globalThis.addEventListener('unhandledrejection', rejectionHandler as EventListener);
+    }
+
+    const mainImportMetaUrl = 'file://' + filename;
+    const mainImportMeta = { url: mainImportMetaUrl, dirname: dir, filename };
+    const mainImportMetaResolve = (specifier: string) => { throw new Error(`import.meta.resolve('${specifier}') is not supported`); };
     try {
       const fn = new Function('return ' + wrapped)();
       const result = fn(
@@ -535,6 +1169,7 @@ function createNodeImpl(portRegistry?: Map<number, VirtualRequestHandler>): Comm
         globalThis.setTimeout, globalThis.setInterval,
         globalThis.clearTimeout, globalThis.clearInterval,
         global,
+        mainImportMetaUrl, mainImportMeta, mainImportMetaResolve,
       );
 
       // Await if ESM (async IIFE returns a promise)
@@ -542,9 +1177,53 @@ function createNodeImpl(portRegistry?: Map<number, VirtualRequestHandler>): Comm
         await result;
       }
 
-      // Check if any servers were started (long-running process)
-      const httpMod = moduleCache.get('http') as { [key: symbol]: unknown[] } | undefined;
-      const activeServers = httpMod?.[ACTIVE_SERVERS] as Array<{ getPromise(): Promise<void> | null; close(): void }> | undefined;
+      // Check if any servers were started (long-running process).
+      // Many CLI tools (e.g. vite) fire async actions from cli.parse() whose
+      // promises are discarded. We poll briefly to let those async chains
+      // progress and create servers before deciding the process is done.
+      // Only poll if http was actually loaded (indicating server intent).
+      const getActiveServers = () => {
+        const httpMod = moduleCache.get('http') as { [key: symbol]: unknown[] } | undefined;
+        return httpMod?.[ACTIVE_SERVERS] as Array<{ getPromise(): Promise<void> | null; close(): void }> | undefined;
+      };
+      let activeServers = getActiveServers();
+      if ((!activeServers || activeServers.length === 0) && isEsm) {
+        // ESM scripts may have fire-and-forget async actions (e.g. vite's
+        // cli.parse() triggers an async action whose promise is discarded).
+        // Yield briefly to let those chains start, then poll for servers.
+        // Phase 1: Quick yield — watch for new modules being loaded, which
+        // indicates async work is in progress. Stop early if nothing changes.
+        let prevCacheSize = moduleCache.size;
+        let staleCount = 0;
+        const quickDeadline = Date.now() + 2000;
+        while (Date.now() < quickDeadline) {
+          await new Promise<void>((r) => setTimeout(r, 30));
+          activeServers = getActiveServers();
+          if (activeServers && activeServers.length > 0) break;
+          if (ctx.signal.aborted || pendingRejection) break;
+          // If new modules are loading, async work is progressing
+          const newSize = moduleCache.size;
+          if (newSize > prevCacheSize) {
+            staleCount = 0;
+            prevCacheSize = newSize;
+          } else {
+            staleCount++;
+            // No new modules for 5 ticks (150ms) — async chain likely done
+            if (staleCount >= 5) break;
+          }
+        }
+        // Phase 2: If http was loaded during Phase 1 (indicating server intent)
+        // but no servers yet, keep polling up to 10s for the full server startup.
+        if ((!activeServers || activeServers.length === 0) && moduleCache.has('http')) {
+          const longDeadline = Date.now() + 10000;
+          while (Date.now() < longDeadline) {
+            await new Promise<void>((r) => setTimeout(r, 50));
+            activeServers = getActiveServers();
+            if (activeServers && activeServers.length > 0) break;
+            if (ctx.signal.aborted || pendingRejection) break;
+          }
+        }
+      }
 
       if (activeServers && activeServers.length > 0) {
         // Collect all server promises
@@ -576,6 +1255,11 @@ function createNodeImpl(portRegistry?: Map<number, VirtualRequestHandler>): Comm
         }
       }
 
+      // If an async action failed (e.g. unhandled rejection from ProcessExitError)
+      if (pendingRejection) {
+        if (pendingRejection instanceof ProcessExitError) return pendingRejection.exitCode;
+        return 1;
+      }
       return 0;
     } catch (e) {
       if (e instanceof ProcessExitError) {
@@ -587,6 +1271,17 @@ function createNodeImpl(portRegistry?: Map<number, VirtualRequestHandler>): Comm
         ctx.stderr.write(`${String(e)}\n`);
       }
       return 1;
+    } finally {
+      for (const k of Object.keys(savedHelpers)) ga[k] = savedHelpers[k];
+      if (!isRealNode) {
+        ga.process = savedProcess;
+        ga.Buffer = savedBuffer;
+        ga.console = savedConsole;
+      }
+      // Remove unhandled rejection listener
+      if (typeof globalThis.removeEventListener === 'function') {
+        globalThis.removeEventListener('unhandledrejection', rejectionHandler as EventListener);
+      }
     }
   };
 }
@@ -595,7 +1290,8 @@ export function createNodeCommand(portRegistry: Map<number, VirtualRequestHandle
   return createNodeImpl(portRegistry);
 }
 
-// Default command (no port registry -- createServer throws)
-const command: Command = createNodeImpl();
+// Default command with a shared portRegistry so http.createServer works
+const defaultPortRegistry = new Map<number, VirtualRequestHandler>();
+const command: Command = createNodeImpl(defaultPortRegistry);
 
 export default command;

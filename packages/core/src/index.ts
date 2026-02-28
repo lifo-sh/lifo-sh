@@ -57,6 +57,7 @@ export { createWatchCommand } from './commands/system/watch.js';
 export { createHelpCommand } from './commands/system/help.js';
 export { createNodeCommand } from './commands/system/node.js';
 export { createCurlCommand } from './commands/net/curl.js';
+export { createTunnelCommand } from './commands/net/tunnel.js';
 export { createLifoPkgCommand, bootLifoPackages } from './commands/system/lifo.js';
 export { createNpmCommand } from './commands/system/npm.js';
 export { createLogoutCommand } from './commands/system/logout.js';

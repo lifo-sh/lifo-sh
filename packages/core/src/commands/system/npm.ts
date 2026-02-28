@@ -264,15 +264,19 @@ function getBinEntries(pkg: PackageJson): Record<string, string> {
 }
 
 function registerBinCommand(registry: CommandRegistry, binName: string, scriptPath: string): void {
-  registry.registerLazy(binName, () =>
-    import('./node.js').then((mod) => ({
-      default: ((ctx: CommandContext) =>
-        mod.default({
-          ...ctx,
-          args: [scriptPath, ...ctx.args],
-        })) as Command,
-    })),
-  );
+  // Register as eager command that resolves 'node' from the registry at call time
+  registry.register(binName, async (ctx: CommandContext) => {
+    ctx.stderr.write(`[bin:debug] ${binName} → node ${scriptPath}\n`);
+    const nodeCmd = await registry.resolve('node');
+    if (!nodeCmd) {
+      ctx.stderr.write(`${binName}: node command not available\n`);
+      return 1;
+    }
+    ctx.stderr.write(`[bin:debug] executing node command...\n`);
+    const code = await nodeCmd({ ...ctx, args: [scriptPath, ...ctx.args] });
+    ctx.stderr.write(`[bin:debug] node returned code=${code}\n`);
+    return code;
+  });
 }
 
 
@@ -620,7 +624,7 @@ function readPkgVersion(vfs: VFS, pkgDir: string): string {
   }
 }
 
-async function npmRun(ctx: CommandContext, shellExecute?: ShellExecuteFn): Promise<number> {
+async function npmRun(ctx: CommandContext, shellExecute?: ShellExecuteFn, registry?: CommandRegistry): Promise<number> {
   const args = ctx.args.slice(1);
   const scriptName = args[0];
 
@@ -658,6 +662,46 @@ async function npmRun(ctx: CommandContext, shellExecute?: ShellExecuteFn): Promi
   ctx.stdout.write(`\n> ${pkg.name || ''}@${pkg.version || '1.0.0'} ${scriptName}\n`);
   ctx.stdout.write(`> ${script}\n\n`);
 
+  // Register local bin scripts from node_modules so they're available in scripts
+  if (registry) {
+    const nmDir = join(ctx.cwd, 'node_modules');
+    ctx.stderr.write(`[npm:debug] cwd="${ctx.cwd}", nmDir="${nmDir}", exists=${ctx.vfs.exists(nmDir)}\n`);
+    if (ctx.vfs.exists(nmDir)) {
+      try {
+        const entries = ctx.vfs.readdir(nmDir);
+        ctx.stderr.write(`[npm:debug] node_modules entries (${entries.length}): ${entries.slice(0, 20).join(', ')}\n`);
+        // Check vite specifically
+        const vitePkg = join(nmDir, 'vite', 'package.json');
+        if (ctx.vfs.exists(vitePkg)) {
+          const vPkg = JSON.parse(ctx.vfs.readFileString(vitePkg));
+          ctx.stderr.write(`[npm:debug] vite pkg.bin=${JSON.stringify(vPkg.bin)}\n`);
+        } else {
+          ctx.stderr.write(`[npm:debug] vite/package.json not found at ${vitePkg}\n`);
+        }
+      } catch (e) { ctx.stderr.write(`[npm:debug] readdir error: ${e}\n`); }
+    }
+    const count = registerLocalBins(ctx.vfs, ctx.cwd, registry);
+    ctx.stderr.write(`[npm:debug] registered ${count} local bins, script="${script}"\n`);
+    const firstWord = script.trim().split(/\s+/)[0];
+    ctx.stderr.write(`[npm:debug] first command: "${firstWord}", has=${registry.has(firstWord)}\n`);
+  }
+
+  // For simple scripts (single command, no shell operators), invoke directly
+  // to avoid extra stack frames from shell.execute → interpreter chain
+  if (registry) {
+    const trimmed = script.trim();
+    const hasShellSyntax = /[;&|`$(){}]/.test(trimmed);
+    if (!hasShellSyntax) {
+      const parts = trimmed.split(/\s+/);
+      const cmdName = parts[0];
+      const cmdArgs = parts.slice(1);
+      const cmd = await registry.resolve(cmdName);
+      if (cmd) {
+        return cmd({ ...ctx, args: cmdArgs });
+      }
+    }
+  }
+
   if (shellExecute) {
     return shellExecute(script, ctx);
   }
@@ -665,6 +709,54 @@ async function npmRun(ctx: CommandContext, shellExecute?: ShellExecuteFn): Promi
   // No shell access - print the command for the user
   ctx.stderr.write('(shell integration unavailable, run the command directly)\n');
   return 1;
+}
+
+/** Scan node_modules for packages with bin entries and register them as commands */
+function registerLocalBins(vfs: VFS, cwd: string, registry: CommandRegistry): number {
+  const nmDir = join(cwd, 'node_modules');
+  if (!vfs.exists(nmDir)) return 0;
+
+  let count = 0;
+  try {
+    const entries = vfs.readdir(nmDir);
+    for (const dirent of entries) {
+      const name = dirent.name;
+      if (name.startsWith('.')) continue;
+
+      if (name.startsWith('@')) {
+        // Scoped packages: read @scope/pkg
+        const scopeDir = join(nmDir, name);
+        try {
+          const scopeEntries = vfs.readdir(scopeDir);
+          for (const scopeEntry of scopeEntries) {
+            count += registerPkgBins(vfs, join(scopeDir, scopeEntry.name), registry);
+          }
+        } catch { /* ignore */ }
+      } else {
+        count += registerPkgBins(vfs, join(nmDir, name), registry);
+      }
+    }
+  } catch { /* ignore */ }
+  return count;
+}
+
+function registerPkgBins(vfs: VFS, pkgDir: string, registry: CommandRegistry): number {
+  const pkgJsonPath = join(pkgDir, 'package.json');
+  if (!vfs.exists(pkgJsonPath)) return 0;
+  let count = 0;
+  try {
+    const pkg: PackageJson = JSON.parse(vfs.readFileString(pkgJsonPath));
+    const bins = getBinEntries(pkg);
+    for (const [binName, binPath] of Object.entries(bins)) {
+      // Only register if not already in registry
+      if (!registry.has(binName)) {
+        const scriptPath = resolve(pkgDir, binPath);
+        registerBinCommand(registry, binName, scriptPath);
+        count++;
+      }
+    }
+  } catch { /* ignore */ }
+  return count;
 }
 
 async function npmInfo(ctx: CommandContext): Promise<number> {
@@ -784,11 +876,11 @@ export function createNpmCommand(registry: CommandRegistry, shellExecute?: Shell
         return npmList(ctx);
       case 'run':
       case 'run-script':
-        return npmRun(ctx, shellExecute);
+        return npmRun(ctx, shellExecute, registry);
       case 'start':
-        return npmRun({ ...ctx, args: ['run', 'start', ...ctx.args.slice(1)] }, shellExecute);
+        return npmRun({ ...ctx, args: ['run', 'start', ...ctx.args.slice(1)] }, shellExecute, registry);
       case 'test':
-        return npmRun({ ...ctx, args: ['run', 'test', ...ctx.args.slice(1)] }, shellExecute);
+        return npmRun({ ...ctx, args: ['run', 'test', ...ctx.args.slice(1)] }, shellExecute, registry);
       case 'info':
       case 'view':
       case 'show':

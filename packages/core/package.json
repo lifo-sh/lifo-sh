@@ -41,7 +41,9 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
-  "dependencies": {},
+  "dependencies": {
+    "ws": "^8.19.0"
+  },
   "peerDependencies": {
     "@lifo-sh/ui": "workspace:*"
   },
@@ -51,6 +53,7 @@
     }
   },
   "devDependencies": {
+    "@types/ws": "^8.18.1",
     "typescript": "^5.7.0",
     "vite": "^6.0.0",
     "vite-plugin-dts": "^4.5.0",

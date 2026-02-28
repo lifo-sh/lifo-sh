@@ -5,6 +5,21 @@ import { resolve, basename } from '../utils/path.js';
 import { encode, decode } from '../utils/encoding.js';
 import { Readable, Writable } from './stream.js';
 import { EventEmitter } from './events.js';
+import { Buffer } from './buffer.js';
+
+// ─── Dirent ───
+
+interface Dirent {
+  name: string;
+  path: string;
+  isFile: () => boolean;
+  isDirectory: () => boolean;
+  isSymbolicLink: () => boolean;
+  isBlockDevice: () => boolean;
+  isCharacterDevice: () => boolean;
+  isFIFO: () => boolean;
+  isSocket: () => boolean;
+}
 
 // ─── Stat conversion ───
 
@@ -164,7 +179,11 @@ export function createFs(vfs: VFS, cwd: string) {
     if (encoding) {
       return vfs.readFileString(abs);
     }
-    return vfs.readFile(abs);
+    // Return Buffer (not raw Uint8Array) so .toString() yields UTF-8 text.
+    // Many packages do JSON.parse(fs.readFileSync('package.json')) without
+    // encoding, expecting Buffer.toString() to return the file contents.
+    const raw = vfs.readFile(abs);
+    return Buffer.from(raw);
   }
 
   function writeFileSync(path: string | URL, data: string | Uint8Array, _options?: string | { encoding?: string }): void {
@@ -197,9 +216,22 @@ export function createFs(vfs: VFS, cwd: string) {
     vfs.mkdir(abs, { recursive: opts?.recursive });
   }
 
-  function readdirSync(path: string | URL, _options?: { encoding?: string; withFileTypes?: boolean }): string[] {
+  function readdirSync(path: string | URL, options?: { encoding?: string; withFileTypes?: boolean }): string[] | Dirent[] {
     const abs = resolvePath(cwd, path);
     const entries = vfs.readdir(abs);
+    if (options?.withFileTypes) {
+      return entries.map((e) => ({
+        name: e.name,
+        path: abs,
+        isFile: () => e.type === 'file',
+        isDirectory: () => e.type === 'directory',
+        isSymbolicLink: () => false,
+        isBlockDevice: () => false,
+        isCharacterDevice: () => false,
+        isFIFO: () => false,
+        isSocket: () => false,
+      }));
+    }
     return entries.map((e) => e.name);
   }
 
@@ -244,13 +276,24 @@ export function createFs(vfs: VFS, cwd: string) {
     }
   }
 
-  function realpathSync(path: string | URL): string {
-    const abs = resolvePath(cwd, path);
-    if (!vfs.exists(abs)) {
-      throw makeEnoent('realpath', abs);
-    }
-    return abs;
-  }
+  const realpathSync = Object.assign(
+    function realpathSync(path: string | URL): string {
+      const abs = resolvePath(cwd, path);
+      if (!vfs.exists(abs)) {
+        throw makeEnoent('realpath', abs);
+      }
+      return abs;
+    },
+    {
+      native: function realpathSyncNative(path: string | URL): string {
+        const abs = resolvePath(cwd, path);
+        if (!vfs.exists(abs)) {
+          throw makeEnoent('realpath', abs);
+        }
+        return abs;
+      },
+    },
+  );
 
   function truncateSync(path: string | URL, len?: number): void {
     const abs = resolvePath(cwd, path);
@@ -419,9 +462,10 @@ export function createFs(vfs: VFS, cwd: string) {
     wrapCallback(() => mkdirSync(path, options), callback);
   }
 
-  function readdir(path: string | URL, optionsOrCb: { encoding?: string } | Callback<string[]>, cb?: Callback<string[]>): void {
+  function readdir(path: string | URL, optionsOrCb: { encoding?: string; withFileTypes?: boolean } | Callback<string[]>, cb?: Callback<string[] | Dirent[]>): void {
+    const options = typeof optionsOrCb === 'function' ? undefined : optionsOrCb;
     const callback = typeof optionsOrCb === 'function' ? optionsOrCb : cb!;
-    wrapCallback(() => readdirSync(path), callback);
+    wrapCallback(() => readdirSync(path, options), callback);
   }
 
   function unlink(path: string | URL, cb: Callback<void>): void {
@@ -475,6 +519,19 @@ export function createFs(vfs: VFS, cwd: string) {
   function fstat(fd: number, cb: Callback<NodeStat>): void {
     wrapCallback(() => fstatSync(fd), cb);
   }
+
+  const realpath = Object.assign(
+    function realpath(path: string | URL, optOrCb: unknown, cb?: Callback<string>): void {
+      const callback = typeof optOrCb === 'function' ? optOrCb as Callback<string> : cb!;
+      wrapCallback(() => realpathSync(path), callback);
+    },
+    {
+      native: function realpathNative(path: string | URL, optOrCb: unknown, cb?: Callback<string>): void {
+        const callback = typeof optOrCb === 'function' ? optOrCb as Callback<string> : cb!;
+        wrapCallback(() => realpathSync(path), callback);
+      },
+    },
+  );
 
   // ─── Stream API ───
 
@@ -582,7 +639,7 @@ export function createFs(vfs: VFS, cwd: string) {
     stat: async (path: string | URL) => statSync(path),
     lstat: async (path: string | URL) => lstatSync(path),
     mkdir: async (path: string | URL, options?: { recursive?: boolean }) => { mkdirSync(path, options); },
-    readdir: async (path: string | URL) => readdirSync(path),
+    readdir: async (path: string | URL, options?: { encoding?: string; withFileTypes?: boolean }) => readdirSync(path, options),
     unlink: async (path: string | URL) => unlinkSync(path),
     rmdir: async (path: string | URL, options?: { recursive?: boolean }) => rmdirSync(path, options),
     rename: async (oldPath: string | URL, newPath: string | URL) => renameSync(oldPath, newPath),
@@ -691,6 +748,7 @@ export function createFs(vfs: VFS, cwd: string) {
     close,
     read,
     fstat,
+    realpath,
     // Streams
     createReadStream,
     createWriteStream,
