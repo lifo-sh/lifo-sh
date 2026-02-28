@@ -41,6 +41,9 @@ export class DaemonTerminal implements ITerminal {
   /** Currently connected attach clients. */
   private clients: Set<DaemonClient> = new Set();
 
+  /** Callback invoked when a client sends { type: "snapshot" }. */
+  private snapshotCallback: ((socket: net.Socket) => void) | undefined;
+
   /** Terminal dimensions — kept in sync with the first connected client. */
   private _cols: number = 80;
   private _rows: number = 24;
@@ -74,7 +77,14 @@ export class DaemonTerminal implements ITerminal {
         if (!line) continue;
         try {
           const msg = JSON.parse(line);
-          if (msg.type === 'input') {
+          if (msg.type === 'snapshot') {
+            // One-shot snapshot request — invoke the registered callback with
+            // this socket so the daemon can write the snapshot-data response.
+            // Do NOT add this socket as a regular client.
+            this.clients.delete(client);
+            this.snapshotCallback?.(socket);
+            return;
+          } else if (msg.type === 'input') {
             // Split the raw input into individual keypresses and feed each
             // one to the shell — matching the per-keypress contract the Shell
             // expects (same behaviour as NodeTerminal).
@@ -130,6 +140,11 @@ export class DaemonTerminal implements ITerminal {
   /** Registers a callback that fires for every keypress from any client. */
   onData(callback: (data: string) => void): void {
     this.dataCallbacks.push(callback);
+  }
+
+  /** Registers a callback invoked when a client sends { type: "snapshot" }. */
+  onSnapshot(callback: (socket: net.Socket) => void): void {
+    this.snapshotCallback = callback;
   }
 
   get cols(): number { return this._cols; }

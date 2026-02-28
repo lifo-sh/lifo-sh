@@ -43,7 +43,6 @@ import {
   Shell,
   NativeFsProvider,
   createDefaultRegistry,
-  bootLifoPackages,
   createLifoPkgCommand,
   createNpmCommand,
   createPsCommand,
@@ -53,6 +52,7 @@ import {
   createHelpCommand,
   createNodeCommand,
   createCurlCommand,
+  rehydrateGlobalPackages,
 } from '@lifo-sh/core';
 import { NodeTerminal } from './NodeTerminal.js';
 import { DaemonTerminal } from './DaemonTerminal.js';
@@ -60,6 +60,14 @@ import { TOKEN_PATH, readToken, handleLogin, handleLogout, handleWhoami } from '
 import { SESSIONS_DIR, writeSession, deleteSession, readSession, listSessions } from './session.js';
 import { startDaemon } from './daemon.js';
 import { attachToSession, attachViaTcp } from './attach.js';
+import {
+  SNAPSHOTS_DIR,
+  requestSnapshot,
+  writeSnapshotZip,
+  readSnapshotZip,
+  listSnapshots,
+} from './snapshot.js';
+import { serialize, deserialize } from '@lifo-sh/core';
 
 // ─── CLI argument parsing ──────────────────────────────────────────────────────
 
@@ -67,7 +75,7 @@ import { attachToSession, attachViaTcp } from './attach.js';
  * All recognised user-facing subcommands. Used by getEffectiveArgs() to find
  * where the real user input starts when pnpm dev mode injects extra args.
  */
-const SUBCOMMANDS = new Set(['login', 'logout', 'whoami', 'list', 'attach', 'stop', 'new']);
+const SUBCOMMANDS = new Set(['login', 'logout', 'whoami', 'list', 'attach', 'stop', 'new', 'snapshot']);
 
 /**
  * Returns the user-facing args, stripping any leading positional args that
@@ -98,6 +106,8 @@ interface CliOptions {
   daemon?: boolean;
   /** Internal flag — the session ID passed to the daemon by startDaemon(). */
   id?: string;
+  /** Internal flag — path to a snapshot JSON file to restore on daemon boot. */
+  snapshot?: string;
 }
 
 function parseArgs(args: string[]): CliOptions {
@@ -120,6 +130,9 @@ function parseArgs(args: string[]): CliOptions {
       opts.daemon = true;
     } else if (args[i] === '--id' && args[i + 1]) {
       opts.id = args[i + 1]!;
+      i++;
+    } else if (args[i] === '--snapshot' && args[i + 1]) {
+      opts.snapshot = args[i + 1]!;
       i++;
     }
   }
@@ -204,7 +217,7 @@ function handleStop(id: string): void {
  *   SIGTERM / SIGHUP → close socket server + delete session files + exit.
  *   `exit` typed in the shell → disconnects all clients, VM keeps running.
  */
-async function runDaemon(id: string, mountPath: string, port?: number): Promise<void> {
+async function runDaemon(id: string, mountPath: string, port?: number, snapshotPath?: string): Promise<void> {
   const socketPath = path.join(SESSIONS_DIR, `${id}.sock`);
 
   fs.mkdirSync(SESSIONS_DIR, { recursive: true });
@@ -218,6 +231,29 @@ async function runDaemon(id: string, mountPath: string, port?: number): Promise<
   const kernel = new Kernel();
   await kernel.boot({ persist: false }); // in-memory VFS; state lives in this process
 
+  // Read snapshot file ONCE up-front, then immediately delete it.
+  // The daemon only needs it during startup — it should not linger on disk.
+  interface SnapPayload { vfs: any; cwd?: string; env?: Record<string, string> }
+  let snap: SnapPayload | null = null;
+  if (snapshotPath) {
+    try {
+      snap = JSON.parse(fs.readFileSync(snapshotPath, 'utf-8')) as SnapPayload;
+    } catch (err: any) {
+      process.stderr.write(`Warning: failed to read snapshot: ${err.message}\n`);
+    } finally {
+      try { fs.unlinkSync(snapshotPath); } catch { /* already gone — that's fine */ }
+    }
+  }
+
+  // Restore VFS from snapshot before mounting the host directory.
+  if (snap) {
+    try {
+      kernel.vfs.loadFromSerialized(deserialize(snap.vfs));
+    } catch (err: any) {
+      process.stderr.write(`Warning: failed to restore snapshot VFS: ${err.message}\n`);
+    }
+  }
+
   const MOUNT_PATH = '/mnt/host';
   kernel.vfs.mkdir('/mnt', { recursive: true });
   const nativeProvider = new NativeFsProvider(mountPath, fs);
@@ -225,11 +261,20 @@ async function runDaemon(id: string, mountPath: string, port?: number): Promise<
 
   // ── Shell ─────────────────────────────────────────────────────────────────
   const registry = createDefaultRegistry();
-  bootLifoPackages(kernel.vfs, registry);
+  rehydrateGlobalPackages(kernel.vfs, registry);
 
   const env = kernel.getDefaultEnv();
   env.PWD = MOUNT_PATH;          // start the shell inside the mounted directory
   env.LIFO_HOST_DIR = mountPath; // expose host path for scripts that need it
+
+  // Overlay saved env vars — reuse already-parsed snap, no second file read.
+  if (snap?.env && typeof snap.env === 'object') {
+    for (const [k, v] of Object.entries(snap.env)) {
+      if (k !== 'LIFO_HOST_DIR' && k !== 'LIFO_AUTH_TOKEN' && k !== 'LIFO_TOKEN_PATH') {
+        env[k] = v;
+      }
+    }
+  }
 
   const token = readToken();
   if (token) env.LIFO_AUTH_TOKEN = token;
@@ -264,6 +309,12 @@ async function runDaemon(id: string, mountPath: string, port?: number): Promise<
   await shell.sourceFile('/etc/profile');
   await shell.sourceFile(env.HOME + '/.bashrc');
 
+  // Restore CWD from snapshot — only if the path actually exists in the VFS.
+  const snapshotCwd = snap?.cwd;
+  if (snapshotCwd && kernel.vfs.exists(snapshotCwd)) {
+    shell.setCwd(snapshotCwd);
+  }
+
   // Override `exit` to detach all clients instead of killing the daemon.
   // This matches Docker's behaviour: exiting an attached session drops you
   // back to the host shell but the container (VM) stays alive.
@@ -271,6 +322,23 @@ async function runDaemon(id: string, mountPath: string, port?: number): Promise<
   (shell as any).builtins.set('exit', async () => {
     daemonTerminal.disconnectAllClients();
     return 0;
+  });
+
+  // Register snapshot handler — responds to one-shot { type: "snapshot" } requests.
+  // Uses setImmediate to yield the event loop before the CPU-heavy serialize()
+  // so in-flight shell output isn't delayed for other attached clients.
+  daemonTerminal.onSnapshot((socket) => {
+    setImmediate(() => {
+      const data = {
+        type: 'snapshot-data',
+        vfs: serialize(kernel.vfs.getRoot()),
+        cwd: shell.getCwd(),
+        env: shell.getEnv(),
+        mountPath,  // save original mount path so restore can reuse it
+      };
+      socket.write(JSON.stringify(data) + '\n');
+      socket.end();
+    });
   });
 
   // ── Socket server ─────────────────────────────────────────────────────────
@@ -372,7 +440,7 @@ async function runInteractive(opts: CliOptions): Promise<void> {
   kernel.vfs.mount(MOUNT_PATH, nativeProvider);
 
   const registry = createDefaultRegistry();
-  bootLifoPackages(kernel.vfs, registry);
+  rehydrateGlobalPackages(kernel.vfs, registry);
 
   const env = kernel.getDefaultEnv();
   env.PWD = MOUNT_PATH;
@@ -482,6 +550,107 @@ async function main() {
     return;
   }
 
+  if (cmd === 'snapshot') {
+    const sub = args[1];
+
+    if (sub === 'list') {
+      const snaps = listSnapshots();
+      if (snaps.length === 0) {
+        console.log('No snapshots found. Save one with: lifo snapshot save <id>');
+      } else {
+        console.log('Snapshots in ~/.lifo/snapshots/:');
+        for (const s of snaps) console.log(' ', s);
+      }
+      return;
+    }
+
+    if (sub === 'save') {
+      const id = args[2];
+      if (!id) { console.error('Usage: lifo snapshot save <id> [--output <file.zip>]'); process.exit(1); }
+
+      // Parse --output from remaining args
+      let outputPath: string | undefined;
+      for (let i = 3; i < args.length; i++) {
+        if ((args[i] === '--output' || args[i] === '-o') && args[i + 1]) {
+          outputPath = path.resolve(args[i + 1]!);
+          break;
+        }
+      }
+      if (!outputPath) {
+        fs.mkdirSync(SNAPSHOTS_DIR, { recursive: true });
+        outputPath = path.join(SNAPSHOTS_DIR, `${id}-${Date.now()}.zip`);
+      }
+
+      const session = readSession(id);
+      if (!session) { console.error(`No session found with id: ${id}`); process.exit(1); }
+
+      console.log(`Requesting snapshot from VM ${id}...`);
+      try {
+        const data = await requestSnapshot(session.socketPath);
+        writeSnapshotZip(data, outputPath);
+        console.log(`Snapshot saved to ${outputPath}`);
+      } catch (err: any) {
+        console.error(`Failed to save snapshot: ${err.message}`);
+        process.exit(1);
+      }
+      return;
+    }
+
+    if (sub === 'restore') {
+      const zipPath = args[2] ? path.resolve(args[2]) : undefined;
+      if (!zipPath) { console.error('Usage: lifo snapshot restore <file.zip> [--mount <path>]'); process.exit(1); }
+      if (!fs.existsSync(zipPath)) { console.error(`File not found: ${zipPath}`); process.exit(1); }
+
+      // Parse --mount from remaining args
+      let mountPath: string | undefined;
+      for (let i = 3; i < args.length; i++) {
+        if ((args[i] === '--mount' || args[i] === '-m') && args[i + 1]) {
+          mountPath = path.resolve(args[i + 1]!);
+          break;
+        }
+      }
+
+      let data: ReturnType<typeof readSnapshotZip>;
+      try {
+        data = readSnapshotZip(zipPath);
+      } catch (err: any) {
+        console.error(`Failed to read snapshot: ${err.message}`);
+        process.exit(1);
+      }
+
+      // Determine mount path: explicit flag > saved path (if it still exists) > new temp dir
+      if (!mountPath) {
+        if (data.mountPath && fs.existsSync(data.mountPath) && fs.statSync(data.mountPath).isDirectory()) {
+          mountPath = data.mountPath;
+          console.log(`Using original mount path: ${mountPath}`);
+        } else {
+          mountPath = fs.mkdtempSync(path.join(os.tmpdir(), 'lifo-'));
+        }
+      }
+
+      // Write snapshot data to a temp file for the daemon process to read on boot.
+      const tmpSnap = path.join(os.tmpdir(), `lifo-snap-${Date.now()}.json`);
+      fs.writeFileSync(tmpSnap, JSON.stringify({ vfs: data.vfs, cwd: data.cwd, env: data.env }), 'utf-8');
+
+      try {
+        const id = await startDaemon(mountPath, undefined, tmpSnap);
+        // Daemon has fully booted and read the file by the time startDaemon() resolves.
+        // Safe to delete the temp file now.
+        try { fs.unlinkSync(tmpSnap); } catch { /* already deleted by daemon */ }
+        console.log(`Restored VM ${id} from ${zipPath}`);
+        await attachToSession(id);
+      } catch (err: any) {
+        console.error(`Failed to restore VM: ${err.message}`);
+        try { fs.unlinkSync(tmpSnap); } catch { /* ok */ }
+        process.exit(1);
+      }
+      return;
+    }
+
+    console.error('Usage: lifo snapshot <save|restore|list>');
+    process.exit(1);
+  }
+
   if (cmd === 'new') {
     // Boot a VM daemon and immediately attach to it in one step.
     // Equivalent to: lifo --detach && lifo attach <id>
@@ -525,7 +694,7 @@ async function main() {
   if (opts.daemon) {
     if (!opts.id)    { console.error('--daemon requires --id');    process.exit(1); }
     if (!opts.mount) { console.error('--daemon requires --mount'); process.exit(1); }
-    await runDaemon(opts.id, opts.mount, opts.port);
+    await runDaemon(opts.id, opts.mount, opts.port, opts.snapshot);
     return;
   }
 

@@ -73,14 +73,16 @@ function getSpawnExecutable(): { executable: string; prefixArgs: string[] } {
 /**
  * Boots a new lifo VM in the background and returns its session ID.
  *
- * @param mountPath  Absolute path on the host to mount at /mnt/host inside
- *                   the VM. Must already exist.
- * @param port       Optional TCP port to also listen on (in addition to the
- *                   Unix socket). Enables remote `lifo attach <host>:<port>`.
- * @returns          The session ID (hex string) once the daemon is ready.
- * @throws           If the daemon fails to become ready within 5 seconds.
+ * @param mountPath    Absolute path on the host to mount at /mnt/host inside
+ *                     the VM. Must already exist.
+ * @param port         Optional TCP port to also listen on (in addition to the
+ *                     Unix socket). Enables remote `lifo attach <host>:<port>`.
+ * @param snapshotPath Optional path to a snapshot JSON file. When provided the
+ *                     daemon restores the VFS from this file on boot.
+ * @returns            The session ID (hex string) once the daemon is ready.
+ * @throws             If the daemon fails to become ready within 5 seconds.
  */
-export async function startDaemon(mountPath: string, port?: number): Promise<string> {
+export async function startDaemon(mountPath: string, port?: number, snapshotPath?: string): Promise<string> {
   const id = generateId();
   const jsonPath = path.join(SESSIONS_DIR, `${id}.json`);
   const daemonLogPath = logPath(id);
@@ -89,7 +91,9 @@ export async function startDaemon(mountPath: string, port?: number): Promise<str
 
   const { executable, prefixArgs } = getSpawnExecutable();
 
-  const extraArgs = port !== undefined ? ['--port', String(port)] : [];
+  const extraArgs: string[] = [];
+  if (port !== undefined) extraArgs.push('--port', String(port));
+  if (snapshotPath !== undefined) extraArgs.push('--snapshot', snapshotPath);
 
   // Redirect daemon stderr to a log file so startup errors aren't silently lost.
   // The log is cleaned up by deleteSession() on normal shutdown; if the daemon
