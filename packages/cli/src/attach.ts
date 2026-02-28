@@ -42,6 +42,9 @@ import { readSession } from './session.js';
  * Always restores stdin to its original (cooked) mode before returning,
  * even if an error occurs.
  */
+/** Maximum lineBuffer size (1 MB). Resets on overflow to prevent memory DoS. */
+const MAX_LINE_BUFFER = 1024 * 1024;
+
 async function runAttachOnSocket(socket: net.Socket): Promise<void> {
   // Raw mode: pass keypresses (including Ctrl+C, arrow keys, etc.) through to
   // the daemon shell unchanged, rather than having Node intercept them.
@@ -79,6 +82,11 @@ async function runAttachOnSocket(socket: net.Socket): Promise<void> {
   // ── socket → stdout ─────────────────────────────────────────────────────────
   socket.on('data', (chunk: Buffer) => {
     lineBuffer += chunk.toString();
+    // Guard against a runaway daemon sending oversized messages.
+    if (lineBuffer.length > MAX_LINE_BUFFER) {
+      lineBuffer = '';
+      return;
+    }
     // Messages are newline-delimited — process every complete line.
     const lines = lineBuffer.split('\n');
     lineBuffer = lines.pop() ?? ''; // last element may be an incomplete line
@@ -103,7 +111,8 @@ async function runAttachOnSocket(socket: net.Socket): Promise<void> {
         process.stdin.setRawMode(false);
       }
       process.stdin.pause();
-      process.removeAllListeners('SIGWINCH');
+      // Remove only the listener we registered — not all SIGWINCH listeners.
+      process.removeListener('SIGWINCH', sendResize);
     }
 
     // Socket closed gracefully (daemon called disconnectAllClients or shut down).
@@ -130,8 +139,12 @@ export async function attachToSession(id: string): Promise<void> {
   try {
     socket = await new Promise<net.Socket>((resolve, reject) => {
       const s = net.createConnection(session.socketPath);
-      s.once('connect', () => resolve(s));
-      s.once('error', reject);
+      const timer = setTimeout(() => {
+        s.destroy();
+        reject(new Error('connection timed out after 5 s'));
+      }, 5000);
+      s.once('connect', () => { clearTimeout(timer); resolve(s); });
+      s.once('error', (err) => { clearTimeout(timer); reject(err); });
     });
   } catch (err: any) {
     console.error(`Could not connect to session ${id}: ${err.message}`);
@@ -157,8 +170,12 @@ export async function attachViaTcp(host: string, port: number): Promise<void> {
   try {
     socket = await new Promise<net.Socket>((resolve, reject) => {
       const s = net.createConnection(port, host);
-      s.once('connect', () => resolve(s));
-      s.once('error', reject);
+      const timer = setTimeout(() => {
+        s.destroy();
+        reject(new Error('connection timed out after 5 s'));
+      }, 5000);
+      s.once('connect', () => { clearTimeout(timer); resolve(s); });
+      s.once('error', (err) => { clearTimeout(timer); reject(err); });
     });
   } catch (err: any) {
     console.error(`Could not connect to ${host}:${port}: ${err.message}`);

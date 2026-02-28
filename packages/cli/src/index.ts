@@ -289,8 +289,12 @@ async function runDaemon(id: string, mountPath: string, port?: number): Promise<
   const server = net.createServer(handleClient);
 
   // Start listening BEFORE writing the session file so the parent process
-  // (polling for the socket) doesn't see a partially-ready daemon.
+  // (polling for the session JSON) doesn't see a partially-ready daemon.
   await new Promise<void>((resolve) => server.listen(socketPath, resolve));
+
+  // Restrict the socket to the owner only — other users on the same system
+  // should not be able to attach to this VM.
+  try { fs.chmodSync(socketPath, 0o600); } catch { /* non-fatal on odd filesystems */ }
 
   // Optionally also bind a TCP server so remote clients can attach directly
   // without needing access to the Unix socket file.
@@ -298,11 +302,19 @@ async function runDaemon(id: string, mountPath: string, port?: number): Promise<
   let tcpServer: net.Server | undefined;
   if (port !== undefined) {
     tcpServer = net.createServer(handleClient);
-    // Listen on '::' (IPv6 wildcard). On macOS this creates a dual-stack socket
-    // that also accepts IPv4 connections, so both `localhost` (::1) and
-    // `127.0.0.1` work. On Linux dual-stack depends on ipv6only sysctl, but
-    // the explicit IPv6 path still works for remote attach.
-    await new Promise<void>((resolve) => tcpServer!.listen(port, '::', resolve));
+    // Try IPv6 wildcard first (dual-stack on most systems). Fall back to IPv4
+    // wildcard if the host has IPv6 disabled.
+    try {
+      await new Promise<void>((resolve, reject) => {
+        tcpServer!.once('error', reject);
+        tcpServer!.listen(port, '::', resolve);
+      });
+    } catch {
+      await new Promise<void>((resolve, reject) => {
+        tcpServer!.once('error', reject);
+        tcpServer!.listen(port, '0.0.0.0', resolve);
+      });
+    }
   }
 
   // Now that the socket is ready, register ourselves in the session registry.

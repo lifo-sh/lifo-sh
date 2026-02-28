@@ -27,6 +27,11 @@ import * as path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { SESSIONS_DIR } from './session.js';
 
+/** Path where daemon stderr is captured during startup for error reporting. */
+function logPath(id: string): string {
+  return path.join(SESSIONS_DIR, `${id}.log`);
+}
+
 /** Generates a short random hex ID, e.g. "a1b2c3". */
 function generateId(): string {
   return randomBytes(3).toString('hex');
@@ -77,38 +82,59 @@ function getSpawnExecutable(): { executable: string; prefixArgs: string[] } {
  */
 export async function startDaemon(mountPath: string, port?: number, scriptPath?: string): Promise<string> {
   const id = generateId();
-  const socketPath = path.join(SESSIONS_DIR, `${id}.sock`);
+  const jsonPath = path.join(SESSIONS_DIR, `${id}.json`);
+  const daemonLogPath = logPath(id);
+
+  fs.mkdirSync(SESSIONS_DIR, { recursive: true });
 
   const { executable, prefixArgs } = getSpawnExecutable();
 
   const extraArgs = port !== undefined ? ['--port', String(port)] : [];
 
-  // Spawn the daemon detached with all stdio ignored so the parent can exit
-  // freely without the child being affected.
+  // Redirect daemon stderr to a log file so startup errors aren't silently lost.
+  // The log is cleaned up by deleteSession() on normal shutdown; if the daemon
+  // crashes before writing its session file, we read the log to show the user
+  // a meaningful error message.
+  const logFd = fs.openSync(daemonLogPath, 'w');
+
+  // Spawn the daemon detached so the parent can exit without affecting it.
   const child = cp.spawn(
     executable,
     [...prefixArgs, scriptPath ?? process.argv[1]!, '--daemon', '--id', id, '--mount', mountPath, ...extraArgs],
     {
       detached: true,
-      stdio: 'ignore',   // daemon has no terminal
+      stdio: ['ignore', 'ignore', logFd],
       env: { ...process.env },
     },
   );
+  fs.closeSync(logFd);
 
   // Detach the parent's reference so Node won't wait for this child to exit.
   child.unref();
 
-  // The daemon creates its socket file once it's listening and ready.
-  // Poll for up to 5 seconds before giving up.
+  // Wait for the daemon to write its session JSON file. The daemon writes this
+  // AFTER server.listen() resolves, so its presence guarantees both:
+  //   1. The Unix socket is listening and ready to accept connections.
+  //   2. The session metadata (socketPath etc.) is available for attachToSession().
+  // This is strictly later than the socket file appearing, so polling for JSON
+  // eliminates the race where the parent detects the sock but JSON isn't written yet.
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline) {
-    if (fs.existsSync(socketPath)) break;
+    if (fs.existsSync(jsonPath)) break;
     await new Promise(r => setTimeout(r, 100));
   }
 
-  if (!fs.existsSync(socketPath)) {
-    throw new Error(`Daemon failed to start (socket never appeared at ${socketPath})`);
+  if (!fs.existsSync(jsonPath)) {
+    // Try to read the daemon's log for a helpful error message.
+    let logContent = '';
+    try { logContent = fs.readFileSync(daemonLogPath, 'utf-8').trim(); } catch { /* ok */ }
+    try { fs.unlinkSync(daemonLogPath); } catch { /* ok */ }
+    const hint = logContent ? `\nDaemon output:\n${logContent}` : '';
+    throw new Error(`Daemon failed to start within 5 s.${hint}`);
   }
+
+  // Clean up the startup log — daemon started successfully.
+  try { fs.unlinkSync(daemonLogPath); } catch { /* ok */ }
 
   return id;
 }
