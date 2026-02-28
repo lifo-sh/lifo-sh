@@ -1,10 +1,12 @@
 /**
  * handlers/sessions.ts — REST CRUD for VM sessions
  *
- * POST   /api/sessions      — create a new VM daemon
- * GET    /api/sessions       — list all sessions
- * GET    /api/sessions/:id   — get a single session
- * DELETE /api/sessions/:id   — stop a session
+ * POST   /api/sessions            — create a new VM daemon
+ * GET    /api/sessions             — list all sessions
+ * GET    /api/sessions/:id         — get a single session
+ * POST   /api/sessions/:id/pause   — pause a session (SIGSTOP)
+ * POST   /api/sessions/:id/resume  — resume a session (SIGCONT)
+ * DELETE /api/sessions/:id         — stop a session
  */
 
 import * as fs from 'node:fs';
@@ -110,6 +112,60 @@ export function getSession(req: ApiRequest, res: http.ServerResponse): void {
   }
 
   sendJson(res, 200, { ...session, alive });
+}
+
+/** POST /api/sessions/:id/pause — pause (freeze) a session. */
+export function pauseSession(req: ApiRequest, res: http.ServerResponse): void {
+  const { id } = req.params;
+  const session = readSession(id!);
+  if (!session) {
+    sendJson(res, 404, { error: `Session not found: ${id}` });
+    return;
+  }
+
+  try {
+    process.kill(session.pid, 0); // check alive
+  } catch {
+    sendJson(res, 409, { error: `Session ${id} is not running` });
+    return;
+  }
+
+  try {
+    process.kill(session.pid, 'SIGSTOP');
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    sendJson(res, 500, { error: `Failed to pause session: ${message}` });
+    return;
+  }
+
+  sendJson(res, 200, { ok: true, id, status: 'paused' });
+}
+
+/** POST /api/sessions/:id/resume — resume a paused session. */
+export function resumeSession(req: ApiRequest, res: http.ServerResponse): void {
+  const { id } = req.params;
+  const session = readSession(id!);
+  if (!session) {
+    sendJson(res, 404, { error: `Session not found: ${id}` });
+    return;
+  }
+
+  try {
+    process.kill(session.pid, 0); // check alive
+  } catch {
+    sendJson(res, 409, { error: `Session ${id} is not running` });
+    return;
+  }
+
+  try {
+    process.kill(session.pid, 'SIGCONT');
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    sendJson(res, 500, { error: `Failed to resume session: ${message}` });
+    return;
+  }
+
+  sendJson(res, 200, { ok: true, id, status: 'running' });
 }
 
 /** DELETE /api/sessions/:id — stop a session. */

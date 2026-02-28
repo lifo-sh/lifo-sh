@@ -9,6 +9,8 @@
  *   POST   /api/sessions            → create VM session
  *   GET    /api/sessions            → list all sessions
  *   GET    /api/sessions/:id        → get session by ID
+ *   POST   /api/sessions/:id/pause  → pause session (SIGSTOP)
+ *   POST   /api/sessions/:id/resume → resume session (SIGCONT)
  *   DELETE /api/sessions/:id        → stop session
  *   WS     /api/sessions/:id/attach → terminal I/O (WebSocket)
  */
@@ -17,7 +19,7 @@ import * as http from 'node:http';
 import { Router, sendJson } from './router.js';
 import { corsMiddleware, handlePreflight } from './cors.js';
 import { authMiddleware } from './auth.js';
-import { createSession, getSessions, getSession, stopSession } from './handlers/sessions.js';
+import { createSession, getSessions, getSession, stopSession, pauseSession, resumeSession } from './handlers/sessions.js';
 import { handleAttach } from './handlers/attach.js';
 
 const PORT = parseInt(process.env.LIFO_API_PORT ?? '3001', 10);
@@ -39,6 +41,8 @@ router.get('/health', (_req, res) => {
 router.post('/api/sessions', createSession);
 router.get('/api/sessions', getSessions);
 router.get('/api/sessions/:id', getSession);
+router.post('/api/sessions/:id/pause', pauseSession);
+router.post('/api/sessions/:id/resume', resumeSession);
 router.delete('/api/sessions/:id', stopSession);
 
 // ── HTTP server ───────────────────────────────────────────────────────────────
