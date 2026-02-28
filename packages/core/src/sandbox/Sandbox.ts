@@ -90,21 +90,14 @@ export class Sandbox {
     let shellTerminal: ITerminal;
     let isVisual = false;
 
-    if (typeof options?.terminal === 'string' || (typeof HTMLElement !== 'undefined' && options?.terminal instanceof HTMLElement)) {
-      // Visual mode: lazy-load xterm.js from @lifo-sh/ui
-      const { Terminal } = await import('@lifo-sh/ui');
-      const container = resolveContainer(options.terminal);
-      const xtermTerminal = new Terminal(container);
-      shellTerminal = xtermTerminal;
+    if (options?.terminal) {
+      // Visual mode: caller provides an ITerminal instance
+      shellTerminal = options.terminal;
       isVisual = true;
 
       // Display MOTD
       const motd = kernel.vfs.readFileString('/etc/motd');
-      xtermTerminal.write(motd.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n'));
-    } else if (options?.terminal && typeof options.terminal === 'object') {
-      // Pre-created ITerminal instance
-      shellTerminal = options.terminal as ITerminal;
-      isVisual = true;
+      shellTerminal.write(motd.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n'));
     } else {
       // Headless mode
       shellTerminal = new HeadlessTerminal();
@@ -226,16 +219,14 @@ export class Sandbox {
   }
 
   /**
-   * Attach a headless sandbox to a DOM element, enabling visual mode.
+   * Attach a headless sandbox to a terminal, enabling visual mode.
    */
-  async attach(container: HTMLElement): Promise<void> {
+  attach(terminal: ITerminal): void {
     if (this._destroyed) throw new Error('Sandbox is destroyed');
-    const { Terminal } = await import('@lifo-sh/ui');
-    const xtermTerminal = new Terminal(container);
 
     const motd = this.kernel.vfs.readFileString('/etc/motd');
-    xtermTerminal.write(motd.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n'));
-    xtermTerminal.focus();
+    terminal.write(motd.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n'));
+    terminal.focus();
   }
 
   /**
@@ -268,15 +259,6 @@ export class Sandbox {
 }
 
 // ─── Helpers ───
-
-function resolveContainer(target: string | HTMLElement): HTMLElement {
-  if (typeof target === 'string') {
-    const el = document.querySelector(target);
-    if (!el) throw new Error(`Sandbox: element not found: ${target}`);
-    return el as HTMLElement;
-  }
-  return target;
-}
 
 function ensureParentDirs(vfs: VFS, filePath: string): void {
   const parts = filePath.split('/').filter(Boolean);

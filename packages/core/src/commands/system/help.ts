@@ -26,7 +26,7 @@ const CATEGORIES: Record<string, string[]> = {
   ],
   'Network': ['curl', 'wget', 'ping', 'dig'],
   'Archive': ['tar', 'gzip', 'gunzip', 'zip', 'unzip'],
-  'Node.js': ['node', 'pkg'],
+  'Node.js': ['node', 'npm', 'lifo'],
 };
 
 export function createHelpCommand(_registry: CommandRegistry): Command {

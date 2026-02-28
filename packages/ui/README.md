@@ -10,17 +10,15 @@ npm install @lifo-sh/ui @lifo-sh/core
 
 ## Usage
 
-Typically used via `@lifo-sh/core`'s Sandbox API:
+Create a `Terminal` and pass it to `Sandbox.create()`:
 
 ```typescript
+import { Terminal } from '@lifo-sh/ui';
 import { Sandbox } from '@lifo-sh/core';
 
-const sandbox = await Sandbox.create({
-  terminal: '#terminal-container',
-});
+const terminal = new Terminal(document.getElementById('terminal'));
+const sandbox = await Sandbox.create({ terminal });
 ```
-
-`@lifo-sh/core` lazy-loads `@lifo-sh/ui` when a DOM element is passed as the `terminal` option.
 
 ### Standalone
 

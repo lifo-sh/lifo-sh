@@ -30,11 +30,12 @@ console.log(content); // "Hi there"
 ### Browser with Terminal UI
 
 ```typescript
+import { Terminal } from '@lifo-sh/ui';
 import { Sandbox } from '@lifo-sh/core';
 
-// Requires @lifo-sh/ui as an optional peer dependency
+const terminal = new Terminal(document.getElementById('terminal'));
 const sandbox = await Sandbox.create({
-  terminal: '#terminal-container',
+  terminal,
   persist: true,
 });
 ```
@@ -43,7 +44,8 @@ const sandbox = await Sandbox.create({
 
 - **Kernel** -- virtual filesystem (VFS), virtual `/proc` and `/dev` providers, IndexedDB persistence
 - **Shell** -- bash-like interpreter with pipes, redirects, globs, variables, job control, tab completion, history
-- **60+ commands** -- `ls`, `grep`, `awk`, `sed`, `curl`, `node`, `tar`, `find`, and more
+- **60+ commands** -- `ls`, `grep`, `awk`, `sed`, `curl`, `node`, `npm`, `tar`, `find`, and more
+- **`lifo` package manager** -- install WebAssembly packages with `lifo install` (e.g. ffmpeg, python, sqlite)
 - **Sandbox API** -- high-level `commands.run()` and `fs.*` for programmatic use
 - **Node.js compat layer** -- run JS files with `node script.js` using shimmed `fs`, `path`, `http`, etc.
 
@@ -54,6 +56,8 @@ const sandbox = await Sandbox.create({
 | **@lifo-sh/core** | Kernel, shell, commands, sandbox API |
 | [@lifo-sh/ui](https://www.npmjs.com/package/@lifo-sh/ui) | Terminal UI (xterm.js wrapper) |
 | [lifo-sh](https://www.npmjs.com/package/lifo-sh) | CLI -- run Lifo in your terminal |
+| [lifo-pkg-git](https://www.npmjs.com/package/lifo-pkg-git) | Git command (isomorphic-git) |
+| [lifo-pkg-ffmpeg](https://www.npmjs.com/package/lifo-pkg-ffmpeg) | FFmpeg command (Wasm) |
 
 ## Links
 
