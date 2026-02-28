@@ -611,12 +611,13 @@ async function addMultiTab(): Promise<MultiTab> {
 	bootLifoPackages(kernel.vfs, registry);
 
 	const env = kernel.getDefaultEnv();
-	const shell = new Shell(terminal, kernel.vfs, registry, env);
+	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry);
 
 	const jobTable = shell.getJobTable();
-	registry.register('ps', createPsCommand(jobTable));
-	registry.register('top', createTopCommand(jobTable));
-	registry.register('kill', createKillCommand(jobTable));
+	const processRegistry = shell.getProcessRegistry();
+	registry.register('ps', createPsCommand(processRegistry));
+	registry.register('top', createTopCommand(processRegistry));
+	registry.register('kill', createKillCommand(processRegistry));
 	registry.register('watch', createWatchCommand(registry));
 	registry.register('help', createHelpCommand(registry));
 
@@ -754,12 +755,13 @@ async function addHttpTab(label: string): Promise<HttpTab> {
 	registry.register('tunnel', createTunnelCommand(kernel.portRegistry));
 
 	const env = kernel.getDefaultEnv();
-	const shell = new Shell(terminal, kernel.vfs, registry, env);
+	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry);
 
 	const jobTable = shell.getJobTable();
-	registry.register('ps', createPsCommand(jobTable));
-	registry.register('top', createTopCommand(jobTable));
-	registry.register('kill', createKillCommand(jobTable));
+	const processRegistry = shell.getProcessRegistry();
+	registry.register('ps', createPsCommand(processRegistry));
+	registry.register('top', createTopCommand(processRegistry));
+	registry.register('kill', createKillCommand(processRegistry));
 	registry.register('watch', createWatchCommand(registry));
 	registry.register('help', createHelpCommand(registry));
 
@@ -944,12 +946,13 @@ async function bootExplorer() {
 	bootLifoPackages(vfs, registry);
 
 	const env = explorerKernel.getDefaultEnv();
-	const shell = new Shell(terminal, vfs, registry, env);
+	const shell = new Shell(terminal, vfs, registry, env, explorerKernel.processRegistry);
 
 	const jobTable = shell.getJobTable();
-	registry.register('ps', createPsCommand(jobTable));
-	registry.register('top', createTopCommand(jobTable));
-	registry.register('kill', createKillCommand(jobTable));
+	const processRegistry = shell.getProcessRegistry();
+	registry.register('ps', createPsCommand(processRegistry));
+	registry.register('top', createTopCommand(processRegistry));
+	registry.register('kill', createKillCommand(processRegistry));
 	registry.register('watch', createWatchCommand(registry));
 	registry.register('help', createHelpCommand(registry));
 
@@ -985,12 +988,13 @@ async function bootGit() {
 	bootLifoPackages(kernel.vfs, registry);
 
 	const env = kernel.getDefaultEnv();
-	const shell = new Shell(terminal, kernel.vfs, registry, env);
+	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry);
 
 	const jobTable = shell.getJobTable();
-	registry.register('ps', createPsCommand(jobTable));
-	registry.register('top', createTopCommand(jobTable));
-	registry.register('kill', createKillCommand(jobTable));
+	const processRegistry = shell.getProcessRegistry();
+	registry.register('ps', createPsCommand(processRegistry));
+	registry.register('top', createTopCommand(processRegistry));
+	registry.register('kill', createKillCommand(processRegistry));
 	registry.register('watch', createWatchCommand(registry));
 	registry.register('help', createHelpCommand(registry));
 
@@ -1050,12 +1054,13 @@ async function bootFfmpeg() {
 	bootLifoPackages(vfs, registry);
 
 	const env = ffmpegKernel.getDefaultEnv();
-	const shell = new Shell(terminal, vfs, registry, env);
+	const shell = new Shell(terminal, vfs, registry, env, ffmpegKernel.processRegistry);
 
 	const jobTable = shell.getJobTable();
-	registry.register('ps', createPsCommand(jobTable));
-	registry.register('top', createTopCommand(jobTable));
-	registry.register('kill', createKillCommand(jobTable));
+	const processRegistry = shell.getProcessRegistry();
+	registry.register('ps', createPsCommand(processRegistry));
+	registry.register('top', createTopCommand(processRegistry));
+	registry.register('kill', createKillCommand(processRegistry));
 	registry.register('watch', createWatchCommand(registry));
 	registry.register('help', createHelpCommand(registry));
 

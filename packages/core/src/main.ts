@@ -33,13 +33,14 @@ async function boot(): Promise<void> {
 
   // 5. Shell
   const env = kernel.getDefaultEnv();
-  const shell = new Shell(terminal, kernel.vfs, registry, env);
+  const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry);
 
   // 5b. Register factory commands that need shell/registry access
   const jobTable = shell.getJobTable();
-  registry.register('ps', createPsCommand(jobTable));
-  registry.register('top', createTopCommand(jobTable));
-  registry.register('kill', createKillCommand(jobTable));
+  const processRegistry = shell.getProcessRegistry();
+  registry.register('ps', createPsCommand(processRegistry));
+  registry.register('top', createTopCommand(processRegistry));
+  registry.register('kill', createKillCommand(processRegistry));
   registry.register('watch', createWatchCommand(registry));
   registry.register('help', createHelpCommand(registry));
 

@@ -64,6 +64,8 @@ export { createNpmCommand } from './commands/system/npm.js';
 // Shell
 export { Shell } from './shell/Shell.js';
 export { JobTable } from './shell/jobs.js';
+export { ProcessRegistry } from './shell/ProcessRegistry.js';
+export type { Process, SpawnOptions } from './shell/ProcessRegistry.js';
 
 // Terminal
 export type { ITerminal } from './terminal/ITerminal.js';

@@ -8,6 +8,7 @@ import { VFSError } from '../kernel/vfs/index.js';
 import { Interpreter, type BuiltinFn, type InterpreterConfig } from './interpreter.js';
 import { HistoryManager } from './history.js';
 import { JobTable } from './jobs.js';
+import { ProcessRegistry } from './ProcessRegistry.js';
 import { complete, type CompletionContext } from './completer.js';
 import { evaluateTest } from './test-builtin.js';
 import { TerminalStdin } from './terminal-stdin.js';
@@ -51,6 +52,7 @@ export class Shell {
   private interpreterConfig: InterpreterConfig;
   private historyManager: HistoryManager;
   private jobTable: JobTable;
+  private processRegistry: ProcessRegistry;
   private builtins: Map<string, BuiltinFn>;
 
   // Tab completion state
@@ -61,6 +63,7 @@ export class Shell {
     vfs: VFS,
     registry: CommandRegistry,
     env: Record<string, string>,
+    processRegistry: ProcessRegistry,
   ) {
     this.terminal = terminal;
     this.vfs = vfs;
@@ -72,8 +75,11 @@ export class Shell {
     this.builtins = new Map<string, BuiltinFn>();
     this.registerBuiltins();
 
-    // Initialize job table
+    // Initialize job table (legacy - still used for backward compat)
     this.jobTable = new JobTable();
+
+    // Use shared process registry from Kernel
+    this.processRegistry = processRegistry;
 
     // Initialize history manager
     this.historyManager = new HistoryManager(vfs);
@@ -88,6 +94,7 @@ export class Shell {
       registry: this.registry,
       builtins: this.builtins,
       jobTable: this.jobTable,
+      processRegistry: this.processRegistry,
       writeToTerminal: (text: string) => this.writeToTerminal(text),
       aliases: this.aliases,
       getAbortSignal: () => this.abortController?.signal ?? new AbortController().signal,
@@ -120,6 +127,10 @@ export class Shell {
 
   getJobTable(): JobTable {
     return this.jobTable;
+  }
+
+  getProcessRegistry(): ProcessRegistry {
+    return this.processRegistry;
   }
 
   getCwd(): string {
@@ -215,16 +226,35 @@ export class Shell {
   }
 
   start(): void {
+    // Register this shell instance as a process
+    // First shell gets PID 1, subsequent shells get PID 2, 3, etc.
+    const shellPromise = new Promise<number>(() => {}); // Never resolves (shell runs forever)
+    const shellAbortController = new AbortController();
+
+    this.processRegistry.spawn({
+      command: 'shell',
+      args: ['shell'],
+      cwd: this.cwd,
+      env: this.env,
+      isForeground: true,
+      promise: shellPromise,
+      abortController: shellAbortController,
+    });
+
     this.terminal.onData((data) => this.handleInput(data));
     this.printPrompt();
   }
 
   private printPrompt(): void {
-    // Report finished background jobs
+    // Report finished background jobs from JobTable (legacy)
     const doneJobs = this.jobTable.collectDone();
     for (const job of doneJobs) {
       this.writeToTerminal(`[${job.id}] Done    ${job.command}\n`);
     }
+
+    // Collect and reap zombie processes from ProcessRegistry
+    this.processRegistry.collectZombies();
+    // Zombies are already logged by JobTable above, so no need to log again
 
     const home = this.env['HOME'] ?? '/home/user';
     let displayPath = this.cwd;

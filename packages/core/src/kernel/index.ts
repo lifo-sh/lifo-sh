@@ -4,6 +4,7 @@ import { DevProvider } from './vfs/providers/DevProvider.js';
 import { PersistenceManager } from './persistence/PersistenceManager.js';
 import { IndexedDBPersistenceBackend } from './persistence/backends.js';
 import type { PersistenceBackend } from './persistence/backends.js';
+import { ProcessRegistry } from '../shell/ProcessRegistry.js';
 import { installSamples } from './samples.js';
 
 const MOTD = `\x1b[1;36m
@@ -49,10 +50,12 @@ export type VirtualRequestHandler = (req: VirtualRequest, res: VirtualResponse) 
 export class Kernel {
   vfs: VFS;
   portRegistry: Map<number, VirtualRequestHandler> = new Map();
+  processRegistry: ProcessRegistry;
   private persistence: PersistenceManager;
 
   constructor(backend?: PersistenceBackend) {
     this.vfs = new VFS();
+    this.processRegistry = new ProcessRegistry();
     this.persistence = new PersistenceManager(
       backend ?? new IndexedDBPersistenceBackend(),
     );

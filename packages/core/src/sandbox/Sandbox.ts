@@ -111,13 +111,13 @@ export class Sandbox {
     }
 
     // 6. Create shell
-    const shell = new Shell(shellTerminal, kernel.vfs, registry, env);
+    const shell = new Shell(shellTerminal, kernel.vfs, registry, env, kernel.processRegistry);
 
     // 7. Register factory commands
-    const jobTable = shell.getJobTable();
-    registry.register('ps', createPsCommand(jobTable));
-    registry.register('top', createTopCommand(jobTable));
-    registry.register('kill', createKillCommand(jobTable));
+    const processRegistry = shell.getProcessRegistry();
+    registry.register('ps', createPsCommand(processRegistry));
+    registry.register('top', createTopCommand(processRegistry));
+    registry.register('kill', createKillCommand(processRegistry));
     registry.register('watch', createWatchCommand(registry));
     registry.register('help', createHelpCommand(registry));
     registry.register('node', createNodeCommand(kernel.portRegistry));
