@@ -22,7 +22,7 @@ export interface AppDefinition {
   extensions?: string[];
   /** Menu items when this app is focused */
   menus?: MenuCategory[];
-  createInstance(ctx: AppContext): AppInstance;
+  createInstance(ctx: AppContext, filePath?: string): AppInstance;
 }
 
 // ─── App Instance ───

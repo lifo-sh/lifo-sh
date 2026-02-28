@@ -166,5 +166,5 @@ export const textEditDefinition: AppDefinition = {
   name: 'TextEdit',
   icon: '\uD83D\uDCDD',
   extensions: ['.txt', '.md', '.json', '.js', '.ts', '.py', '.sh', '.css', '.html'],
-  createInstance: (ctx) => new TextEditInstance(ctx),
+  createInstance: (ctx, filePath) => new TextEditInstance(ctx, filePath),
 };

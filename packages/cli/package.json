@@ -35,7 +35,7 @@
   ],
   "scripts": {
     "build": "tsup",
-    "dev": "tsx src/index.ts"
+    "dev": "NODE_ENV=development tsx src/index.ts"
   },
   "dependencies": {
     "@lifo-sh/core": "workspace:*"
