@@ -1,17 +1,17 @@
 import type { Command } from '../types.js';
-import type { NetworkStack } from '../../kernel/network/index.js';
+import type { Kernel } from '../../kernel/index.js';
 
 /**
  * ifconfig - Configure network interfaces
  * Usage: ifconfig [interface] [options]
  */
-export function createIfconfigCommand(networkStack: NetworkStack): Command {
+export function createIfconfigCommand(kernel: Kernel): Command {
   return async (ctx) => {
     const args = ctx.args;
 
     // No arguments: show all interfaces
     if (args.length === 0) {
-      const interfaces = networkStack.getAllInterfaces();
+      const interfaces = kernel.networkStack.getAllInterfaces();
 
       if (interfaces.length === 0) {
         ctx.stdout.write('No network interfaces\n');
@@ -31,7 +31,7 @@ export function createIfconfigCommand(networkStack: NetworkStack): Command {
     }
 
     const ifaceName = args[0];
-    const iface = networkStack.getInterface(ifaceName);
+    const iface = kernel.networkStack.getInterface(ifaceName);
 
     // Just interface name: show that interface
     if (args.length === 1) {
@@ -72,7 +72,7 @@ export function createIfconfigCommand(networkStack: NetworkStack): Command {
           if (!iface) {
             // Create new interface if it doesn't exist
             try {
-              const newIface = networkStack.createInterface(ifaceName, 'ethernet');
+              const newIface = kernel.networkStack.createInterface(ifaceName, 'ethernet');
               newIface.addAddress({
                 version: 4,
                 address: command,

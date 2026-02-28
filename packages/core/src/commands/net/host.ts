@@ -1,5 +1,5 @@
 import type { Command } from '../types.js';
-import type { NetworkStack } from '../../kernel/network/index.js';
+import type { Kernel } from '../../kernel/index.js';
 
 /**
  * host - DNS lookup and /etc/hosts management
@@ -11,7 +11,7 @@ import type { NetworkStack } from '../../kernel/network/index.js';
  *   host remove <hostname>       - Remove entry from /etc/hosts
  *   host reload                  - Reload /etc/hosts into DNS
  */
-export function createHostCommand(networkStack: NetworkStack): Command {
+export function createHostCommand(kernel: Kernel): Command {
   return async (ctx) => {
     const args = ctx.args;
 
@@ -90,7 +90,7 @@ export function createHostCommand(networkStack: NetworkStack): Command {
         ctx.vfs.writeFile('/etc/hosts', newContent);
 
         // Reload DNS
-        networkStack.getDNS().loadHostsFile(newContent);
+        kernel.networkStack.getDNS().loadHostsFile(newContent);
 
         ctx.stdout.write(`Added: ${newLine}\n`);
         return 0;
@@ -131,7 +131,7 @@ export function createHostCommand(networkStack: NetworkStack): Command {
         ctx.vfs.writeFile('/etc/hosts', newContent);
 
         // Reload DNS
-        networkStack.getDNS().loadHostsFile(newContent);
+        kernel.networkStack.getDNS().loadHostsFile(newContent);
 
         ctx.stdout.write(`Removed entry for: ${hostname}\n`);
         return 0;
@@ -146,7 +146,7 @@ export function createHostCommand(networkStack: NetworkStack): Command {
     if (subcommand === 'reload') {
       try {
         const content = ctx.vfs.readFileString('/etc/hosts');
-        networkStack.getDNS().loadHostsFile(content);
+        kernel.networkStack.getDNS().loadHostsFile(content);
         ctx.stdout.write('Reloaded /etc/hosts\n');
         return 0;
       } catch (e) {
@@ -161,7 +161,7 @@ export function createHostCommand(networkStack: NetworkStack): Command {
 
     try {
       // First try to lookup in cache/hosts
-      const dns = networkStack.getDNS();
+      const dns = kernel.networkStack.getDNS();
       const cached = dns.getHost(hostname);
 
       if (cached) {
@@ -170,7 +170,7 @@ export function createHostCommand(networkStack: NetworkStack): Command {
       }
 
       // Try full DNS resolution
-      const ip = await networkStack.resolveHostname(hostname);
+      const ip = await kernel.networkStack.resolveHostname(hostname);
       ctx.stdout.write(`${hostname} has address ${ip}\n`);
       return 0;
     } catch (e) {

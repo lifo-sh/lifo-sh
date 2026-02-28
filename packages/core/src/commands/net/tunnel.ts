@@ -1,5 +1,5 @@
 import type { Command } from '../types.js';
-import type { VirtualRequestHandler } from '../../kernel/index.js';
+import type { Kernel } from '../../kernel/index.js';
 import type { VirtualResponseWithDone } from '../../node-compat/http.js';
 import { Buffer } from '../../node-compat/buffer.js';
 
@@ -33,7 +33,7 @@ function parseArgs(args: string[]): TunnelOptions | { help: true } {
   return { server, port, verbose };
 }
 
-function createTunnelImpl(portRegistry?: Map<number, VirtualRequestHandler>): Command {
+function createTunnelImpl(kernel?: Kernel): Command {
   return async (ctx) => {
     const options = parseArgs(ctx.args);
 
@@ -58,7 +58,7 @@ function createTunnelImpl(portRegistry?: Map<number, VirtualRequestHandler>): Co
       return 0;
     }
 
-    if (!portRegistry) {
+    if (!kernel?.portRegistry) {
       ctx.stderr.write('tunnel: portRegistry not available\n');
       return 1;
     }
@@ -93,7 +93,7 @@ function createTunnelImpl(portRegistry?: Map<number, VirtualRequestHandler>): Co
     }
 
     function logActivePorts() {
-      const ports = Array.from(portRegistry!.keys()).sort((a, b) => a - b);
+      const ports = Array.from(kernel!.portRegistry.keys()).sort((a, b) => a - b);
 
       if (ports.length === 0) {
         ctx.stdout.write('No active servers to tunnel\n');
@@ -155,7 +155,7 @@ function createTunnelImpl(portRegistry?: Map<number, VirtualRequestHandler>): Co
           }
 
           // Lookup handler in portRegistry
-          const handler = portRegistry!.get(port);
+          const handler = kernel!.portRegistry.get(port);
 
           if (!handler) {
             sendError(requestId, 404, `No server listening on port ${port}`);
@@ -285,11 +285,11 @@ function createTunnelImpl(portRegistry?: Map<number, VirtualRequestHandler>): Co
   };
 }
 
-export function createTunnelCommand(portRegistry: Map<number, VirtualRequestHandler>): Command {
-  return createTunnelImpl(portRegistry);
+export function createTunnelCommand(kernel: Kernel): Command {
+  return createTunnelImpl(kernel);
 }
 
-// Default command (no port registry)
+// Default command (no kernel)
 const command: Command = createTunnelImpl();
 
 export default command;

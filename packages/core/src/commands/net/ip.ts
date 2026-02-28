@@ -1,5 +1,6 @@
 import type { Command } from '../types.js';
 import type { NetworkStack } from '../../kernel/network/index.js';
+import type { Kernel } from '../../kernel/index.js';
 import { VETHPair } from '../../kernel/network/tunnel/VETHPair.js';
 import { Bridge } from '../../kernel/network/Bridge.js';
 
@@ -13,7 +14,7 @@ import { Bridge } from '../../kernel/network/Bridge.js';
  *   ip tunnel     - Manage tunnels
  *   ip netns      - Manage network namespaces
  */
-export function createIPCommand(networkStack: NetworkStack): Command {
+export function createIPCommand(kernel: Kernel): Command {
   return async (ctx) => {
     const args = ctx.args;
 
@@ -41,16 +42,16 @@ Examples:
 
     switch (object) {
       case 'link':
-        return await handleLink(ctx, command, rest, networkStack);
+        return await handleLink(ctx, command, rest, kernel.networkStack);
       case 'addr':
       case 'address':
-        return await handleAddr(ctx, command, rest, networkStack);
+        return await handleAddr(ctx, command, rest, kernel.networkStack);
       case 'route':
-        return await handleRoute(ctx, command, rest, networkStack);
+        return await handleRoute(ctx, command, rest, kernel.networkStack);
       case 'netns':
-        return await handleNetns(ctx, command, rest, networkStack);
+        return await handleNetns(ctx, command, rest, kernel.networkStack);
       case 'bridge':
-        return await handleBridge(ctx, command, rest, networkStack);
+        return await handleBridge(ctx, command, rest, kernel.networkStack);
       default:
         ctx.stderr.write(`Unknown object: ${object}\n`);
         ctx.stderr.write(`Try: ip { link | addr | route | netns | bridge }\n`);

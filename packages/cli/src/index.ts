@@ -16,7 +16,7 @@ import {
 	createHelpCommand,
 	createNodeCommand,
 	createCurlCommand,
-	createTunnelCommand,
+	createTunnelCommandV2,
 } from '@lifo-sh/core';
 import { NodeTerminal } from './NodeTerminal.js';
 import { TOKEN_PATH, readToken, handleLogin, handleLogout, handleWhoami } from './auth.js';
@@ -106,7 +106,7 @@ async function main() {
 	registry.register('help', createHelpCommand(registry));
 	registry.register('node', createNodeCommand(kernel.portRegistry));
 	registry.register('curl', createCurlCommand(kernel.portRegistry));
-	registry.register('tunnel', createTunnelCommand(kernel.portRegistry));
+	registry.register('tunnel', createTunnelCommandV2(kernel.portRegistry, kernel.networkStack));
 
 	const npmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
 		const result = await shell.execute(cmd, {
@@ -119,9 +119,17 @@ async function main() {
 	};
 	registry.register('npm', createNpmCommand(registry, npmShellExecute));
 	registry.register('lifo', createLifoPkgCommand(registry, npmShellExecute));
+
+	// 7b. Service manager & systemctl
+	kernel.initServiceManager(registry, env);
+	registry.register('systemctl', createSystemctlCommand(kernel.serviceManager!));
+
 	// 8. Source config files
 	await shell.sourceFile('/etc/profile');
 	await shell.sourceFile(env.HOME + '/.bashrc');
+
+	// 8b. Boot enabled services
+	await kernel.bootServices();
 
 	// 9. Override exit
 	(shell as any).builtins.set(

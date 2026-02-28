@@ -1,11 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { VFS } from '../../src/kernel/vfs/index.js';
 import type { CommandContext, CommandOutputStream } from '../../src/commands/types.js';
-import type { VirtualRequestHandler } from '../../src/kernel/index.js';
+import type { VirtualRequestHandler, Kernel } from '../../src/kernel/index.js';
 import { createNodeCommand } from '../../src/commands/system/node.js';
 import { createCurlCommand } from '../../src/commands/net/curl.js';
 import { createNpxCommand } from '../../src/commands/system/npm.js';
 import { CommandRegistry } from '../../src/commands/registry.js';
+import { NetworkStack } from '../../src/kernel/network/index.js';
+import { ProcessRegistry } from '../../src/shell/ProcessRegistry.js';
 
 function createContext(vfs: VFS, args: string[], cwd = '/'): CommandContext & { stdout: CommandOutputStream & { text: string }; stderr: CommandOutputStream & { text: string } } {
   const stdout = { text: '', write(t: string) { this.text += t; } };
@@ -654,7 +656,14 @@ console.log(a + c);
   });
 
   it('url module provides fileURLToPath and pathToFileURL', async () => {
-    const node = createNodeCommand(new Map());
+    const mockKernel = {
+      portRegistry: new Map(),
+      vfs,
+      processRegistry: new ProcessRegistry(),
+      networkStack: new NetworkStack(),
+      serviceManager: null,
+    } as Kernel;
+    const node = createNodeCommand(mockKernel);
     vfs.writeFile('/tmp/test.mjs', [
       'import { fileURLToPath, pathToFileURL } from "node:url";',
       'const p = fileURLToPath("file:///home/user/test.js");',
@@ -912,6 +921,7 @@ console.log('file:' + import.meta.filename);
 describe('http.createServer via node command', () => {
   let vfs: VFS;
   let portRegistry: Map<number, VirtualRequestHandler>;
+  let kernel: Kernel;
 
   beforeEach(() => {
     vfs = new VFS();
@@ -921,6 +931,13 @@ describe('http.createServer via node command', () => {
     vfs.mkdir('/usr', { recursive: true });
     vfs.mkdir('/usr/share/pkg/node_modules', { recursive: true });
     portRegistry = new Map();
+    kernel = {
+      vfs,
+      portRegistry,
+      processRegistry: new ProcessRegistry(),
+      networkStack: new NetworkStack(),
+      serviceManager: null,
+    } as Kernel;
   });
 
   it('default node command supports http.createServer', async () => {
@@ -937,7 +954,7 @@ describe('http.createServer via node command', () => {
   });
 
   it('createServer + listen registers handler in portRegistry', async () => {
-    const node = createNodeCommand(portRegistry);
+    const node = createNodeCommand(kernel);
     vfs.writeFile('/tmp/test.js', `
       const http = require('http');
       const server = http.createServer((req, res) => {
@@ -956,7 +973,7 @@ describe('http.createServer via node command', () => {
   });
 
   it('virtual http.get connects to virtual server', async () => {
-    const node = createNodeCommand(portRegistry);
+    const node = createNodeCommand(kernel);
     vfs.writeFile('/tmp/test.js', `
       const http = require('http');
       const server = http.createServer((req, res) => {
@@ -986,7 +1003,7 @@ describe('http.createServer via node command', () => {
       res.body = 'curl response\n';
     });
 
-    const curl = createCurlCommand(portRegistry);
+    const curl = createCurlCommand(kernel);
     const ctx = createContext(vfs, ['http://localhost:6000/']);
     const code = await curl(ctx);
     expect(code).toBe(0);
@@ -994,7 +1011,7 @@ describe('http.createServer via node command', () => {
   });
 
   it('server.close removes handler from portRegistry', async () => {
-    const node = createNodeCommand(portRegistry);
+    const node = createNodeCommand(kernel);
     vfs.writeFile('/tmp/test.js', `
       const http = require('http');
       const server = http.createServer((req, res) => {
@@ -1014,7 +1031,7 @@ describe('http.createServer via node command', () => {
   });
 
   it('abort signal closes active servers', async () => {
-    const node = createNodeCommand(portRegistry);
+    const node = createNodeCommand(kernel);
     const ac = new AbortController();
     vfs.writeFile('/tmp/test.js', `
       const http = require('http');
@@ -1043,6 +1060,7 @@ describe('http.createServer via node command', () => {
 describe('npx command', () => {
   let vfs: VFS;
   let registry: CommandRegistry;
+  let kernel: Kernel;
 
   beforeEach(() => {
     vfs = new VFS();
@@ -1052,9 +1070,17 @@ describe('npx command', () => {
     vfs.mkdir('/usr/bin', { recursive: true });
     vfs.mkdir('/usr/share/pkg/node_modules', { recursive: true });
 
+    kernel = {
+      vfs,
+      portRegistry: new Map(),
+      processRegistry: new ProcessRegistry(),
+      networkStack: new NetworkStack(),
+      serviceManager: null,
+    } as Kernel;
+
     registry = new CommandRegistry();
     // Register the node command so npx fallback works
-    registry.register('node', createNodeCommand());
+    registry.register('node', createNodeCommand(kernel));
   });
 
   it('--version prints version', async () => {

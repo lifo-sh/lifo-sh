@@ -1,6 +1,5 @@
 import type { Command } from '../types.js';
-import type { VirtualRequestHandler } from '../../kernel/index.js';
-import type { NetworkStack } from '../../kernel/network/index.js';
+import type { Kernel } from '../../kernel/index.js';
 import { WebSocketTunnel } from '../../kernel/network/tunnel/WebSocketTunnel.js';
 
 /**
@@ -40,10 +39,7 @@ function parseArgs(args: string[]): TunnelOptions | { help: true } {
   return { server, verbose };
 }
 
-export function createTunnelCommandV2(
-  portRegistry: Map<number, VirtualRequestHandler>,
-  networkStack: NetworkStack
-): Command {
+export function createTunnelCommandV2(kernel: Kernel): Command {
   return async (ctx) => {
     const options = parseArgs(ctx.args);
 
@@ -86,19 +82,19 @@ Access tunneled servers using path-based routing:
     }
 
     // Check if tunnel already exists
-    const existingTunnel = networkStack.getTunnel('wst0');
+    const existingTunnel = kernel.networkStack.getTunnel('wst0');
     if (existingTunnel) {
       ctx.stderr.write('Tunnel already active. Use Ctrl+C to stop it first.\n');
       return 1;
     }
 
     // Create WebSocket tunnel
-    const tunnelId = networkStack.getNextTunnelId();
+    const tunnelId = kernel.networkStack.getNextTunnelId();
     const tunnel = new WebSocketTunnel(
       tunnelId,
       server,
-      networkStack,
-      portRegistry,
+      kernel.networkStack,
+      kernel.portRegistry,
       'default'
     );
 
@@ -107,7 +103,7 @@ Access tunneled servers using path-based routing:
 
     try {
       // Add tunnel to network stack
-      networkStack.addTunnel('wst0', tunnel);
+      kernel.networkStack.addTunnel('wst0', tunnel);
 
       // Bring tunnel up (connects WebSocket)
       await tunnel.up();
@@ -161,7 +157,7 @@ Access tunneled servers using path-based routing:
       // Cleanup
       ctx.stdout.write('\nShutting down tunnel...\n');
       await tunnel.down();
-      await networkStack.removeTunnel('wst0');
+      await kernel.networkStack.removeTunnel('wst0');
       ctx.stdout.write('Tunnel closed\n');
 
       return 0;
@@ -172,7 +168,7 @@ Access tunneled servers using path-based routing:
       // Cleanup on error
       try {
         await tunnel.down();
-        await networkStack.removeTunnel('wst0');
+        await kernel.networkStack.removeTunnel('wst0');
       } catch {
         // Ignore cleanup errors
       }

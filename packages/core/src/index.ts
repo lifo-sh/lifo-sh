@@ -86,6 +86,13 @@ export { createTunnelCommand } from './commands/net/tunnel.js';
 export { createLifoPkgCommand, bootLifoPackages } from './commands/system/lifo.js';
 export { createNpmCommand } from './commands/system/npm.js';
 export { createLogoutCommand } from './commands/system/logout.js';
+export { createSystemctlCommand } from './commands/system/systemctl.js';
+
+// Service manager
+export { ServiceManager } from './kernel/ServiceManager.js';
+export type { ServiceInfo } from './kernel/ServiceManager.js';
+export type { UnitFile } from './kernel/unit-parser.js';
+export { parseUnitFile } from './kernel/unit-parser.js';
 
 // Shell
 export { Shell } from './shell/Shell.js';

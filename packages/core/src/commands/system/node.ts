@@ -7,7 +7,7 @@ import { createConsole } from '../../node-compat/console.js';
 import { Buffer } from '../../node-compat/buffer.js';
 import { VFSError } from '../../kernel/vfs/index.js';
 import { ACTIVE_SERVERS } from '../../node-compat/http.js';
-import type { VirtualRequestHandler } from '../../kernel/index.js';
+import type { VirtualRequestHandler, Kernel } from '../../kernel/index.js';
 
 const NODE_VERSION = 'v20.0.0';
 
@@ -533,7 +533,7 @@ function transformEsmToCjs(source: string): string {
   return result;
 }
 
-function createNodeImpl(portRegistry?: Map<number, VirtualRequestHandler>): Command {
+function createNodeImpl(kernel?: Kernel): Command {
   return async (ctx) => {
     // Handle -v/--version
     if (ctx.args.length > 0 && (ctx.args[0] === '-v' || ctx.args[0] === '--version')) {
@@ -601,7 +601,7 @@ function createNodeImpl(portRegistry?: Map<number, VirtualRequestHandler>): Comm
       filename,
       dirname: dir,
       signal: ctx.signal,
-      portRegistry,
+      portRegistry: kernel?.portRegistry,
     };
 
     const moduleMap = createModuleMap(nodeCtx);
@@ -1286,12 +1286,18 @@ function createNodeImpl(portRegistry?: Map<number, VirtualRequestHandler>): Comm
   };
 }
 
-export function createNodeCommand(portRegistry: Map<number, VirtualRequestHandler>): Command {
-  return createNodeImpl(portRegistry);
+export function createNodeCommand(kernel: Kernel): Command {
+  return createNodeImpl(kernel);
 }
 
-// Default command with a shared portRegistry so http.createServer works
-const defaultPortRegistry = new Map<number, VirtualRequestHandler>();
-const command: Command = createNodeImpl(defaultPortRegistry);
+// Default command with a mock kernel for standalone usage
+const defaultKernel = {
+  portRegistry: new Map<number, VirtualRequestHandler>(),
+  vfs: undefined as any,
+  processRegistry: undefined as any,
+  networkStack: undefined as any,
+  serviceManager: null,
+} as Kernel;
+const command: Command = createNodeImpl(defaultKernel);
 
 export default command;

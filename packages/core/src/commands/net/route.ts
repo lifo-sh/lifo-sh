@@ -1,17 +1,18 @@
 import type { Command } from '../types.js';
 import type { NetworkStack } from '../../kernel/network/index.js';
+import type { Kernel } from '../../kernel/index.js';
 
 /**
  * route - Show/manipulate IP routing table
  * Usage: route [-n] [add|del] [destination] [gw gateway] [dev interface]
  */
-export function createRouteCommand(networkStack: NetworkStack): Command {
+export function createRouteCommand(kernel: Kernel): Command {
   return async (ctx) => {
     const args = ctx.args;
 
     // No arguments: show routing table
     if (args.length === 0 || args[0] === '-n') {
-      const table = networkStack.getRoutingTableString();
+      const table = kernel.networkStack.getRoutingTableString();
       ctx.stdout.write(table + '\n');
       return 0;
     }
@@ -20,11 +21,11 @@ export function createRouteCommand(networkStack: NetworkStack): Command {
 
     switch (command) {
       case 'add':
-        return addRoute(ctx, args.slice(1), networkStack);
+        return addRoute(ctx, args.slice(1), kernel.networkStack);
 
       case 'del':
       case 'delete':
-        return deleteRoute(ctx, args.slice(1), networkStack);
+        return deleteRoute(ctx, args.slice(1), kernel.networkStack);
 
       default:
         ctx.stderr.write('Usage: route [-n] [add|del] [destination] [gw gateway] [dev interface]\n');

@@ -1,12 +1,8 @@
 import type { Command } from '../types.js';
 import { resolve } from '../../utils/path.js';
-import type { VirtualRequestHandler } from '../../kernel/index.js';
-import type { NetworkStack } from '../../kernel/network/index.js';
+import type { Kernel } from '../../kernel/index.js';
 
-function createCurlImpl(
-  portRegistry?: Map<number, VirtualRequestHandler>,
-  networkStack?: NetworkStack
-): Command {
+function createCurlImpl(kernel?: Kernel): Command {
   return async (ctx) => {
     let method = 'GET';
     const headers: Record<string, string> = {};
@@ -73,24 +69,24 @@ function createCurlImpl(
     }
 
     // Check for virtual server
-    if (portRegistry) {
+    if (kernel?.portRegistry) {
       try {
         const parsed = new URL(url);
         let host = parsed.hostname;
         const port = parsed.port ? Number(parsed.port) : (parsed.protocol === 'http:' ? 80 : 443);
 
         // Try DNS resolution first
-        if (networkStack && host !== '127.0.0.1' && host !== 'localhost') {
+        if (kernel.networkStack && host !== '127.0.0.1' && host !== 'localhost') {
           try {
-            const resolved = await networkStack.resolveHostname(host);
+            const resolved = await kernel.networkStack.resolveHostname(host);
             host = resolved;
           } catch {
             // DNS resolution failed, keep original hostname
           }
         }
 
-        if ((host === 'localhost' || host === '127.0.0.1') && portRegistry.has(port)) {
-          const handler = portRegistry.get(port)!;
+        if ((host === 'localhost' || host === '127.0.0.1') && kernel.portRegistry.has(port)) {
+          const handler = kernel.portRegistry.get(port)!;
           const vReq = {
             method,
             url: parsed.pathname + parsed.search,
@@ -185,14 +181,11 @@ function createCurlImpl(
   };
 }
 
-export function createCurlCommand(
-  portRegistry: Map<number, VirtualRequestHandler>,
-  networkStack?: NetworkStack
-): Command {
-  return createCurlImpl(portRegistry, networkStack);
+export function createCurlCommand(kernel: Kernel): Command {
+  return createCurlImpl(kernel);
 }
 
-// Default command (no port registry -- always uses fetch)
+// Default command (no kernel -- always uses fetch)
 const command: Command = createCurlImpl();
 
 export default command;

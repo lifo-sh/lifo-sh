@@ -19,6 +19,10 @@ export interface FileExplorerOptions {
   showHidden?: boolean;
   /** Optional editor provider (e.g. Monaco). Falls back to textarea. */
   editorProvider?: EditorProvider;
+  /** Return available apps for a given file path (for "Open With" submenu) */
+  openWithApps?: (path: string) => Array<{ id: string; name: string; icon: string }>;
+  /** Open a file with a specific app */
+  onOpenWith?: (path: string, appId: string) => void;
 }
 
 export interface FileExplorerEntry {
@@ -420,6 +424,45 @@ const STYLES = `
 .lf-context-item.danger {
   color: #f7768e;
 }
+.lf-context-submenu-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  background: none;
+  color: #a9b1d6;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+  position: relative;
+}
+.lf-context-submenu-trigger:hover {
+  background: #292e42;
+}
+.lf-context-submenu-trigger .lf-submenu-arrow {
+  margin-left: 12px;
+  font-size: 10px;
+  color: #565f89;
+}
+.lf-context-submenu {
+  position: absolute;
+  left: 100%;
+  top: 0;
+  z-index: 1001;
+  background: #16161e;
+  border: 1px solid #2f3146;
+  border-radius: 6px;
+  padding: 4px 0;
+  min-width: 160px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  display: none;
+}
+.lf-context-submenu-trigger:hover > .lf-context-submenu {
+  display: block;
+}
 .lf-context-sep {
   height: 1px;
   background: #2f3146;
@@ -438,6 +481,36 @@ const STYLES = `
   outline: none;
   width: 100%;
   min-width: 80px;
+}
+
+/* ── Search bar ── */
+.lf-search-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.lf-search-input {
+  width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #c0caf5;
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  transition: width 0.2s ease, padding 0.2s ease;
+  border-radius: 4px;
+}
+.lf-search-input.visible {
+  width: 140px;
+  padding: 4px 8px;
+  background: #1a1b26;
+  border: 1px solid #2f3146;
+}
+.lf-search-input.visible:focus {
+  border-color: #7aa2f7;
 }
 `;
 
@@ -576,6 +649,8 @@ export class FileExplorer {
   private root: HTMLElement;
   private showHidden: boolean;
   private editorProvider: EditorProvider | null;
+  private openWithApps: ((path: string) => Array<{ id: string; name: string; icon: string }>) | null;
+  private onOpenWith: ((path: string, appId: string) => void) | null;
 
   // State
   private currentPath: string;
@@ -587,6 +662,8 @@ export class FileExplorer {
   private historyStack: string[] = [];
   private historyIndex = -1;
   private contextMenu: HTMLElement | null = null;
+  private searchActive = false;
+  private searchQuery = '';
 
   // DOM refs
   private breadcrumbsEl!: HTMLElement;
@@ -595,6 +672,8 @@ export class FileExplorer {
   private backBtn!: HTMLButtonElement;
   private fwdBtn!: HTMLButtonElement;
   private upBtn!: HTMLButtonElement;
+  private searchInput!: HTMLInputElement;
+  private searchBtn!: HTMLButtonElement;
 
   // Events
   private listeners: EventHandler[] = [];
@@ -608,6 +687,8 @@ export class FileExplorer {
     this.currentPath = options.cwd || '/';
     this.showHidden = options.showHidden ?? false;
     this.editorProvider = options.editorProvider ?? null;
+    this.openWithApps = options.openWithApps ?? null;
+    this.onOpenWith = options.onOpenWith ?? null;
 
     // Inject scoped styles
     this.styleEl = document.createElement('style');
@@ -673,6 +754,7 @@ export class FileExplorer {
     this.selectedPath = null;
     this.disposeEditor();
     this.viewingFile = null;
+    this.clearSearch();
     this.loadEntries();
     this.renderBreadcrumbs();
     this.renderList();
@@ -724,7 +806,27 @@ export class FileExplorer {
     this.breadcrumbsEl = document.createElement('div');
     this.breadcrumbsEl.className = 'lf-breadcrumbs';
 
-    toolbar.append(this.backBtn, this.fwdBtn, this.upBtn, sep, this.breadcrumbsEl);
+    // Search wrapper
+    const searchWrapper = document.createElement('div');
+    searchWrapper.className = 'lf-search-wrapper';
+
+    this.searchBtn = this.createToolbarBtn('\u{1F50D}', 'Search');
+    this.searchBtn.addEventListener('click', () => this.toggleSearch());
+
+    this.searchInput = document.createElement('input');
+    this.searchInput.className = 'lf-search-input';
+    this.searchInput.type = 'text';
+    this.searchInput.placeholder = 'Filter\u2026';
+    this.searchInput.addEventListener('input', () => this.applySearchFilter());
+    this.searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        this.clearSearch();
+      }
+    });
+
+    searchWrapper.append(this.searchInput, this.searchBtn);
+
+    toolbar.append(this.backBtn, this.fwdBtn, this.upBtn, sep, this.breadcrumbsEl, searchWrapper);
     this.root.appendChild(toolbar);
   }
 
@@ -818,7 +920,7 @@ export class FileExplorer {
 
   // ─── File list ───
 
-  private renderList(): void {
+  private renderList(entriesToRender?: FileExplorerEntry[]): void {
     this.listEl.innerHTML = '';
     this.listEl.classList.remove('viewing');
 
@@ -827,21 +929,23 @@ export class FileExplorer {
       return;
     }
 
+    const displayEntries = entriesToRender ?? this.entries;
+
     // Header
     const header = document.createElement('div');
     header.className = 'lf-list-header';
     header.innerHTML = '<div>Name</div><div style="text-align:right">Size</div><div>Modified</div>';
     this.listEl.appendChild(header);
 
-    if (this.entries.length === 0) {
+    if (displayEntries.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'lf-list-empty';
-      empty.textContent = 'Empty directory';
+      empty.textContent = entriesToRender ? 'No matches' : 'Empty directory';
       this.listEl.appendChild(empty);
       return;
     }
 
-    for (const entry of this.entries) {
+    for (const entry of displayEntries) {
       const row = document.createElement('div');
       row.className = 'lf-list-row';
       if (entry.path === this.selectedPath) row.classList.add('selected');
@@ -1163,6 +1267,16 @@ export class FileExplorer {
       // Expand in tree
       this.expandTreePath(entry.path);
       this.navigateTo(entry.path);
+    } else if (this.onOpenWith && this.openWithApps) {
+      // Delegate to app system — open in default app
+      const apps = this.openWithApps(entry.path);
+      if (apps.length > 0) {
+        this.onOpenWith(entry.path, apps[0].id);
+      } else {
+        // Fallback to inline viewer
+        this.viewingFile = entry.path;
+        this.renderList();
+      }
     } else {
       this.viewingFile = entry.path;
       this.renderList();
@@ -1225,6 +1339,37 @@ export class FileExplorer {
     this.upBtn.disabled = this.currentPath === '/';
   }
 
+  // ─── Search ───
+
+  private toggleSearch(): void {
+    if (this.searchActive) {
+      this.clearSearch();
+    } else {
+      this.searchActive = true;
+      this.searchInput.classList.add('visible');
+      requestAnimationFrame(() => this.searchInput.focus());
+    }
+  }
+
+  private clearSearch(): void {
+    this.searchActive = false;
+    this.searchQuery = '';
+    this.searchInput.value = '';
+    this.searchInput.classList.remove('visible');
+  }
+
+  private applySearchFilter(): void {
+    this.searchQuery = this.searchInput.value.trim().toLowerCase();
+    if (!this.searchQuery) {
+      this.renderList();
+      return;
+    }
+    const filtered = this.entries.filter((e) =>
+      e.name.toLowerCase().includes(this.searchQuery),
+    );
+    this.renderList(filtered);
+  }
+
   // ─── Context menu ───
 
   private showContextMenu(x: number, y: number, entry: FileExplorerEntry | null): void {
@@ -1240,7 +1385,17 @@ export class FileExplorer {
       if (entry.type === 'directory') {
         menu.appendChild(this.contextItem('Open', () => this.openEntry(entry)));
       } else {
-        menu.appendChild(this.contextItem('View / Edit', () => this.openEntry(entry)));
+        menu.appendChild(this.contextItem('View / Edit', () => {
+          this.viewingFile = entry.path;
+          this.renderList();
+        }));
+        // "Open With" submenu
+        if (this.openWithApps && this.onOpenWith) {
+          const apps = this.openWithApps(entry.path);
+          if (apps.length > 0) {
+            menu.appendChild(this.buildOpenWithSubmenu(entry.path, apps));
+          }
+        }
         menu.appendChild(this.contextItem('Download', () => this.downloadFile(entry.path)));
       }
       menu.appendChild(this.contextSep());
@@ -1292,6 +1447,36 @@ export class FileExplorer {
     const sep = document.createElement('div');
     sep.className = 'lf-context-sep';
     return sep;
+  }
+
+  private buildOpenWithSubmenu(path: string, apps: Array<{ id: string; name: string; icon: string }>): HTMLElement {
+    const trigger = document.createElement('button');
+    trigger.className = 'lf-context-submenu-trigger';
+
+    const label = document.createElement('span');
+    label.textContent = 'Open With';
+    const arrow = document.createElement('span');
+    arrow.className = 'lf-submenu-arrow';
+    arrow.textContent = '\u25B6';
+    trigger.append(label, arrow);
+
+    const submenu = document.createElement('div');
+    submenu.className = 'lf-context-submenu';
+
+    for (const app of apps) {
+      const item = document.createElement('button');
+      item.className = 'lf-context-item';
+      item.textContent = `${app.icon} ${app.name}`;
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.closeContextMenu();
+        this.onOpenWith!(path, app.id);
+      });
+      submenu.appendChild(item);
+    }
+
+    trigger.appendChild(submenu);
+    return trigger;
   }
 
   private closeContextMenu(): void {

@@ -11,15 +11,14 @@ import { createHelpCommand } from '../commands/system/help.js';
 import { createNodeCommand } from '../commands/system/node.js';
 import { createCurlCommand } from '../commands/net/curl.js';
 import { createTunnelCommandV2 } from '../commands/net/tunnel-v2.js';
-import { createNpmCommand } from '../commands/system/npm.js';
 import { createIfconfigCommand } from '../commands/net/ifconfig.js';
 import { createRouteCommand } from '../commands/net/route.js';
 import { createNetstatCommand } from '../commands/net/netstat.js';
 import { createHostCommand } from '../commands/net/host.js';
 import { createIPCommand } from '../commands/net/ip.js';
-import { createTunnelCommand } from '../commands/net/tunnel.js';
 import { createNpmCommand, createNpxCommand } from '../commands/system/npm.js';
 import { createLifoPkgCommand, bootLifoPackages } from '../commands/system/lifo.js';
+import { createSystemctlCommand } from '../commands/system/systemctl.js';
 import type { VFS } from '../kernel/vfs/index.js';
 import { NativeFsProvider } from '../kernel/vfs/providers/NativeFsProvider.js';
 import type { NativeFsModule } from '../kernel/vfs/providers/NativeFsProvider.js';
@@ -128,16 +127,16 @@ export class Sandbox {
 		registry.register('kill', createKillCommand(processRegistry));
 		registry.register('watch', createWatchCommand(registry));
 		registry.register('help', createHelpCommand(registry));
-		registry.register('node', createNodeCommand(kernel.portRegistry));
-		registry.register('curl', createCurlCommand(kernel.portRegistry, kernel.networkStack));
-		registry.register('tunnel', createTunnelCommandV2(kernel.portRegistry, kernel.networkStack));
+		registry.register('node', createNodeCommand(kernel));
+		registry.register('curl', createCurlCommand(kernel));
+		registry.register('tunnel', createTunnelCommandV2(kernel));
 
 		// Register network commands
-		registry.register('ifconfig', createIfconfigCommand(kernel.networkStack));
-		registry.register('route', createRouteCommand(kernel.networkStack));
-		registry.register('netstat', createNetstatCommand(kernel.networkStack, kernel.portRegistry));
-		registry.register('host', createHostCommand(kernel.networkStack));
-		registry.register('ip', createIPCommand(kernel.networkStack));
+		registry.register('ifconfig', createIfconfigCommand(kernel));
+		registry.register('route', createRouteCommand(kernel));
+		registry.register('netstat', createNetstatCommand(kernel));
+		registry.register('host', createHostCommand(kernel));
+		registry.register('ip', createIPCommand(kernel));
 
 		// Register npm with shell execution support
 		const npmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
@@ -152,6 +151,13 @@ export class Sandbox {
 		registry.register('npm', createNpmCommand(registry, npmShellExecute));
 		registry.register('npx', createNpxCommand(registry, npmShellExecute));
 		registry.register('lifo', createLifoPkgCommand(registry, npmShellExecute));
+		// 7b. Service manager & systemctl
+		kernel.initServiceManager(registry, env);
+		registry.register('systemctl', createSystemctlCommand(kernel.serviceManager!));
+
+		// 8. Source config files
+		await shell.sourceFile('/etc/profile');
+		await shell.sourceFile(env.HOME + '/.bashrc');
 
 		// 8. Source config files
 		await shell.sourceFile('/etc/profile');
@@ -160,6 +166,14 @@ export class Sandbox {
 		// 9. Set initial cwd if provided
 		if (options?.cwd) {
 			shell.setCwd(options.cwd);
+		}
+		// 9b. Boot enabled services
+		await kernel.bootServices();
+
+		// 10. Start shell (for visual mode, enables interactive input)
+		if (isVisual) {
+			shell.start();
+			shellTerminal.focus();
 		}
 
 		// 10. Start shell (for visual mode, enables interactive input)

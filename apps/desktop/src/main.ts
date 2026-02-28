@@ -4,6 +4,7 @@ import './styles/desktop.css';
 import './styles/window.css';
 import './styles/menubar.css';
 import './styles/dock.css';
+import './styles/spotlight.css';
 import './styles/animations.css';
 
 import { Kernel } from '@lifo-sh/core';
@@ -13,6 +14,7 @@ import { Desktop } from './core/Desktop';
 import { WindowManager } from './core/WindowManager';
 import { MenuBar } from './core/MenuBar';
 import { Dock } from './core/Dock';
+import { Spotlight } from './core/Spotlight';
 import { registerBuiltinApps, finderDefinition, terminalDefinition, textEditDefinition } from './apps/index';
 import type { AppContext } from './types';
 
@@ -68,7 +70,7 @@ async function boot() {
   progressBar.style.width = '85%';
 
   // ── Dock ──
-  const dock = new Dock(root, eventBus, windowManager, (appId) => {
+  const dock = new Dock(root, eventBus, windowManager, appRegistry, (appId) => {
     appRegistry.launch(appId, appCtx, windowManager);
   });
 
@@ -76,6 +78,15 @@ async function boot() {
   dock.addPinnedApp(terminalDefinition);
   dock.addSeparator();
   dock.addPinnedApp(textEditDefinition);
+
+  // ── Spotlight ──
+  const spotlight = new Spotlight(
+    root,
+    appRegistry,
+    kernel.vfs,
+    (appId) => appRegistry.launch(appId, appCtx, windowManager),
+    (path) => appRegistry.openFile(path, appCtx, windowManager),
+  );
 
   progressBar.style.width = '100%';
 
@@ -96,13 +107,30 @@ async function boot() {
     const focused = windowManager.getFocusedWindow();
 
     switch (e.key.toLowerCase()) {
+      case ' ': // Cmd+Space → Spotlight
+        e.preventDefault();
+        spotlight.toggle();
+        break;
       case 'w': // Close window
         e.preventDefault();
         if (focused) windowManager.closeWindow(focused.state.id);
         break;
+      case 'h': // Hide/minimize (same as Cmd+M)
+        e.preventDefault();
+        if (focused) windowManager.minimizeWindow(focused.state.id);
+        break;
       case 'm': // Minimize
         e.preventDefault();
         if (focused) windowManager.minimizeWindow(focused.state.id);
+        break;
+      case 'n': // New window of focused app
+        e.preventDefault();
+        if (focused) {
+          appRegistry.launch(focused.state.appId, appCtx, windowManager);
+        }
+        break;
+      case ',': // Preferences placeholder
+        e.preventDefault();
         break;
       case 'q': // Quit app — close all windows for that app
         e.preventDefault();

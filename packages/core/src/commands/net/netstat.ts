@@ -1,15 +1,11 @@
 import type { Command } from '../types.js';
-import type { NetworkStack } from '../../kernel/network/index.js';
-import type { VirtualRequestHandler } from '../../kernel/index.js';
+import type { Kernel } from '../../kernel/index.js';
 
 /**
  * netstat - Print network connections, routing tables, interface statistics
  * Usage: netstat [-r] [-i] [-a]
  */
-export function createNetstatCommand(
-  networkStack: NetworkStack,
-  portRegistry?: Map<number, VirtualRequestHandler>
-): Command {
+export function createNetstatCommand(kernel: Kernel): Command {
   return async (ctx) => {
     const args = ctx.args;
 
@@ -43,7 +39,7 @@ export function createNetstatCommand(
     // Show routing table
     if (showRouting) {
       output += 'Kernel IP routing table\n';
-      output += networkStack.getRoutingTableString() + '\n';
+      output += kernel.networkStack.getRoutingTableString() + '\n';
       if (showInterfaces || showAll) {
         output += '\n';
       }
@@ -54,7 +50,7 @@ export function createNetstatCommand(
       output += 'Kernel Interface table\n';
       output += 'Iface      MTU    RX-OK  RX-ERR  TX-OK  TX-ERR  Flags\n';
 
-      const interfaces = networkStack.getAllInterfaces();
+      const interfaces = kernel.networkStack.getAllInterfaces();
       for (const iface of interfaces) {
         const name = iface.name.padEnd(10);
         const mtu = iface.mtu.toString().padStart(6);
@@ -77,7 +73,7 @@ export function createNetstatCommand(
       output += 'Active Internet connections\n';
       output += 'Proto Local Address          Foreign Address        State\n';
 
-      const sockets = networkStack.getAllSockets();
+      const sockets = kernel.networkStack.getAllSockets();
       let hasConnections = false;
 
       // Show NetworkStack sockets
@@ -87,8 +83,8 @@ export function createNetstatCommand(
       }
 
       // Also show portRegistry connections (Node.js HTTP servers)
-      if (portRegistry) {
-        const ports = Array.from(portRegistry.keys()).sort((a, b) => a - b);
+      if (kernel.portRegistry) {
+        const ports = Array.from(kernel.portRegistry.keys()).sort((a, b) => a - b);
         for (const port of ports) {
           const proto = 'TCP  ';
           const local = `127.0.0.1:${port}`.padEnd(22);
