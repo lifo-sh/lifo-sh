@@ -31,6 +31,7 @@ import {
 	createHostCommand,
 	createIPCommand,
 	createNpmCommand,
+	createNpxCommand,
 	createLifoPkgCommand,
 	createSystemctlCommand,
 } from '@lifo-sh/core';
@@ -698,7 +699,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=tunnel --server ws://localhost:3005
+ExecStart=tunnel --server ws://localhost:3005 --port 5173
 Restart=always
 RestartSec=5
 
@@ -756,10 +757,20 @@ server.listen(3000, () => {
 	});
 	`);
 
+	httpKernel.vfs.writeFile('/home/user/server5173.js', `const http = require('http');
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Hello from Lifo5173!\\n');
+});
+server.listen(5173, () => {
+  console.log('Server running on port 5173');
+});
+`);
 
 	await addHttpTab('Server');
 	await addHttpTab('Client');
 	await addHttpTab('Client2');
+	await addHttpTab('Server 5173');
 }
 
 async function addHttpTab(label: string): Promise<HttpTab> {
@@ -823,6 +834,7 @@ async function addHttpTab(label: string): Promise<HttpTab> {
 		return result.exitCode;
 	};
 	registry.register('npm', createNpmCommand(registry, httpNpmShellExecute));
+	registry.register('npx', createNpxCommand(registry, httpNpmShellExecute));
 	registry.register('lifo', createLifoPkgCommand(registry, httpNpmShellExecute));
 
 	await shell.sourceFile('/etc/profile');

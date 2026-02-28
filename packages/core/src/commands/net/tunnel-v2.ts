@@ -17,11 +17,13 @@ import { WebSocketTunnel } from '../../kernel/network/tunnel/WebSocketTunnel.js'
 
 interface TunnelOptions {
 	server: string;
+	port: number | null;
 	verbose: boolean;
 }
 
 function parseArgs(args: string[]): TunnelOptions | { help: true } {
 	let server = 'ws://localhost:3005';
+	let port: number | null = null;
 	let verbose = false;
 
 	for (let i = 0; i < args.length; i++) {
@@ -31,12 +33,16 @@ function parseArgs(args: string[]): TunnelOptions | { help: true } {
 			server = args[i].slice('--server='.length);
 		} else if (args[i] === '--server' && args[i + 1]) {
 			server = args[++i];
+		} else if (args[i].startsWith('--port=')) {
+			port = parseInt(args[i].slice('--port='.length), 10);
+		} else if ((args[i] === '--port' || args[i] === '-p') && args[i + 1]) {
+			port = parseInt(args[++i], 10);
 		} else if (args[i] === '-v' || args[i] === '--verbose') {
 			verbose = true;
 		}
 	}
 
-	return { server, verbose };
+	return { server, port, verbose };
 }
 
 export function createTunnelCommandV2(kernel: Kernel): Command {
@@ -51,29 +57,33 @@ Expose Lifo HTTP servers through a WebSocket tunnel
 
 Options:
   --server <url>    Tunnel server URL (default: ws://localhost:3005)
+  --port, -p <num>  Default port (routes all requests to this port)
   -v, --verbose     Verbose logging
   -h, --help        Show this help
 
-Example:
-  # Start tunnel server (in separate terminal):
-  node apps/tunnel-server.js
-
-  # In Lifo terminal:
-  node server.js &
+Examples:
+  # Path-based routing (default):
   tunnel
+  # Access: http://localhost:3005/3000/ → Port 3000
+  #         http://localhost:3005/8080/ → Port 8080
 
-  # Access from host machine:
-  curl http://localhost:3005/3000/
-  open http://localhost:3005/3000/
+  # Default port mode (for Vite, webpack-dev-server, etc.):
+  tunnel --port 5173
+  # Access: http://localhost:3005/ → Port 5173
 
-Access tunneled servers using path-based routing:
+Without --port, uses path-based routing:
   http://localhost:3005/3000/         → Port 3000 inside Lifo
   http://localhost:3005/8080/api      → Port 8080, path /api
-  http://localhost:3005/3000/users    → Port 3000, path /users\n`);
+  http://localhost:3005/3000/users    → Port 3000, path /users
+
+With --port 5173:
+  http://localhost:3005/              → Port 5173, path /
+  http://localhost:3005/src/main.ts   → Port 5173, path /src/main.ts
+  (Perfect for Vite dev server!)\n`);
 			return 0;
 		}
 
-		const { server, verbose } = options as TunnelOptions;
+		const { server, port: defaultPort, verbose } = options as TunnelOptions;
 
 		function log(message: string) {
 			if (verbose) {
@@ -95,7 +105,8 @@ Access tunneled servers using path-based routing:
 			server,
 			kernel.networkStack,
 			kernel.portRegistry,
-			'default'
+			'default',
+			defaultPort
 		);
 
 		ctx.stdout.write(`Connecting to tunnel server at ${server}...\n`);
@@ -109,18 +120,25 @@ Access tunneled servers using path-based routing:
 			await tunnel.up();
 
 			ctx.stdout.write(`✓ Connected to tunnel server\n`);
-			ctx.stdout.write(`Tunnel ready at ${server.replace('ws://', 'http://').replace('wss://', 'https://')}\n`);
 
-			// Show active ports
-			const ports = tunnel.getActivePorts();
-			if (ports.length === 0) {
-				ctx.stdout.write('\nNo active servers to tunnel\n');
-				ctx.stdout.write('Start a server first: node server.js\n');
+			const httpUrl = server.replace('ws://', 'http://').replace('wss://', 'https://');
+
+			if (defaultPort) {
+				ctx.stdout.write(`Tunnel ready — all traffic → port ${defaultPort}\n`);
+				ctx.stdout.write(`  Open: ${httpUrl}\n`);
 			} else {
-				ctx.stdout.write(`\nTunneling ${ports.length} server(s):\n`);
-				for (const port of ports) {
-					const httpUrl = server.replace('ws://', 'http://').replace('wss://', 'https://').replace(/:\d+$/, ':3005');
-					ctx.stdout.write(`  - Port ${port}: ${httpUrl}/${port}/\n`);
+				ctx.stdout.write(`Tunnel ready at ${httpUrl}\n`);
+
+				// Show active ports
+				const ports = tunnel.getActivePorts();
+				if (ports.length === 0) {
+					ctx.stdout.write('\nNo active servers to tunnel\n');
+					ctx.stdout.write('Start a server first: node server.js\n');
+				} else {
+					ctx.stdout.write(`\nTunneling ${ports.length} server(s):\n`);
+					for (const port of ports) {
+						ctx.stdout.write(`  - Port ${port}: ${httpUrl}/${port}/\n`);
+					}
 				}
 			}
 

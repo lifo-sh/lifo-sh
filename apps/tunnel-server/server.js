@@ -2,7 +2,8 @@ import http from "http";
 import { WebSocketServer } from "ws";
 import crypto from "crypto";
 
-const PORT = 3005;
+const PORT = process.env.PORT || 3005;
+const HOST = process.env.HOST || '0.0.0.0'; // Listen on all network interfaces
 const pendingRequests = new Map();
 let tunnelClient = null;
 
@@ -122,8 +123,27 @@ wss.on("connection", (ws) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`Tunnel server listening on port ${PORT}`);
-  console.log(`HTTP requests: http://localhost:${PORT}`);
-  console.log(`WebSocket endpoint: ws://localhost:${PORT}`);
+server.listen(PORT, HOST, () => {
+  const networkInterfaces = require('os').networkInterfaces();
+  const addresses = [];
+
+  for (const iface of Object.values(networkInterfaces)) {
+    for (const alias of iface) {
+      if (alias.family === 'IPv4' && !alias.internal) {
+        addresses.push(alias.address);
+      }
+    }
+  }
+
+  console.log(`Tunnel server listening on ${HOST}:${PORT}`);
+  console.log(`\nAccess your Vite app from:`);
+  console.log(`  Local:   http://localhost:${PORT}`);
+
+  if (addresses.length > 0) {
+    addresses.forEach(addr => {
+      console.log(`  Network: http://${addr}:${PORT}`);
+    });
+  }
+
+  console.log(`\nWebSocket endpoint: ws://${HOST}:${PORT}`);
 });

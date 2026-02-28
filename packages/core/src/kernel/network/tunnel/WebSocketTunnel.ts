@@ -21,6 +21,7 @@ export class WebSocketTunnel extends BaseTunnel {
 	private wsUrl: string;
 	private ws: WebSocket | null = null;
 	private portRegistry?: Map<number, any>;
+	private defaultPort: number | null = null;
 	private reconnectTimer?: any;
 	private isReconnecting = false;
 
@@ -33,17 +34,20 @@ export class WebSocketTunnel extends BaseTunnel {
 		wsUrl: string,
 		networkStack: NetworkStack,
 		portRegistry?: Map<number, any>,
-		namespace = 'default'
+		namespace = 'default',
+		defaultPort: number | null = null
 	) {
 		super(id, networkStack, namespace, 1400); // WebSocket overhead
 
 		this.wsUrl = wsUrl;
 		this.portRegistry = portRegistry;
+		this.defaultPort = defaultPort;
 
 		this.config = {
 			mode: 'websocket',
 			server: wsUrl,
 			ports: portRegistry ? Array.from(portRegistry.keys()) : [],
+			defaultPort: defaultPort ?? undefined,
 		};
 	}
 
@@ -218,16 +222,25 @@ export class WebSocketTunnel extends BaseTunnel {
 	private handleHttpRequest(message: any): void {
 		const { requestId, method, url, headers, body } = message;
 
-		// Extract port from URL: /3000/path -> port=3000, path=/path
-		const match = url.match(/^\/(\d+)(\/.*)?$/);
+		let port: number;
+		let path: string;
 
-		if (!match) {
-			this.sendError(requestId, 400, 'Invalid URL format. Use /PORT/path');
-			return;
+		if (this.defaultPort) {
+			// Default port mode: all requests go to the default port
+			port = this.defaultPort;
+			path = url || '/';
+		} else {
+			// Path-based routing: /PORT/path
+			const match = url.match(/^\/(\d+)(\/.*)?$/);
+
+			if (!match) {
+				this.sendError(requestId, 400, 'Invalid URL format. Use /PORT/path or configure default port');
+				return;
+			}
+
+			port = parseInt(match[1], 10);
+			path = match[2] || '/';
 		}
-
-		const port = parseInt(match[1], 10);
-		const path = match[2] || '/';
 
 		// Check if port exists in registry
 		if (!this.portRegistry || !this.portRegistry.has(port)) {

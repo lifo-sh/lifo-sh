@@ -86,7 +86,7 @@ export { createHostCommand } from './commands/net/host.js';
 export { createIPCommand } from './commands/net/ip.js';
 export { createTunnelCommand } from './commands/net/tunnel.js';
 export { createLifoPkgCommand, bootLifoPackages, rehydrateGlobalPackages } from './commands/system/lifo.js';
-export { createNpmCommand } from './commands/system/npm.js';
+export { createNpmCommand, createNpxCommand } from './commands/system/npm.js';
 export { createLogoutCommand } from './commands/system/logout.js';
 export { createSystemctlCommand } from './commands/system/systemctl.js';
 
