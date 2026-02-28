@@ -255,7 +255,7 @@ function writeProjectPackageJson(vfs: VFS, cwd: string, pkg: PackageJson): void 
   vfs.writeFile(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
 }
 
-function getBinEntries(pkg: PackageJson): Record<string, string> {
+export function getBinEntries(pkg: PackageJson): Record<string, string> {
   if (!pkg.bin) return {};
   if (typeof pkg.bin === 'string') {
     return { [pkg.name || 'unknown']: pkg.bin };
@@ -263,7 +263,7 @@ function getBinEntries(pkg: PackageJson): Record<string, string> {
   return pkg.bin;
 }
 
-function registerBinCommand(registry: CommandRegistry, binName: string, scriptPath: string): void {
+export function registerBinCommand(registry: CommandRegistry, binName: string, scriptPath: string): void {
   registry.registerLazy(binName, () =>
     import('./node.js').then((mod) => ({
       default: ((ctx: CommandContext) =>
