@@ -14,6 +14,16 @@ class FinderInstance implements AppInstance {
 
     this.explorer = new FileExplorer(wrapper, this.ctx.kernel.vfs, {
       cwd: this.initialPath,
+      openWithApps: (path) => {
+        return this.ctx.appRegistry.getAppsForFile(path).map((app) => ({
+          id: app.id,
+          name: app.name,
+          icon: app.icon,
+        }));
+      },
+      onOpenWith: (path, appId) => {
+        this.ctx.appRegistry.openFileWith(path, appId, this.ctx, this.ctx.windowManager);
+      },
     });
   }
 

@@ -103,8 +103,18 @@ class Parser {
     this.skipSeparators();
 
     while (!this.isAtEnd()) {
+      const prevPos = this.pos;
       lists.push(this.parseList());
       this.skipSeparators();
+      // Guard against infinite loop: if no progress was made, the current token
+      // is unexpected (e.g. a stray '(' from pasted JS code). Throw so the
+      // caller can display an error instead of hanging the browser.
+      if (this.pos === prevPos) {
+        throw new ParseError(
+          `unexpected token '${this.peek().value}'`,
+          this.peek().pos,
+        );
+      }
     }
 
     return { type: 'script', lists };
