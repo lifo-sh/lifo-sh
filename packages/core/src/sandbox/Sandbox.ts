@@ -12,6 +12,7 @@ import { createNodeCommand } from '../commands/system/node.js';
 import { createCurlCommand } from '../commands/net/curl.js';
 import { createNpmCommand } from '../commands/system/npm.js';
 import { createLifoPkgCommand, bootLifoPackages } from '../commands/system/lifo.js';
+import { createSystemctlCommand } from '../commands/system/systemctl.js';
 import type { VFS } from '../kernel/vfs/index.js';
 import { NativeFsProvider } from '../kernel/vfs/providers/NativeFsProvider.js';
 import type { NativeFsModule } from '../kernel/vfs/providers/NativeFsProvider.js';
@@ -136,6 +137,10 @@ export class Sandbox {
     registry.register('npm', createNpmCommand(registry, npmShellExecute));
     registry.register('lifo', createLifoPkgCommand(registry, npmShellExecute));
 
+    // 7b. Service manager & systemctl
+    kernel.initServiceManager(registry, env);
+    registry.register('systemctl', createSystemctlCommand(kernel.serviceManager!));
+
     // 8. Source config files
     await shell.sourceFile('/etc/profile');
     await shell.sourceFile(env.HOME + '/.bashrc');
@@ -144,6 +149,9 @@ export class Sandbox {
     if (options?.cwd) {
       shell.setCwd(options.cwd);
     }
+
+    // 9b. Boot enabled services
+    await kernel.bootServices();
 
     // 10. Start shell (for visual mode, enables interactive input)
     if (isVisual) {

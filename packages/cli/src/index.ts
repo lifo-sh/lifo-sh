@@ -16,6 +16,7 @@ import {
   createHelpCommand,
   createNodeCommand,
   createCurlCommand,
+  createSystemctlCommand,
 } from '@lifo-sh/core';
 import { NodeTerminal } from './NodeTerminal.js';
 import { TOKEN_PATH, readToken, handleLogin, handleLogout, handleWhoami } from './auth.js';
@@ -116,9 +117,17 @@ async function main() {
   };
   registry.register('npm', createNpmCommand(registry, npmShellExecute));
   registry.register('lifo', createLifoPkgCommand(registry, npmShellExecute));
+
+  // 7b. Service manager & systemctl
+  kernel.initServiceManager(registry, env);
+  registry.register('systemctl', createSystemctlCommand(kernel.serviceManager!));
+
   // 8. Source config files
   await shell.sourceFile('/etc/profile');
   await shell.sourceFile(env.HOME + '/.bashrc');
+
+  // 8b. Boot enabled services
+  await kernel.bootServices();
 
   // 9. Override exit
   (shell as any).builtins.set(

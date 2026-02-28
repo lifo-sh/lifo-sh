@@ -9,6 +9,7 @@ import { createWatchCommand } from './commands/system/watch.js';
 import { createHelpCommand } from './commands/system/help.js';
 import { createNpmCommand } from './commands/system/npm.js';
 import { createLifoPkgCommand, bootLifoPackages } from './commands/system/lifo.js';
+import { createSystemctlCommand } from './commands/system/systemctl.js';
 
 async function boot(): Promise<void> {
   // 1. Kernel & filesystem (async -- loads persisted data)
@@ -56,9 +57,16 @@ async function boot(): Promise<void> {
   registry.register('npm', createNpmCommand(registry, npmShellExecute));
   registry.register('lifo', createLifoPkgCommand(registry, npmShellExecute));
 
+  // 5d. Service manager & systemctl
+  kernel.initServiceManager(registry, env);
+  registry.register('systemctl', createSystemctlCommand(kernel.serviceManager!));
+
   // 6. Source config files before showing prompt
   await shell.sourceFile('/etc/profile');
   await shell.sourceFile(env.HOME + '/.bashrc');
+
+  // 6b. Boot enabled services
+  await kernel.bootServices();
 
   // 7. Start shell & focus
   shell.start();

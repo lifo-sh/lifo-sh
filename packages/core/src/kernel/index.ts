@@ -5,6 +5,8 @@ import { PersistenceManager } from './persistence/PersistenceManager.js';
 import { IndexedDBPersistenceBackend } from './persistence/backends.js';
 import type { PersistenceBackend } from './persistence/backends.js';
 import { installSamples } from './samples.js';
+import { ServiceManager } from './ServiceManager.js';
+import type { CommandRegistry } from '../commands/registry.js';
 
 const MOTD = `\x1b[1;36m
  _     _  __
@@ -61,6 +63,7 @@ export type VirtualRequestHandler = (req: VirtualRequest, res: VirtualResponse) 
 export class Kernel {
   vfs: VFS;
   portRegistry: Map<number, VirtualRequestHandler> = new Map();
+  serviceManager: ServiceManager | null = null;
   private persistence: PersistenceManager;
 
   constructor(backend?: PersistenceBackend) {
@@ -111,6 +114,8 @@ export class Kernel {
       '/usr/share',
       '/usr/share/pkg',
       '/usr/share/pkg/node_modules',
+      '/etc/systemd/system',
+      '/etc/systemd/system/multi-user.target.wants',
     ];
 
     for (const dir of dirs) {
@@ -143,6 +148,16 @@ export class Kernel {
 
     // Install example files
     installSamples(this.vfs);
+  }
+
+  initServiceManager(registry: CommandRegistry, defaultEnv: Record<string, string>): void {
+    this.serviceManager = new ServiceManager(this.vfs, registry, defaultEnv);
+  }
+
+  async bootServices(): Promise<void> {
+    if (this.serviceManager) {
+      await this.serviceManager.bootEnabledServices();
+    }
   }
 
   getDefaultEnv(): Record<string, string> {
