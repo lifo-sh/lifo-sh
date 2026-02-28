@@ -686,6 +686,8 @@ async function bootHttp() {
 	// Initialize service manager for systemctl support
 	const env = httpKernel.getDefaultEnv();
 	const tempRegistry = createDefaultRegistry();
+	// Register tunnel command so it's available for service execution
+	tempRegistry.register('tunnel', createTunnelCommandV2(httpKernel));
 	httpKernel.initServiceManager(tempRegistry, env);
 
 	// Create tunnel systemd service unit
@@ -697,7 +699,7 @@ After=network.target
 [Service]
 Type=simple
 ExecStart=tunnel --server ws://localhost:3005
-Restart=alway
+Restart=always
 RestartSec=5
 
 [Install]

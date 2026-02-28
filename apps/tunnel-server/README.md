@@ -19,14 +19,18 @@ Host Machine (Port 3001)
 ## Components
 
 ### 1. Tunnel Server (`tunnel-server/`)
+
 Runs on the host machine on port 3001. It:
+
 - Accepts HTTP requests on port 3001
 - Maintains WebSocket connections with tunnel clients
 - Forwards HTTP requests through WebSocket to connected clients
 - Returns responses back to the original HTTP requesters
 
 ### 2. Tunnel Command (built into Lifo)
+
 Runs inside the Lifo environment. It:
+
 - Connects to the tunnel server via WebSocket
 - Discovers all HTTP servers in Lifo's virtual port registry
 - Receives HTTP requests from the tunnel server
@@ -43,7 +47,7 @@ npm install
 npm start
 ```
 
-The server will start on port 3001.
+The server will start on port 3005.
 
 ### 2. Run the Tunnel Command (inside Lifo)
 
@@ -51,7 +55,7 @@ From your Lifo CLI, run:
 
 ```bash
 lifo
-> tunnel --server=ws://localhost:3001
+> tunnel --server=ws://localhost:3005
 ```
 
 Or simply:
@@ -62,7 +66,8 @@ lifo
 ```
 
 The tunnel command will:
-- Connect to the tunnel server at ws://localhost:3001 (default)
+
+- Connect to the tunnel server at ws://localhost:3005 (default)
 - Automatically discover all HTTP servers running in Lifo
 - Forward external requests to the appropriate internal server
 
@@ -84,6 +89,7 @@ curl http://localhost:3001/8080/search?q=test
 ```
 
 Path-based routing format:
+
 - `http://localhost:3001/8080/` → Routes to port 8080 inside Lifo
 - `http://localhost:3001/3000/api/users` → Routes to port 3000, path `/api/users`
 - First path segment is always the port number
