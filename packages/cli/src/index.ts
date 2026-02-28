@@ -134,6 +134,11 @@ function parseArgs(args: string[]): CliOptions {
     } else if (args[i] === '--snapshot' && args[i + 1]) {
       opts.snapshot = args[i + 1]!;
       i++;
+    } else if (args[i]!.startsWith('-')) {
+      console.error(`Error: unknown option '${args[i]}'`);
+      console.error('Usage: lifo [--mount <path>] [--detach] [--port <n>]');
+      console.error('       lifo <new|attach|stop|list|snapshot> [args]');
+      process.exit(1);
     }
   }
   return opts;
@@ -735,6 +740,15 @@ async function main() {
       process.exit(1);
     }
     return;
+  }
+
+  // ── Guard: unknown subcommand ──────────────────────────────────────────────
+  // If the first arg looks like a word (not a flag) and isn't a known
+  // subcommand, bail out instead of silently starting an interactive shell.
+  if (cmd && !cmd.startsWith('-')) {
+    console.error(`lifo: unknown command '${cmd}'`);
+    console.error('Run lifo --help for usage');
+    process.exit(1);
   }
 
   // ── Default: ephemeral interactive shell ───────────────────────────────────
