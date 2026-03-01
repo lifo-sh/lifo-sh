@@ -21,6 +21,152 @@ function stripShebang(src: string): string {
   return src;
 }
 
+/** Check if source contains ESM import/export syntax */
+function isEsmSource(source: string): boolean {
+  // Match import/export at line start (possibly after whitespace)
+  return /(?:^|\n)\s*(?:import\s+|export\s+|export\s*\{)/.test(source);
+}
+
+/** Determine if source should be treated as ESM based on filename and content */
+function shouldTreatAsEsm(source: string, filename: string): boolean {
+  const ext = extname(filename);
+  if (ext === '.mjs') return true;
+  if (ext === '.cjs') return false;
+  return isEsmSource(source);
+}
+
+/** Transform ESM import/export syntax to CJS require/exports equivalents */
+function transformEsmToCjs(source: string): string {
+  let result = source;
+  const trailingExports: string[] = [];
+  let hasDefaultExport = false;
+  let hasNamedExport = false;
+
+  // Scan for export types to decide default export strategy
+  hasDefaultExport = /(?:^|\n)\s*export\s+default\s+/.test(result);
+  hasNamedExport = /(?:^|\n)\s*export\s+(?:const|let|var|function|class|\{|\*\s+from)/.test(result);
+
+  // --- Import transforms ---
+
+  // import { a, b as c } from 'mod'
+  result = result.replace(
+    /(?:^|\n)([ \t]*)import\s*\{([^}]+)\}\s*from\s*(['"][^'"]+['"])\s*;?/g,
+    (_match, indent, imports, mod) => {
+      const mapped = imports.split(',').map((s: string) => {
+        const parts = s.trim().split(/\s+as\s+/);
+        if (parts.length === 2) return `${parts[0].trim()}: ${parts[1].trim()}`;
+        return parts[0].trim();
+      }).filter((s: string) => s).join(', ');
+      return `\n${indent}const { ${mapped} } = require(${mod});`;
+    }
+  );
+
+  // import * as X from 'mod'
+  result = result.replace(
+    /(?:^|\n)([ \t]*)import\s*\*\s*as\s+(\w+)\s+from\s*(['"][^'"]+['"])\s*;?/g,
+    (_match, indent, name, mod) => `\n${indent}const ${name} = require(${mod});`
+  );
+
+  // import X from 'mod' (default import)
+  result = result.replace(
+    /(?:^|\n)([ \t]*)import\s+(\w+)\s+from\s*(['"][^'"]+['"])\s*;?/g,
+    (_match, indent, name, mod) => `\n${indent}const ${name} = require(${mod});`
+  );
+
+  // import 'mod' (side-effect)
+  result = result.replace(
+    /(?:^|\n)([ \t]*)import\s*(['"][^'"]+['"])\s*;?/g,
+    (_match, indent, mod) => `\n${indent}require(${mod});`
+  );
+
+  // --- Export transforms ---
+
+  // export * from 'mod'
+  result = result.replace(
+    /(?:^|\n)([ \t]*)export\s*\*\s*from\s*(['"][^'"]+['"])\s*;?/g,
+    (_match, indent, mod) => `\n${indent}Object.assign(exports, require(${mod}));`
+  );
+
+  // export { a, b } from 'mod' (re-export)
+  result = result.replace(
+    /(?:^|\n)([ \t]*)export\s*\{([^}]+)\}\s*from\s*(['"][^'"]+['"])\s*;?/g,
+    (_match, indent, names, mod) => {
+      const tmpVar = '__re_' + Math.random().toString(36).slice(2, 8);
+      const assignments = names.split(',').map((s: string) => {
+        const parts = s.trim().split(/\s+as\s+/);
+        const local = parts[0].trim();
+        const exported = parts.length === 2 ? parts[1].trim() : local;
+        return `${indent}exports.${exported} = ${tmpVar}.${local};`;
+      }).join('\n');
+      return `\n${indent}const ${tmpVar} = require(${mod});\n${assignments}`;
+    }
+  );
+
+  // export default <expr> — must come before named export { }
+  if (hasDefaultExport && hasNamedExport) {
+    result = result.replace(
+      /(?:^|\n)([ \t]*)export\s+default\s+/g,
+      (_match, indent) => `\n${indent}exports.default = `
+    );
+  } else {
+    result = result.replace(
+      /(?:^|\n)([ \t]*)export\s+default\s+/g,
+      (_match, indent) => `\n${indent}module.exports = `
+    );
+  }
+
+  // export const/let/var x = ...
+  result = result.replace(
+    /(?:^|\n)([ \t]*)export\s+(const|let|var)\s+(\w+)\s*=/g,
+    (_match, indent, keyword, name) => `\n${indent}${keyword} ${name} = exports.${name} =`
+  );
+
+  // export function f(...) / export class C
+  result = result.replace(
+    /(?:^|\n)([ \t]*)export\s+(function\s+(\w+)|class\s+(\w+))/g,
+    (_match, indent, decl, fnName, className) => {
+      const name = fnName || className;
+      trailingExports.push(`exports.${name} = ${name};`);
+      return `\n${indent}${decl}`;
+    }
+  );
+
+  // export { a, b as c } (local re-exports, no from)
+  result = result.replace(
+    /(?:^|\n)([ \t]*)export\s*\{([^}]+)\}\s*;?/g,
+    (_match, indent, names) => {
+      const assignments = names.split(',').map((s: string) => {
+        const parts = s.trim().split(/\s+as\s+/);
+        const local = parts[0].trim();
+        const exported = parts.length === 2 ? parts[1].trim() : local;
+        return `${indent}exports.${exported} = ${local};`;
+      }).join('\n');
+      return `\n${assignments}`;
+    }
+  );
+
+  // --- Other transforms ---
+
+  // Dynamic import() → Promise.resolve(require())
+  result = result.replace(
+    /\bimport\s*\(\s*(['"][^'"]+['"])\s*\)/g,
+    (_match, mod) => `Promise.resolve(require(${mod}))`
+  );
+
+  // import.meta.url → file:// URL
+  result = result.replace(
+    /\bimport\.meta\.url\b/g,
+    "('file://' + __filename)"
+  );
+
+  // Append trailing exports for exported functions/classes
+  if (trailingExports.length > 0) {
+    result += '\n' + trailingExports.join('\n');
+  }
+
+  return result;
+}
+
 function createNodeImpl(portRegistry?: Map<number, VirtualRequestHandler>): Command {
   return async (ctx) => {
     // Handle -v/--version
@@ -37,7 +183,7 @@ function createNodeImpl(portRegistry?: Map<number, VirtualRequestHandler>): Comm
       ctx.stdout.write('  -e, --eval <code>   evaluate code\n');
       ctx.stdout.write('  -v, --version       print version\n\n');
       ctx.stdout.write('Limitations:\n');
-      ctx.stdout.write('  - CommonJS only (no import/export)\n');
+      ctx.stdout.write('  - ESM support via auto-transform (import/export → require/exports)\n');
       ctx.stdout.write('  - No event loop (top-level async does not settle)\n');
       ctx.stdout.write('  - No native modules\n');
       ctx.stdout.write('  - require() resolves: built-in modules, relative VFS files, installed packages\n');
@@ -97,6 +243,9 @@ function createNodeImpl(portRegistry?: Map<number, VirtualRequestHandler>): Comm
 
     // Build require function
     function nodeRequire(name: string): unknown {
+      // Strip node: prefix
+      if (name.startsWith('node:')) name = name.slice(5);
+
       // Check cache
       if (moduleCache.has(name)) return moduleCache.get(name);
 
@@ -165,6 +314,11 @@ function createNodeImpl(portRegistry?: Map<number, VirtualRequestHandler>): Comm
       // Try .js extension
       if (!extname(absPath) && ctx.vfs.exists(absPath + '.js')) {
         return { path: absPath + '.js' };
+      }
+
+      // Try .mjs extension
+      if (!extname(absPath) && ctx.vfs.exists(absPath + '.mjs')) {
+        return { path: absPath + '.mjs' };
       }
 
       // Try .json extension
@@ -273,6 +427,9 @@ function createNodeImpl(portRegistry?: Map<number, VirtualRequestHandler>): Comm
       const modConsole = createConsole(ctx.stdout, ctx.stderr);
 
       function modRequire(name: string): unknown {
+        // Strip node: prefix
+        if (name.startsWith('node:')) name = name.slice(5);
+
         // Built-in modules from child context
         if (modModuleMap[name]) {
           const cached = moduleCache.get(name);
@@ -321,7 +478,10 @@ function createNodeImpl(portRegistry?: Map<number, VirtualRequestHandler>): Comm
         throw new Error(`Cannot find module '${name}'`);
       }
 
-      const cleanSource = stripShebang(modSource);
+      let cleanSource = stripShebang(modSource);
+      if (shouldTreatAsEsm(cleanSource, modFilename)) {
+        cleanSource = transformEsmToCjs(cleanSource);
+      }
       const wrapped = `(function(exports, require, module, __filename, __dirname, console, process, Buffer, setTimeout, setInterval, clearTimeout, clearInterval, global) {\n${cleanSource}\n})`;
 
       const fn = new Function('return ' + wrapped)();
@@ -356,18 +516,31 @@ function createNodeImpl(portRegistry?: Map<number, VirtualRequestHandler>): Comm
     const exports = module.exports;
     const global = {};
 
-    const cleanMainSource = stripShebang(source);
-    const wrapped = `(function(exports, require, module, __filename, __dirname, console, process, Buffer, setTimeout, setInterval, clearTimeout, clearInterval, global) {\n${cleanMainSource}\n})`;
+    let cleanMainSource = stripShebang(source);
+    const isEsm = shouldTreatAsEsm(cleanMainSource, filename);
+    if (isEsm) {
+      cleanMainSource = transformEsmToCjs(cleanMainSource);
+    }
+
+    // Use async IIFE for ESM (supports top-level await)
+    const wrapped = isEsm
+      ? `(async function(exports, require, module, __filename, __dirname, console, process, Buffer, setTimeout, setInterval, clearTimeout, clearInterval, global) {\n${cleanMainSource}\n})`
+      : `(function(exports, require, module, __filename, __dirname, console, process, Buffer, setTimeout, setInterval, clearTimeout, clearInterval, global) {\n${cleanMainSource}\n})`;
 
     try {
       const fn = new Function('return ' + wrapped)();
-      fn(
+      const result = fn(
         exports, nodeRequire, module, filename, dir,
         nodeConsole, process, Buffer,
         globalThis.setTimeout, globalThis.setInterval,
         globalThis.clearTimeout, globalThis.clearInterval,
         global,
       );
+
+      // Await if ESM (async IIFE returns a promise)
+      if (isEsm && result && typeof result.then === 'function') {
+        await result;
+      }
 
       // Check if any servers were started (long-running process)
       const httpMod = moduleCache.get('http') as { [key: symbol]: unknown[] } | undefined;
