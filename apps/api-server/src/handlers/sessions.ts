@@ -35,11 +35,11 @@ function getCliEntryPath(): string {
     // require.resolve may not work in ESM — try import.meta.resolve
   }
 
-  // Fallback: navigate from this file's location in the monorepo
-  // src/handlers/ (dev) or dist/ (built) → monorepo root → packages/cli/dist/index.js
-  const monoRoot = path.resolve(import.meta.dirname, '../../../..');
-  const fallback = path.join(monoRoot, 'packages/cli/dist/index.js');
-  if (fs.existsSync(fallback)) return fallback;
+  // Fallback: try both dev (src/handlers/ → 4 levels up) and prod (dist/ → 3 levels up)
+  for (const depth of ['../../../..', '../../..']) {
+    const candidate = path.join(path.resolve(import.meta.dirname, depth), 'packages/cli/dist/index.js');
+    if (fs.existsSync(candidate)) return candidate;
+  }
 
   throw new Error('Could not locate lifo CLI entry point. Build lifo-sh first.');
 }
