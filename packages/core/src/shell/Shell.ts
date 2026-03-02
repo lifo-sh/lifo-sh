@@ -251,6 +251,10 @@ export class Shell {
       this.writeToTerminal(`[${job.id}] Done    ${job.command}\n`);
     }
 
+    this.terminal.write(this.getPrompt());
+  }
+
+  private getPrompt(): string {
     const home = this.env['HOME'] ?? '/home/user';
     let displayPath = this.cwd;
     if (this.cwd === home) {
@@ -261,7 +265,7 @@ export class Shell {
 
     const user = this.env['USER'] ?? 'user';
     const host = this.env['HOSTNAME'] ?? 'lifo';
-    this.terminal.write(`${BOLD}${GREEN}${user}@${host}${RESET}:${BOLD}${BLUE}${displayPath}${RESET}$ `);
+    return `${BOLD}${GREEN}${user}@${host}${RESET}:${BOLD}${BLUE}${displayPath}${RESET}$ `;
   }
 
   private handleInput(data: string): void {
@@ -541,28 +545,16 @@ export class Shell {
   }
 
   private redrawLine(): void {
-    // Save cursor, move to start of input area, clear, rewrite, restore cursor
-    // Move cursor to start of input (back by old visual cursor pos is tricky, so just use \r and rewrite prompt)
-    this.terminal.write('\r');
-    // Rewrite prompt
-    const home = this.env['HOME'] ?? '/home/user';
-    let displayPath = this.cwd;
-    if (this.cwd === home) {
-      displayPath = '~';
-    } else if (this.cwd.startsWith(home + '/')) {
-      displayPath = '~' + this.cwd.slice(home.length);
-    }
-    const user = this.env['USER'] ?? 'user';
-    const host = this.env['HOSTNAME'] ?? 'lifo';
-    this.terminal.write(`${BOLD}${GREEN}${user}@${host}${RESET}:${BOLD}${BLUE}${displayPath}${RESET}$ `);
-    this.terminal.write(this.lineBuffer);
-    this.terminal.write('\x1b[K'); // Clear anything after
+    const prompt = this.getPrompt();
+    // Write the entire redraw in a single chunk to avoid transient cursor jumps.
+    let out = '\r' + prompt + this.lineBuffer + '\x1b[K';
 
-    // Move cursor to correct position
+    // Move cursor to correct logical position
     const diff = this.lineBuffer.length - this.cursorPos;
     if (diff > 0) {
-      this.terminal.write(`\x1b[${diff}D`);
+      out += `\x1b[${diff}D`;
     }
+    this.terminal.write(out);
   }
 
   private moveCursorLeft(): void {
