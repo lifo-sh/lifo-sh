@@ -12,11 +12,18 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { listSessions, readSession, deleteSession } from 'lifo-sh/session';
+import { listSessions, readSession, deleteSession, SESSIONS_DIR } from 'lifo-sh/session';
 import { startDaemon } from 'lifo-sh/daemon';
 import { sendJson, readJsonBody } from '../router.js';
 import type { ApiRequest } from '../types.js';
 import type * as http from 'node:http';
+
+/** Append a timestamped lifecycle event line to ~/.lifo/sessions/<id>.events */
+function appendEvent(id: string, message: string): void {
+  const eventsPath = path.join(SESSIONS_DIR, `${id}.events`);
+  const line = JSON.stringify({ ts: new Date().toISOString(), message }) + '\n';
+  try { fs.appendFileSync(eventsPath, line); } catch { /* best-effort */ }
+}
 
 /**
  * Resolve the CLI entry point for daemon spawning.
@@ -81,9 +88,13 @@ export async function createSession(req: ApiRequest, res: http.ServerResponse): 
       sendJson(res, 500, { error: 'Session created but metadata not found' });
       return;
     }
+    const portMsg = port ? `, port ${port}` : '';
+    appendEvent(id, `Instance launched — PID ${session.pid}, mount ${mountPath}${portMsg}`);
     sendJson(res, 201, { ...session, alive: true });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
+    // We don't have an id yet if startDaemon threw, so we can't log to a file.
+    // The error is returned to the caller via the HTTP response.
     sendJson(res, 500, { error: message });
   }
 }
@@ -134,10 +145,12 @@ export function pauseSession(req: ApiRequest, res: http.ServerResponse): void {
     process.kill(session.pid, 'SIGSTOP');
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
+    appendEvent(id!, `Error: Failed to pause — ${message}`);
     sendJson(res, 500, { error: `Failed to pause session: ${message}` });
     return;
   }
 
+  appendEvent(id!, 'Instance paused');
   sendJson(res, 200, { ok: true, id, status: 'paused' });
 }
 
@@ -161,11 +174,46 @@ export function resumeSession(req: ApiRequest, res: http.ServerResponse): void {
     process.kill(session.pid, 'SIGCONT');
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
+    appendEvent(id!, `Error: Failed to resume — ${message}`);
     sendJson(res, 500, { error: `Failed to resume session: ${message}` });
     return;
   }
 
+  appendEvent(id!, 'Instance resumed');
   sendJson(res, 200, { ok: true, id, status: 'running' });
+}
+
+/** GET /api/sessions/:id/logs — return lifecycle events for a session. */
+export function getSessionLogs(req: ApiRequest, res: http.ServerResponse): void {
+  const { id } = req.params;
+  const eventsPath = path.join(SESSIONS_DIR, `${id}.events`);
+
+  interface LogEvent { ts: string; message: string }
+  const events: LogEvent[] = [];
+
+  if (fs.existsSync(eventsPath)) {
+    try {
+      const lines = fs.readFileSync(eventsPath, 'utf-8').split('\n').filter(Boolean);
+      for (const line of lines) {
+        try { events.push(JSON.parse(line) as LogEvent); } catch { /* skip malformed */ }
+      }
+    } catch { /* ignore read errors */ }
+  }
+
+  // If no events file yet, synthesise a "launched" event from the session JSON
+  // so older instances still show something useful.
+  if (events.length === 0) {
+    const session = readSession(id!);
+    if (session) {
+      const portMsg = session.port ? `, port ${session.port}` : '';
+      events.push({
+        ts: session.startedAt,
+        message: `Instance launched — PID ${session.pid}, mount ${session.mountPath}${portMsg}`,
+      });
+    }
+  }
+
+  sendJson(res, 200, { events });
 }
 
 /** DELETE /api/sessions/:id — stop a session. */
@@ -177,6 +225,14 @@ export function stopSession(req: ApiRequest, res: http.ServerResponse): void {
     return;
   }
 
+  const uptimeMs = Date.now() - new Date(session.startedAt).getTime();
+  const uptimeSec = Math.floor(uptimeMs / 1000);
+  const uptime = uptimeSec < 60
+    ? `${uptimeSec}s`
+    : uptimeSec < 3600
+      ? `${Math.floor(uptimeSec / 60)}m ${uptimeSec % 60}s`
+      : `${Math.floor(uptimeSec / 3600)}h ${Math.floor((uptimeSec % 3600) / 60)}m`;
+  appendEvent(id!, `Instance stopped — uptime ${uptime}`);
   try {
     process.kill(session.pid, 'SIGTERM');
   } catch {

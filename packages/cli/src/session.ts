@@ -65,6 +65,7 @@ export function deleteSession(id: string): void {
   try { fs.unlinkSync(path.join(SESSIONS_DIR, `${id}.json`)); } catch { /* already gone */ }
   try { fs.unlinkSync(path.join(SESSIONS_DIR, `${id}.sock`)); } catch { /* already gone */ }
   try { fs.unlinkSync(path.join(SESSIONS_DIR, `${id}.log`)); } catch { /* already gone */ }
+  try { fs.unlinkSync(path.join(SESSIONS_DIR, `${id}.events`)); } catch { /* already gone */ }
 }
 
 /**
