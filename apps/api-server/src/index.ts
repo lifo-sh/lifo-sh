@@ -5,15 +5,19 @@
  * Zero external dependencies — built on node:http with a custom router.
  *
  * Endpoints:
- *   GET    /health                  → { ok: true }
- *   POST   /api/sessions            → create VM session
- *   GET    /api/sessions            → list all sessions
- *   GET    /api/sessions/:id        → get session by ID
- *   POST   /api/sessions/:id/pause  → pause session (SIGSTOP)
- *   POST   /api/sessions/:id/resume → resume session (SIGCONT)
- *   GET    /api/sessions/:id/logs   → lifecycle event log
- *   DELETE /api/sessions/:id        → stop session
- *   WS     /api/sessions/:id/attach → terminal I/O (WebSocket)
+ *   GET    /health                       → { ok: true }
+ *   POST   /api/sessions                 → create VM session
+ *   GET    /api/sessions                 → list all sessions
+ *   GET    /api/sessions/:id             → get session by ID
+ *   POST   /api/sessions/:id/pause       → pause session (SIGSTOP)
+ *   POST   /api/sessions/:id/resume      → resume session (SIGCONT)
+ *   GET    /api/sessions/:id/logs        → lifecycle event log
+ *   DELETE /api/sessions/:id             → stop session
+ *   WS     /api/sessions/:id/attach      → terminal I/O (WebSocket)
+ *   POST   /api/sessions/:id/snapshot    → save snapshot of running instance
+ *   GET    /api/snapshots                → list all saved snapshots
+ *   POST   /api/snapshots/restore        → restore snapshot into new instance
+ *   DELETE /api/snapshots/:filename      → delete a snapshot file
  */
 
 import * as http from 'node:http';
@@ -22,6 +26,7 @@ import { corsMiddleware, handlePreflight } from './cors.js';
 import { authMiddleware } from './auth.js';
 import { createSession, getSessions, getSession, stopSession, pauseSession, resumeSession, getSessionLogs } from './handlers/sessions.js';
 import { handleAttach } from './handlers/attach.js';
+import { saveSnapshot, getSnapshots, restoreSnapshot, deleteSnapshot, downloadSnapshot } from './handlers/snapshots.js';
 
 const PORT = parseInt(process.env.LIFO_API_PORT ?? '3001', 10);
 
@@ -46,6 +51,13 @@ router.post('/api/sessions/:id/pause', pauseSession);
 router.post('/api/sessions/:id/resume', resumeSession);
 router.get('/api/sessions/:id/logs', getSessionLogs);
 router.delete('/api/sessions/:id', stopSession);
+
+// Snapshots
+router.post('/api/sessions/:id/snapshot', saveSnapshot);
+router.get('/api/snapshots', getSnapshots);
+router.post('/api/snapshots/restore', restoreSnapshot);
+router.get('/api/snapshots/:filename', downloadSnapshot);
+router.delete('/api/snapshots/:filename', deleteSnapshot);
 
 // ── HTTP server ───────────────────────────────────────────────────────────────
 

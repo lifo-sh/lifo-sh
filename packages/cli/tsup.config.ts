@@ -13,7 +13,7 @@ export default defineConfig([
     },
   },
   {
-    entry: ['src/session.ts', 'src/daemon.ts', 'src/auth.ts'],
+    entry: ['src/session.ts', 'src/daemon.ts', 'src/auth.ts', 'src/snapshot.ts'],
     format: ['esm'],
     dts: false,
     target: 'node18',

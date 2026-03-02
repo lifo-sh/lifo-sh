@@ -28,7 +28,8 @@
     ".": "./dist/index.js",
     "./session": "./dist/session.js",
     "./daemon": "./dist/daemon.js",
-    "./auth": "./dist/auth.js"
+    "./auth": "./dist/auth.js",
+    "./snapshot": "./dist/snapshot.js"
   },
   "files": [
     "dist"

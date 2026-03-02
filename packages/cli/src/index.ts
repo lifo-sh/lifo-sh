@@ -334,15 +334,21 @@ async function runDaemon(id: string, mountPath: string, port?: number, snapshotP
   // so in-flight shell output isn't delayed for other attached clients.
   daemonTerminal.onSnapshot((socket) => {
     setImmediate(() => {
-      const data = {
-        type: 'snapshot-data',
-        vfs: serialize(kernel.vfs.getRoot()),
-        cwd: shell.getCwd(),
-        env: shell.getEnv(),
-        mountPath,  // save original mount path so restore can reuse it
-      };
-      socket.write(JSON.stringify(data) + '\n');
-      socket.end();
+      try {
+        const data = {
+          type: 'snapshot-data',
+          vfs: serialize(kernel.vfs.getRoot()),
+          cwd: shell.getCwd(),
+          env: shell.getEnv(),
+          mountPath,  // save original mount path so restore can reuse it
+        };
+        socket.write(JSON.stringify(data) + '\n');
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        socket.write(JSON.stringify({ type: 'snapshot-error', error: message }) + '\n');
+      } finally {
+        socket.end();
+      }
     });
   });
 

@@ -71,6 +71,11 @@ export function requestSnapshot(socketPath: string): Promise<SnapshotData> {
             clearTimeout(timeout);
             socket.destroy();
             resolve({ vfs: msg.vfs, cwd: msg.cwd, env: msg.env, mountPath: msg.mountPath });
+          } else if (msg.type === 'snapshot-error') {
+            done = true;
+            clearTimeout(timeout);
+            socket.destroy();
+            reject(new Error(msg.error ?? 'Snapshot failed'));
           }
         } catch {
           // ignore malformed lines
