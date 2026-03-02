@@ -39,6 +39,8 @@ export type { BlobStore } from './kernel/storage/index.js';
 export { PersistenceManager } from './kernel/persistence/index.js';
 export { IndexedDBPersistenceBackend, MemoryPersistenceBackend } from './kernel/persistence/index.js';
 export type { PersistenceBackend } from './kernel/persistence/index.js';
+export { serialize, deserialize } from './kernel/persistence/index.js';
+export type { SerializedNode } from './kernel/persistence/index.js';
 
 // Commands
 export { CommandRegistry, createDefaultRegistry } from './commands/registry.js';
@@ -57,7 +59,7 @@ export { createWatchCommand } from './commands/system/watch.js';
 export { createHelpCommand } from './commands/system/help.js';
 export { createNodeCommand } from './commands/system/node.js';
 export { createCurlCommand } from './commands/net/curl.js';
-export { createLifoPkgCommand, bootLifoPackages } from './commands/system/lifo.js';
+export { createLifoPkgCommand, bootLifoPackages, rehydrateGlobalPackages } from './commands/system/lifo.js';
 export { createNpmCommand } from './commands/system/npm.js';
 export { createLogoutCommand } from './commands/system/logout.js';
 
