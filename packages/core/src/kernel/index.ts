@@ -6,6 +6,7 @@ import { IndexedDBPersistenceBackend } from './persistence/backends.js';
 import type { PersistenceBackend } from './persistence/backends.js';
 import { ProcessRegistry } from '../shell/ProcessRegistry.js';
 import { NetworkStack } from './network/NetworkStack.js';
+import { PortBridge } from './network/PortBridge.js';
 import { installSamples } from './samples.js';
 import { ServiceManager } from './ServiceManager.js';
 import type { CommandRegistry } from '../commands/registry.js';
@@ -69,6 +70,7 @@ export type VirtualRequestHandler = (req: VirtualRequest, res: VirtualResponse) 
 export class Kernel {
 	vfs: VFS;
 	portRegistry: Map<number, VirtualRequestHandler> = new Map();
+	portBridge: PortBridge;
 	processRegistry: ProcessRegistry;
 	networkStack: NetworkStack;
 	serviceManager: ServiceManager | null = null;
@@ -78,6 +80,7 @@ export class Kernel {
 		this.vfs = new VFS();
 		this.processRegistry = new ProcessRegistry();
 		this.networkStack = new NetworkStack();
+		this.portBridge = new PortBridge(this.portRegistry);
 		this.persistence = new PersistenceManager(
 			backend ?? new IndexedDBPersistenceBackend(),
 		);

@@ -102,8 +102,16 @@
 				<div id="out-interactive" class="output-panel active">
 					<div class="text-[13px] font-semibold text-tokyo-fg-bright mb-0.5">Interactive Shell</div>
 					<div class="text-[11px] text-tokyo-comment mb-3.5">Full interactive terminal with persistence</div>
-					<div class="w-full rounded-lg overflow-hidden border border-tokyo-border p-2 bg-tokyo-bg flex-1">
-						<div id="terminal-interactive" class="w-full h-full"></div>
+					<div class="flex flex-col flex-1 min-h-0">
+						<div
+							class="flex items-center gap-0.5 bg-tokyo-bg-dark border border-tokyo-border border-b-0 rounded-t-lg px-1 min-h-[34px] shrink-0"
+							id="interactive-tab-bar">
+							<button
+								class="px-2.5 py-[3px] bg-transparent border border-tokyo-border text-tokyo-comment text-sm font-normal cursor-pointer rounded-[4px] ml-0.5 leading-none transition-colors hover:text-tokyo-muted hover:bg-tokyo-hover hover:border-tokyo-comment"
+								id="interactive-add-tab" title="New terminal">+</button>
+						</div>
+						<div class="flex-1 relative border border-tokyo-border border-t-0 rounded-b-lg overflow-hidden"
+							id="interactive-tab-panels"></div>
 					</div>
 				</div>
 
@@ -196,7 +204,8 @@
 				<div id="out-npm" class="output-panel">
 					<div class="text-[13px] font-semibold text-tokyo-fg-bright mb-0.5">npm</div>
 					<div class="text-[11px] text-tokyo-comment mb-3.5">Install real packages from the npm registry -- try
-						<code>npm install cowsay -g && cowsay hello</code></div>
+						<code>npm install cowsay -g && cowsay hello</code>
+					</div>
 					<div class="w-full rounded-lg overflow-hidden border border-tokyo-border p-2 bg-tokyo-bg flex-1">
 						<div id="terminal-npm" class="w-full h-full"></div>
 					</div>

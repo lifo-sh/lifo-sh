@@ -79,11 +79,13 @@ class ClientRequest extends EventEmitter {
   private body = '';
   private aborted = false;
   private portRegistry?: Map<number, VirtualRequestHandler>;
+  private protocol: 'http:' | 'https:';
 
-  constructor(options: RequestOptions, cb?: (res: IncomingMessage) => void, portRegistry?: Map<number, VirtualRequestHandler>) {
+  constructor(options: RequestOptions, cb?: (res: IncomingMessage) => void, portRegistry?: Map<number, VirtualRequestHandler>, protocol: 'http:' | 'https:' = 'http:') {
     super();
     this.options = options;
     this.portRegistry = portRegistry;
+    this.protocol = protocol;
     if (cb) this.on('response', cb as (...args: unknown[]) => void);
 
     // Defer the actual fetch
@@ -143,7 +145,7 @@ class ClientRequest extends EventEmitter {
     }
 
     // Fall through to real fetch
-    const proto = 'http';
+    const proto = this.protocol.replace(':', ''); // 'http:' -> 'http' or 'https:' -> 'https'
     const portStr = this.options.port ? `:${this.options.port}` : '';
     const url = `${proto}://${host}${portStr}${path}`;
 
@@ -359,6 +361,11 @@ class Server extends EventEmitter {
       this._closeResolve = resolve;
     });
 
+    // Debug logging
+    console.log(`[lifo-http] Server.listen() called for port ${port}`);
+    console.log(`[lifo-http] portRegistry exists: ${!!this.portRegistry}`);
+    console.log(`[lifo-http] portRegistry is Map: ${this.portRegistry instanceof Map}`);
+
     // Register the handler in portRegistry
     const handler: VirtualRequestHandler = (vReq, vRes) => {
       const req = new IncomingMessage(0, '', vReq.headers);
@@ -380,6 +387,7 @@ class Server extends EventEmitter {
       });
     };
     this.portRegistry.set(port, handler);
+    console.log(`[lifo-http] ✅ Registered port ${port} in portRegistry (size: ${this.portRegistry.size})`);
 
     // Track this server
     this._activeServers.push(this);
@@ -394,8 +402,12 @@ class Server extends EventEmitter {
   }
 
   close(callback?: () => void): this {
+    console.log(`[lifo-http] ❌ Server.close() called for port ${this._port}`);
+    console.log(`[lifo-http] Stack trace:`, new Error().stack);
+
     if (this._port !== null) {
       this.portRegistry.delete(this._port);
+      console.log(`[lifo-http] Deleted port ${this._port} from registry (size now: ${this.portRegistry.size})`);
     }
 
     // Remove from active servers list
@@ -427,7 +439,7 @@ class Server extends EventEmitter {
 
 // --- Factory function ---
 
-export function createHttp(portRegistry?: Map<number, VirtualRequestHandler>) {
+export function createHttp(portRegistry?: Map<number, VirtualRequestHandler>, protocol: 'http:' | 'https:' = 'http:') {
   // Track active servers created by this http module instance
   const activeServers: Server[] = [];
 
@@ -458,7 +470,7 @@ export function createHttp(portRegistry?: Map<number, VirtualRequestHandler>) {
       callback = optionsOrCb as ((res: IncomingMessage) => void) | undefined;
     }
 
-    return new ClientRequest(options, callback, portRegistry);
+    return new ClientRequest(options, callback, portRegistry, protocol);
   }
 
   function httpGet(

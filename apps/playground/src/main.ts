@@ -34,29 +34,43 @@ import {
 	createNpxCommand,
 	createLifoPkgCommand,
 	createSystemctlCommand,
+	createForwardCommand,
+	createUnforwardCommand,
+	createPortsCommand,
+	createTestRegistryCommand,
+	createNewtabCommand,
 } from '@lifo-sh/core';
 import gitCommand from 'lifo-pkg-git';
 import ffmpegCommand from 'lifo-pkg-ffmpeg';
 
-// ─── Code snippets for each example ───
+/// ─── Code snippets for each example ───
 
 const CODE_INTERACTIVE = `\
-<span class="code-keyword">import</span> { Sandbox } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/core'</span>
-<span class="code-comment">// @lifo-sh/ui is auto-imported for visual mode</span>
+<span class="code-keyword">import</span> { Terminal } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/ui'</span>
+<span class="code-keyword">import</span> {
+  Kernel, Shell,
+  createDefaultRegistry, <span class="code-comment">...</span>
+} <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/core'</span>
 
-<span class="code-comment">// One line to get a full interactive shell</span>
-<span class="code-keyword">const</span> sandbox = <span class="code-keyword">await</span> Sandbox.<span class="code-fn">create</span>({
-  <span class="code-const">persist</span>: <span class="code-keyword">true</span>,
-  <span class="code-const">terminal</span>: <span class="code-string">'#terminal'</span>,
-})
+<span class="code-comment">// Boot one persistent kernel</span>
+<span class="code-keyword">const</span> kernel = <span class="code-keyword">new</span> <span class="code-fn">Kernel</span>()
+<span class="code-keyword">await</span> kernel.<span class="code-fn">boot</span>({ <span class="code-const">persist</span>: <span class="code-keyword">true</span> })
 
-<span class="code-comment">// Interactive shell is running.</span>
-<span class="code-comment">// Persistence keeps state across reloads.</span>
-<span class="code-comment">// Low-level access:</span>
-<span class="code-comment">//   sandbox.kernel</span>
-<span class="code-comment">//   sandbox.shell</span>
-<span class="code-comment">//   sandbox.cwd</span>
-<span class="code-comment">//   sandbox.env</span>`;
+<span class="code-comment">// Helper: create a shell tab</span>
+<span class="code-keyword">function</span> <span class="code-fn">createShell</span>(container) {
+  <span class="code-keyword">const</span> term = <span class="code-keyword">new</span> <span class="code-fn">Terminal</span>(container)
+  <span class="code-keyword">const</span> reg  = <span class="code-fn">createDefaultRegistry</span>()
+  <span class="code-keyword">const</span> env  = kernel.<span class="code-fn">getDefaultEnv</span>()
+  <span class="code-keyword">const</span> sh   = <span class="code-keyword">new</span> <span class="code-fn">Shell</span>(
+    term, kernel.vfs, reg, env
+  )
+  sh.<span class="code-fn">start</span>()
+  <span class="code-keyword">return</span> sh
+}
+
+<span class="code-comment">// Tabs share the same persistent VFS.</span>
+<span class="code-comment">// State keeps across reloads.</span>
+<span class="code-comment">// Click + to add more tabs.</span>`;
 
 const CODE_HEADLESS = `\
 <span class="code-keyword">import</span> { Sandbox } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/core'</span>
@@ -150,11 +164,11 @@ kernel.vfs.<span class="code-fn">writeFile</span>(<span class="code-string">'/ho
   })
 \`)
 
-<span class="code-comment">// Register node &amp; curl with portRegistry</span>
+<span class="code-comment">// Register node &amp; curl with kernel</span>
 registry.<span class="code-fn">register</span>(<span class="code-string">'node'</span>,
-  <span class="code-fn">createNodeCommand</span>(kernel.portRegistry))
+  <span class="code-fn">createNodeCommand</span>(kernel))
 registry.<span class="code-fn">register</span>(<span class="code-string">'curl'</span>,
-  <span class="code-fn">createCurlCommand</span>(kernel.portRegistry))
+  <span class="code-fn">createCurlCommand</span>(kernel))
 
 <span class="code-comment">// Tab 1: node server.js</span>
 <span class="code-comment">// Tab 2: curl localhost:3000</span>
@@ -494,17 +508,442 @@ function switchExample(id: ExampleId) {
 		ex.boot();
 	}
 }
+// ─── 1. Interactive Shell (tabbed, persistent) ───
 
-// ─── 1. Interactive Shell ───
+let interactiveKernel: Kernel | null = null;
+
+interface InteractiveTab {
+	id: number;
+	tabBtn: HTMLButtonElement;
+	panel: HTMLDivElement;
+	terminal: Terminal;
+	shell: Shell;
+}
+
+let interactiveTabs: InteractiveTab[] = [];
+let interactiveActiveTabId = -1;
+let interactiveNextId = 1;
 
 async function bootInteractive() {
-	await Sandbox.create({
-		persist: true,
-		terminal: '#terminal-interactive',
+	interactiveKernel = new Kernel();
+	await interactiveKernel.boot({ persist: true });
+
+	// Expose kernel to Vite dev server for port bridging
+	if (typeof (globalThis as any).__setLifoKernel === 'function') {
+		(globalThis as any).__setLifoKernel(() => interactiveKernel);
+	}
+
+	// Initialize service manager for systemctl support
+	const env = interactiveKernel.getDefaultEnv();
+	const tempRegistry = createDefaultRegistry();
+	tempRegistry.register('tunnel', createTunnelCommandV2(interactiveKernel));
+	interactiveKernel.initServiceManager(tempRegistry, env);
+
+	// Create tunnel systemd service unit
+	interactiveKernel.vfs.mkdir('/etc/systemd/system', { recursive: true });
+	interactiveKernel.vfs.writeFile('/etc/systemd/system/tunnel.service', `[Unit]
+Description=WebSocket Tunnel Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=tunnel --server ws://localhost:3005 --port 5173
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+`);
+
+	// Enable the tunnel service
+	if (interactiveKernel.serviceManager) {
+		interactiveKernel.serviceManager.enable('tunnel');
+	}
+
+	// Create sample Vite app for testing
+	const vfs = interactiveKernel.vfs;
+	vfs.mkdir('/home/user/vite-project', { recursive: true });
+	vfs.writeFile('/home/user/vite-project/package.json', JSON.stringify({
+		name: 'vite-project',
+		version: '1.0.0',
+		type: 'module',
+		scripts: {
+			dev: 'vite --port 5173 --host localhost',
+			build: 'vite build',
+			start: 'node vite-direct.js'
+		},
+		dependencies: {
+			vite: '^5.0.0',
+		},
+	}, null, 2));
+
+	vfs.writeFile('/home/user/vite-project/index.html', `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vite App in Lifo</title>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module" src="/main.js"></script>
+</body>
+</html>`);
+
+	vfs.writeFile('/home/user/vite-project/main.js', `document.getElementById('app').innerHTML = \`
+  <h1>Hello from Vite in Lifo! 🚀</h1>
+  <p>This Vite dev server is running entirely in your browser!</p>
+  <p>Port: <strong>5173</strong></p>
+  <p>Try accessing from another tab with: <code>curl localhost:5173</code></p>
+\`;
+
+console.log('Vite app loaded successfully!');
+`);
+
+	// NOTE: We intentionally DO NOT create vite.config.js because esbuild-wasm
+	// cannot handle config file loading in the VFS (directory traversal issues).
+	// Users should either:
+	// 1. Use vite-direct.js (which sets configFile: false)
+	// 2. Use CLI flags: npx vite --port 5173 --host localhost
+
+	// Create a simple test server to verify HTTP registration works
+	vfs.writeFile('/home/user/vite-project/test-server.js', `// Simple HTTP server test
+// This verifies that virtual HTTP servers work correctly
+
+const http = require('http');
+
+console.log('Creating HTTP server...');
+console.log('NOTE: Server must stay running! Do NOT press Ctrl+C');
+console.log('Open a NEW tab (+) to test with "ports" and "curl"');
+console.log('');
+
+const server = http.createServer((req, res) => {
+  console.log(\`✅ Request received: \${req.method} \${req.url}\`);
+
+  res.writeHead(200, {
+    'Content-Type': 'text/html',
+    'X-Powered-By': 'Lifo Virtual HTTP'
+  });
+
+  res.end(\`<!DOCTYPE html>
+<html>
+<head><title>Test Server</title></head>
+<body>
+  <h1>✅ HTTP Server Works!</h1>
+  <p>Port: <strong>3000</strong></p>
+  <p>This proves the virtual HTTP server is registered correctly.</p>
+  <p>Try: <code>curl localhost:3000</code> from another tab</p>
+  <p>Or visit: <a href="/api/proxy/3000/">/api/proxy/3000/</a></p>
+</body>
+</html>\`);
+});
+
+console.log('Starting server on port 3000...');
+
+server.listen(3000, () => {
+  console.log('');
+  console.log('🎉 ===================================');
+  console.log('🎉 Server is RUNNING on port 3000!');
+  console.log('🎉 ===================================');
+  console.log('');
+  console.log('Test commands IN A NEW TAB (+):');
+  console.log('  1. ports');
+  console.log('  2. curl localhost:3000');
+  console.log('');
+  console.log('⚠️  IMPORTANT: Keep this tab running!');
+  console.log('⚠️  Do NOT close or stop this process');
+  console.log('');
+});
+
+server.on('error', (err) => {
+  console.error('❌ Server error:', err.message);
+});
+
+// Keep the process alive
+setInterval(() => {
+  // Noop to prevent process exit
+}, 60000);
+`);
+
+	// Create direct Vite runner that doesn't use npm
+	vfs.writeFile('/home/user/vite-project/vite-direct.js', `#!/usr/bin/env node
+// Direct Vite runner - runs Vite without npm spawning a child process
+// This keeps the server process alive so ports stay registered
+
+console.log('🚀 Starting Vite directly...');
+console.log('');
+
+// Import and run Vite's CLI directly
+async function startVite() {
+  try {
+    // Dynamically import Vite
+    const vite = await import('vite');
+
+    console.log('📦 Vite imported successfully');
+    console.log('⚙️  Creating dev server...');
+
+    // Create Vite dev server
+    const server = await vite.createServer({
+      configFile: false, // Skip config file to avoid esbuild issues in VFS
+      root: process.cwd(),
+      server: {
+        port: 5173,
+        host: 'localhost',
+      },
+    });
+
+    console.log('🎯 Starting server on port 5173...');
+    await server.listen();
+
+    const info = server.config.logger.info;
+    info('');
+    info('  ✅ Vite dev server is running!');
+    info('');
+    info('  Test in another tab:');
+    info('    1. ports');
+    info('    2. curl localhost:5173');
+    info('');
+    info('  ⚠️  Keep this tab open - do NOT stop the process!');
+    info('');
+
+    // Keep process alive - wait for server close
+    await new Promise((resolve) => {
+      server.httpServer?.on('close', resolve);
+    });
+
+  } catch (error) {
+    console.error('❌ Error starting Vite:', error.message);
+    console.error('');
+    console.error('Vite may not be installed. Try:');
+    console.error('  npm install vite');
+    console.error('');
+    console.error('Or use the test server instead:');
+    console.error('  node test-server.js');
+    process.exit(1);
+  }
+}
+
+// Handle errors
+process.on('uncaughtException', (err) => {
+  console.error('❌ Uncaught exception:', err);
+});
+
+process.on('unhandledRejection', (err) => {
+  console.error('❌ Unhandled rejection:', err);
+});
+
+// Start Vite
+startVite().catch((err) => {
+  console.error('❌ Fatal error:', err);
+  process.exit(1);
+});
+`);
+
+	vfs.writeFile('/home/user/vite-project/README.md', `# Vite Project in Lifo
+
+⚠️ **IMPORTANT**: Use \`node vite-direct.js\` to run Vite (NOT \`npm run dev\`)
+
+## Quick Start
+
+### Step 1: Test Basic HTTP Server (START HERE!)
+\`\`\`bash
+cd vite-project
+node test-server.js
+\`\`\`
+
+**Leave this running!** Open a NEW tab (+) and run:
+\`\`\`bash
+ports          # Should show port 3000
+curl localhost:3000
+\`\`\`
+
+If this works, HTTP is working correctly! ✅
+
+### Step 2: Run Vite Directly (Recommended)
+\`\`\`bash
+node vite-direct.js
+\`\`\`
+
+This runs Vite without a config file, avoiding esbuild issues in the VFS.
+
+**Alternative methods:**
+\`\`\`bash
+# Using npm with CLI flags (also works)
+npm run dev
+
+# Manual with CLI flags
+npx vite --port 5173 --host localhost
+\`\`\`
+
+### Step 3: Access the Server (in another tab)
+
+\`\`\`bash
+ports          # Should show port 5173
+curl localhost:5173
+\`\`\`
+
+Or browser: http://localhost:3000/api/proxy/5173/
+
+## Why node vite-direct.js?
+
+1. **No config file loading**: Avoids esbuild-wasm directory traversal issues
+2. **Process stays alive**: Runs Vite in the same process, keeping ports registered
+3. **Better control**: Inline configuration, easier to debug
+
+## Troubleshooting
+
+### "No ports registered" after starting server
+- The process exited and cleaned up the port
+- Use \`node vite-direct.js\` instead of \`npm run dev\`
+- Check console for \`[lifo-http] ❌ Server.close()\` messages
+
+### Test if kernel is shared between tabs
+\`\`\`bash
+# Tab 1:
+test-registry set
+
+# Tab 2:
+test-registry get    # Should show "Has port: true"
+\`\`\`
+
+## How It Works
+
+1. **Virtual HTTP Server**: Uses node-compat's virtual HTTP implementation
+2. **Port Registry**: Servers register in kernel.portRegistry[port]
+3. **Process Lifetime**: Server must stay running to keep port registered
+4. **Port Bridge**: Vite dev server plugin proxies to virtual ports
+
+Enjoy your browser-native development server! 🚀
+`);
+
+	await addInteractiveTab();
+
+	document.getElementById('interactive-add-tab')!.addEventListener('click', () => {
+		addInteractiveTab();
 	});
 }
 
+async function addInteractiveTab(): Promise<InteractiveTab> {
+	const kernel = interactiveKernel!;
+	const id = interactiveNextId++;
+
+	const tabBar = document.getElementById('interactive-tab-bar')!;
+	const addBtn = document.getElementById('interactive-add-tab')!;
+	const tabBtn = document.createElement('button');
+	tabBtn.className = 'tab-btn px-3.5 py-[5px] bg-transparent border-none text-tokyo-comment text-xs font-medium cursor-pointer rounded-t-[5px] transition-colors whitespace-nowrap hover:text-tokyo-muted hover:bg-tokyo-hover';
+	tabBtn.textContent = `Terminal ${id}`;
+	tabBtn.addEventListener('click', () => switchInteractiveTab(id));
+	tabBar.insertBefore(tabBtn, addBtn);
+
+	const panels = document.getElementById('interactive-tab-panels')!;
+	const panel = document.createElement('div');
+	panel.className = 'tab-panel';
+	const container = document.createElement('div');
+	container.className = 'w-full h-full';
+	panel.appendChild(container);
+	panels.appendChild(panel);
+
+	const terminal = new Terminal(container);
+	const registry = createDefaultRegistry();
+	bootLifoPackages(kernel.vfs, registry);
+
+	const env = kernel.getDefaultEnv();
+	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry);
+
+	const jobTable = shell.getJobTable();
+	const processRegistry = shell.getProcessRegistry();
+	registry.register('ps', createPsCommand(processRegistry));
+	registry.register('top', createTopCommand(processRegistry));
+	registry.register('kill', createKillCommand(processRegistry));
+
+	registry.register('watch', createWatchCommand(registry));
+	registry.register('help', createHelpCommand(registry));
+
+
+	const httpNpmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
+		const result = await shell.execute(cmd, {
+			cwd: cmdCtx.cwd,
+			env: cmdCtx.env,
+			onStdout: (data: string) => cmdCtx.stdout.write(data),
+			onStderr: (data: string) => cmdCtx.stderr.write(data),
+		});
+		return result.exitCode;
+	};
+	registry.register('npm', createNpmCommand(registry, httpNpmShellExecute));
+	registry.register('npx', createNpxCommand(registry, httpNpmShellExecute));
+	registry.register('lifo', createLifoPkgCommand(registry, httpNpmShellExecute));
+
+
+
+
+	// Register node, curl, and tunnel with kernel
+	registry.register('node', createNodeCommand(kernel));
+	registry.register('curl', createCurlCommand(kernel));
+	registry.register('tunnel', createTunnelCommandV2(kernel));
+
+
+	// Register network commands
+	registry.register('ifconfig', createIfconfigCommand(kernel));
+	registry.register('route', createRouteCommand(kernel));
+	registry.register('netstat', createNetstatCommand(kernel));
+	registry.register('host', createHostCommand(kernel));
+	registry.register('ip', createIPCommand(kernel));
+	registry.register('forward', createForwardCommand(kernel));
+	registry.register('unforward', createUnforwardCommand(kernel));
+	registry.register('ports', createPortsCommand(kernel));
+	registry.register('test-registry', createTestRegistryCommand(kernel));
+	registry.register('newtab', createNewtabCommand());
+
+	// Register systemctl command
+	registry.register('systemctl', createSystemctlCommand(kernel));
+
+
+	registry.register('ps', createPsCommand(processRegistry));
+	registry.register('top', createTopCommand(processRegistry));
+	registry.register('kill', createKillCommand(processRegistry));
+	registry.register('watch', createWatchCommand(registry));
+	registry.register('help', createHelpCommand(registry));
+
+
+
+	const interactiveNpmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
+		const result = await shell.execute(cmd, {
+			cwd: cmdCtx.cwd,
+			env: cmdCtx.env,
+			onStdout: (data: string) => cmdCtx.stdout.write(data),
+			onStderr: (data: string) => cmdCtx.stderr.write(data),
+		});
+		return result.exitCode;
+	};
+	registry.register('npm', createNpmCommand(registry, interactiveNpmShellExecute, interactiveKernel));
+	registry.register('lifo', createLifoPkgCommand(registry, interactiveNpmShellExecute));
+
+	await shell.sourceFile('/etc/profile');
+	await shell.sourceFile(env.HOME + '/.bashrc');
+	await kernel.bootServices();
+	shell.start();
+
+	const tab: InteractiveTab = { id, tabBtn, panel, terminal, shell };
+	interactiveTabs.push(tab);
+	switchInteractiveTab(id);
+
+	return tab;
+}
+
+function switchInteractiveTab(id: number) {
+	if (id === interactiveActiveTabId) return;
+	interactiveActiveTabId = id;
+
+	for (const tab of interactiveTabs) {
+		const isActive = tab.id === id;
+		tab.tabBtn.classList.toggle('active', isActive);
+		tab.panel.classList.toggle('active', isActive);
+		if (isActive) tab.terminal.focus();
+	}
+}
+
 // ─── 2. Headless / AI Agent ───
+
 
 let headlessSandbox: Sandbox | null = null;
 
@@ -684,6 +1123,11 @@ async function bootHttp() {
 	httpKernel = new Kernel();
 	await httpKernel.boot({ persist: false });
 
+	// Expose kernel to Vite dev server for port bridging
+	if (typeof (globalThis as any).__setLifoKernel === 'function') {
+		(globalThis as any).__setLifoKernel(() => httpKernel);
+	}
+
 	// Initialize service manager for systemctl support
 	const env = httpKernel.getDefaultEnv();
 	const tempRegistry = createDefaultRegistry();
@@ -771,6 +1215,17 @@ server.listen(5173, () => {
 	await addHttpTab('Client');
 	await addHttpTab('Client2');
 	await addHttpTab('Server 5173');
+	await addHttpTab('New Tab');
+
+	// Start the tunnel service automatically
+	if (httpKernel.serviceManager) {
+		try {
+			await httpKernel.serviceManager.start('tunnel');
+			console.log('Tunnel service started automatically');
+		} catch (error) {
+			console.error('Failed to start tunnel service:', error);
+		}
+	}
 }
 
 async function addHttpTab(label: string): Promise<HttpTab> {
@@ -808,6 +1263,10 @@ async function addHttpTab(label: string): Promise<HttpTab> {
 	registry.register('netstat', createNetstatCommand(kernel));
 	registry.register('host', createHostCommand(kernel));
 	registry.register('ip', createIPCommand(kernel));
+	registry.register('forward', createForwardCommand(kernel));
+	registry.register('unforward', createUnforwardCommand(kernel));
+	registry.register('ports', createPortsCommand(kernel));
+	registry.register('newtab', createNewtabCommand());
 
 	// Register systemctl command
 	registry.register('systemctl', createSystemctlCommand(kernel));
@@ -860,6 +1319,12 @@ function switchHttpTab(id: string) {
 		if (isActive) tab.terminal.focus();
 	}
 }
+
+// Expose addHttpTab globally for adding tabs dynamically
+(window as any).addHttpTab = (label?: string) => {
+	const tabName = label || `Tab ${httpTabs.length + 1}`;
+	return addHttpTab(tabName);
+};
 
 // ─── 5. File Explorer (split pane: explorer + terminal) ───
 

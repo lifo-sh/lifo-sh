@@ -2,6 +2,7 @@ import type { Packet } from '../types.js';
 import type { NetworkStack } from '../NetworkStack.js';
 import { BaseTunnel } from './BaseTunnel.js';
 import { Buffer } from '../../../node-compat/buffer.js';
+import type { VirtualResponseWithDone } from '../../../node-compat/http.js';
 
 /**
  * WebSocket Tunnel - Bridge virtual network to external WebSocket server
@@ -219,7 +220,7 @@ export class WebSocketTunnel extends BaseTunnel {
 	/**
 	 * Handle HTTP request from tunnel server
 	 */
-	private handleHttpRequest(message: any): void {
+	private async handleHttpRequest(message: any): Promise<void> {
 		const { requestId, method, url, headers, body } = message;
 
 		let port: number;
@@ -259,15 +260,29 @@ export class WebSocketTunnel extends BaseTunnel {
 			body: Buffer.from(body || '', 'base64').toString(),
 		};
 
-		const vRes = {
+		const vRes: VirtualResponseWithDone = {
 			statusCode: 200,
 			headers: {} as Record<string, string>,
 			body: '',
 		};
 
 		try {
-			// Call handler synchronously
+			// Call handler
 			handler(vReq, vRes);
+
+			// Wait for async middleware to call res.end() (populates vRes)
+			// Add a 25s safety timeout so we respond before external timeout
+			if (vRes._donePromise) {
+				const timeout = new Promise<'timeout'>((resolve) =>
+					setTimeout(() => resolve('timeout'), 25000)
+				);
+				const result = await Promise.race([vRes._donePromise.then(() => 'done' as const), timeout]);
+				if (result === 'timeout') {
+					console.error(`[WebSocketTunnel] TIMEOUT waiting for response: ${method} ${path}`);
+					this.sendError(requestId, 504, `Gateway timeout: server did not respond for ${path}`);
+					return;
+				}
+			}
 
 			// Send response back through WebSocket
 			this.sendResponse(requestId, vRes.statusCode, vRes.headers, vRes.body);

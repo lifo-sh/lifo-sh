@@ -1,6 +1,7 @@
 import type { Command, CommandContext, CommandOutputStream } from '../types.js';
 import type { CommandRegistry } from '../registry.js';
 import type { VFS } from '../../kernel/vfs/index.js';
+import type { Kernel } from '../../kernel/index.js';
 import { resolve, join } from '../../utils/path.js';
 import { decompressGzip, parseTar } from '../../utils/archive.js';
 
@@ -263,14 +264,17 @@ export function getBinEntries(pkg: PackageJson): Record<string, string> {
 	return pkg.bin;
 }
 
-export function registerBinCommand(registry: CommandRegistry, binName: string, scriptPath: string): void {
+export function registerBinCommand(registry: CommandRegistry, binName: string, scriptPath: string, kernel?: Kernel): void {
 	registry.registerLazy(binName, () =>
 		import('./node.js').then((mod) => ({
-			default: ((ctx: CommandContext) =>
-				mod.default({
+			default: ((ctx: CommandContext) => {
+				// Use kernel's portRegistry if available, otherwise fall back to default
+				const nodeCommand = kernel ? mod.createNodeCommand(kernel) : mod.default;
+				return nodeCommand({
 					...ctx,
 					args: [scriptPath, ...ctx.args],
-				})) as Command,
+				});
+			}) as Command,
 		})),
 	);
 }
@@ -290,6 +294,7 @@ async function installSinglePackage(
 	isGlobal: boolean,
 	registry: CommandRegistry,
 	seen: Set<string>,
+	kernel?: Kernel,
 ): Promise<number> {
 	if (seen.has(name)) return 0;
 	seen.add(name);
@@ -314,7 +319,7 @@ async function installSinglePackage(
 		const binEntries = getBinEntries(info);
 		for (const [binName, binPath] of Object.entries(binEntries)) {
 			const scriptPath = resolve(targetDir, binPath);
-			registerBinCommand(registry, binName, scriptPath);
+			registerBinCommand(registry, binName, scriptPath, kernel);
 			try { vfs.mkdir(GLOBAL_BIN, { recursive: true }); } catch { /* exists */ }
 			vfs.writeFile(
 				join(GLOBAL_BIN, binName),
@@ -330,7 +335,7 @@ async function installSinglePackage(
 			try {
 				installed += await installSinglePackage(
 					depName, depRange, targetBase, vfs, npmRegistry, signal,
-					stdout, stderr, isGlobal, registry, seen,
+					stdout, stderr, isGlobal, registry, seen, kernel,
 				);
 			} catch (e) {
 				stderr.write(`  warn: could not install ${depName}: ${e instanceof Error ? e.message : String(e)}\n`);
@@ -383,7 +388,7 @@ async function npmInit(ctx: CommandContext): Promise<number> {
 	return 0;
 }
 
-async function npmInstall(ctx: CommandContext, registry: CommandRegistry): Promise<number> {
+async function npmInstall(ctx: CommandContext, registry: CommandRegistry, kernel?: Kernel): Promise<number> {
 	const args = ctx.args.slice(1);
 
 	let isGlobal = false;
@@ -441,7 +446,7 @@ async function npmInstall(ctx: CommandContext, registry: CommandRegistry): Promi
 			try {
 				installed += await installSinglePackage(
 					name, range, targetBase, ctx.vfs, npmRegistry, ctx.signal,
-					ctx.stdout, ctx.stderr, false, registry, seen,
+					ctx.stdout, ctx.stderr, false, registry, seen, kernel,
 				);
 			} catch (e) {
 				ctx.stderr.write(`npm ERR! ${name}: ${e instanceof Error ? e.message : String(e)}\n`);
@@ -620,7 +625,7 @@ function readPkgVersion(vfs: VFS, pkgDir: string): string {
 	}
 }
 
-async function npmRun(ctx: CommandContext, shellExecute?: ShellExecuteFn, registry?: CommandRegistry): Promise<number> {
+async function npmRun(ctx: CommandContext, shellExecute?: ShellExecuteFn, registry?: CommandRegistry, kernel?: Kernel): Promise<number> {
 	const args = ctx.args.slice(1);
 	const scriptName = args[0];
 
@@ -676,7 +681,7 @@ async function npmRun(ctx: CommandContext, shellExecute?: ShellExecuteFn, regist
 				}
 			} catch (e) { ctx.stderr.write(`[npm:debug] readdir error: ${e}\n`); }
 		}
-		const count = registerLocalBins(ctx.vfs, ctx.cwd, registry);
+		const count = registerLocalBins(ctx.vfs, ctx.cwd, registry, kernel);
 		ctx.stderr.write(`[npm:debug] registered ${count} local bins, script="${script}"\n`);
 		const firstWord = script.trim().split(/\s+/)[0];
 		ctx.stderr.write(`[npm:debug] first command: "${firstWord}", has=${registry.has(firstWord)}\n`);
@@ -708,7 +713,7 @@ async function npmRun(ctx: CommandContext, shellExecute?: ShellExecuteFn, regist
 }
 
 /** Scan node_modules for packages with bin entries and register them as commands */
-function registerLocalBins(vfs: VFS, cwd: string, registry: CommandRegistry): number {
+function registerLocalBins(vfs: VFS, cwd: string, registry: CommandRegistry, kernel?: Kernel): number {
 	const nmDir = join(cwd, 'node_modules');
 	if (!vfs.exists(nmDir)) return 0;
 
@@ -725,18 +730,18 @@ function registerLocalBins(vfs: VFS, cwd: string, registry: CommandRegistry): nu
 				try {
 					const scopeEntries = vfs.readdir(scopeDir);
 					for (const scopeEntry of scopeEntries) {
-						count += registerPkgBins(vfs, join(scopeDir, scopeEntry.name), registry);
+						count += registerPkgBins(vfs, join(scopeDir, scopeEntry.name), registry, kernel);
 					}
 				} catch { /* ignore */ }
 			} else {
-				count += registerPkgBins(vfs, join(nmDir, name), registry);
+				count += registerPkgBins(vfs, join(nmDir, name), registry, kernel);
 			}
 		}
 	} catch { /* ignore */ }
 	return count;
 }
 
-function registerPkgBins(vfs: VFS, pkgDir: string, registry: CommandRegistry): number {
+function registerPkgBins(vfs: VFS, pkgDir: string, registry: CommandRegistry, kernel?: Kernel): number {
 	const pkgJsonPath = join(pkgDir, 'package.json');
 	if (!vfs.exists(pkgJsonPath)) return 0;
 	let count = 0;
@@ -747,7 +752,7 @@ function registerPkgBins(vfs: VFS, pkgDir: string, registry: CommandRegistry): n
 			// Only register if not already in registry
 			if (!registry.has(binName)) {
 				const scriptPath = resolve(pkgDir, binPath);
-				registerBinCommand(registry, binName, scriptPath);
+				registerBinCommand(registry, binName, scriptPath, kernel);
 				count++;
 			}
 		}
@@ -846,7 +851,7 @@ async function npmSearch(ctx: CommandContext): Promise<number> {
 
 // ─── Factory ───
 
-export function createNpmCommand(registry: CommandRegistry, shellExecute?: ShellExecuteFn): Command {
+export function createNpmCommand(registry: CommandRegistry, shellExecute?: ShellExecuteFn, kernel?: Kernel): Command {
 	return async (ctx) => {
 		const subcommand = ctx.args[0];
 
@@ -861,7 +866,7 @@ export function createNpmCommand(registry: CommandRegistry, shellExecute?: Shell
 			case 'install':
 			case 'i':
 			case 'add':
-				return npmInstall(ctx, registry);
+				return npmInstall(ctx, registry, kernel);
 			case 'uninstall':
 			case 'remove':
 			case 'rm':
@@ -872,7 +877,7 @@ export function createNpmCommand(registry: CommandRegistry, shellExecute?: Shell
 				return npmList(ctx);
 			case 'run':
 			case 'run-script':
-				return npmRun(ctx, shellExecute, registry);
+				return npmRun(ctx, shellExecute, registry, kernel);
 			case 'start':
 				return npmRun({ ...ctx, args: ['run', 'start', ...ctx.args.slice(1)] }, shellExecute, registry);
 			case 'test':
@@ -1051,7 +1056,7 @@ export async function npmInstallGlobal(
 	try {
 		const installed = await installSinglePackage(
 			packageName, null, GLOBAL_MODULES, ctx.vfs, npmRegistry, ctx.signal,
-			ctx.stdout, ctx.stderr, true, registry, seen,
+			ctx.stdout, ctx.stderr, true, registry, seen, kernel,
 		);
 
 		const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);

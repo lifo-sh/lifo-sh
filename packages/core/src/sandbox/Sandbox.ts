@@ -148,7 +148,7 @@ export class Sandbox {
 			});
 			return result.exitCode;
 		};
-		registry.register('npm', createNpmCommand(registry, npmShellExecute));
+		registry.register('npm', createNpmCommand(registry, npmShellExecute, kernel));
 		registry.register('npx', createNpxCommand(registry, npmShellExecute));
 		registry.register('lifo', createLifoPkgCommand(registry, npmShellExecute));
 		// 7b. Service manager & systemctl

@@ -97,9 +97,21 @@ function createCurlImpl(kernel?: Kernel): Command {
             statusCode: 200,
             headers: {} as Record<string, string>,
             body: '',
-          };
+          } as { statusCode: number; headers: Record<string, string>; body: string; _donePromise?: Promise<void> };
 
           handler(vReq, vRes);
+
+          // Wait for async middleware to complete (e.g., Vite, Express)
+          if (vRes._donePromise) {
+            const timeout = new Promise<'timeout'>((resolve) =>
+              setTimeout(() => resolve('timeout'), 30000)
+            );
+            const result = await Promise.race([vRes._donePromise.then(() => 'done' as const), timeout]);
+            if (result === 'timeout') {
+              ctx.stderr.write('curl: request timeout after 30s\n');
+              return 7;
+            }
+          }
 
           if (headOnly) {
             ctx.stdout.write(`HTTP/${vRes.statusCode} OK\n`);
