@@ -78,6 +78,13 @@
     box-shadow: inset 0 -2px 0 var(--color-tokyo-blue);
   }
 
+  #multi-tab-bar .tab-btn {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+  }
+
   .tab-panel {
     position: absolute;
     inset: 0;
