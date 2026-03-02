@@ -244,6 +244,17 @@ export class Shell {
     }
   }
 
+  /**
+   * Re-displays the shell prompt if the shell is idle (no command running).
+   * Called by the daemon when a new client attaches so they see a prompt
+   * immediately instead of a blank screen.
+   */
+  reprompt(): void {
+    if (!this.running) {
+      this.printPrompt();
+    }
+  }
+
   private printPrompt(): void {
     // Report finished background jobs
     const doneJobs = this.jobTable.collectDone();
