@@ -6,7 +6,27 @@
  * GET    /api/sessions/:id         — get a single session
  * POST   /api/sessions/:id/pause   — pause a session (SIGSTOP)
  * POST   /api/sessions/:id/resume  — resume a session (SIGCONT)
+ * GET    /api/sessions/:id/logs    — lifecycle event log
  * DELETE /api/sessions/:id         — stop a session
+ *
+ * Lifecycle event logging
+ * ───────────────────────
+ * Every state change is recorded by appendEvent() as a newline-delimited JSON
+ * line appended to ~/.lifo/sessions/<id>.events:
+ *
+ *   { "ts": "<ISO 8601>", "message": "<human-readable description>" }
+ *
+ * Events written:
+ *   - "Instance launched — PID <n>, mount <path>[, port <n>]"  (createSession)
+ *   - "Instance paused"                                        (pauseSession)
+ *   - "Instance resumed"                                       (resumeSession)
+ *   - "Instance stopped — uptime <Xh Ym Zs>"                  (stopSession)
+ *   - "Error: Failed to pause — <reason>"                      (pauseSession failure)
+ *   - "Error: Failed to resume — <reason>"                     (resumeSession failure)
+ *
+ * The .events file is deleted by deleteSession() when an instance is stopped.
+ * getSessionLogs() reads and parses it; if no file exists yet it synthesises
+ * a single launch event from the session JSON for backwards compatibility.
  */
 
 import * as fs from 'node:fs';
@@ -18,7 +38,12 @@ import { sendJson, readJsonBody } from '../router.js';
 import type { ApiRequest } from '../types.js';
 import type * as http from 'node:http';
 
-/** Append a timestamped lifecycle event line to ~/.lifo/sessions/<id>.events */
+/**
+ * Appends a single timestamped lifecycle event to ~/.lifo/sessions/<id>.events.
+ * The file is newline-delimited JSON (NDJSON) — one { ts, message } object per line.
+ * Failures are silently swallowed; logging is best-effort and must never block the
+ * HTTP response or crash the server if the disk is full / the directory is missing.
+ */
 function appendEvent(id: string, message: string): void {
   const eventsPath = path.join(SESSIONS_DIR, `${id}.events`);
   const line = JSON.stringify({ ts: new Date().toISOString(), message }) + '\n';
@@ -183,7 +208,16 @@ export function resumeSession(req: ApiRequest, res: http.ServerResponse): void {
   sendJson(res, 200, { ok: true, id, status: 'running' });
 }
 
-/** GET /api/sessions/:id/logs — return lifecycle events for a session. */
+/**
+ * GET /api/sessions/:id/logs — return all lifecycle events for a session.
+ *
+ * Reads ~/.lifo/sessions/<id>.events line by line. Each line is a JSON object;
+ * malformed lines are skipped so a single corrupt write never breaks the whole log.
+ *
+ * Backwards-compat fallback: if no .events file exists (instance was created before
+ * event logging was added), we synthesise a single "Instance launched" event from
+ * the session JSON so the activity dialog is never completely empty.
+ */
 export function getSessionLogs(req: ApiRequest, res: http.ServerResponse): void {
   const { id } = req.params;
   const eventsPath = path.join(SESSIONS_DIR, `${id}.events`);
@@ -200,8 +234,7 @@ export function getSessionLogs(req: ApiRequest, res: http.ServerResponse): void 
     } catch { /* ignore read errors */ }
   }
 
-  // If no events file yet, synthesise a "launched" event from the session JSON
-  // so older instances still show something useful.
+  // Fallback for instances created before event logging was introduced.
   if (events.length === 0) {
     const session = readSession(id!);
     if (session) {

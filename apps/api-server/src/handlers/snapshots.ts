@@ -1,10 +1,30 @@
 /**
- * handlers/snapshots.ts — snapshot save / list / restore / delete
+ * handlers/snapshots.ts — snapshot save / list / restore / download / delete
  *
- * POST   /api/sessions/:id/snapshot  — save snapshot of a running instance
- * GET    /api/snapshots              — list all saved snapshots
- * POST   /api/snapshots/restore      — restore a snapshot into a new instance
- * DELETE /api/snapshots/:filename    — delete a snapshot file
+ * Snapshots capture the full in-memory state of a running VM instance (VFS tree,
+ * working directory, and environment variables) into a portable zip file stored at
+ * ~/.lifo/snapshots/<sessionId>-<timestamp>.zip on the host.
+ *
+ * How saving works:
+ *   1. The API server connects to the daemon's Unix socket (~/.lifo/sessions/<id>.sock).
+ *   2. It sends { type: "snapshot" } over the socket.
+ *   3. The daemon serializes its VFS and replies with { type: "snapshot-data", vfs, cwd, env }.
+ *   4. The API server writes the data as a zip containing a single snapshot.json.
+ *
+ * How restoring works:
+ *   1. The zip is read and the VFS/cwd/env are extracted.
+ *   2. The data is written to a temp JSON file.
+ *   3. startDaemon() is called with --snapshot <tempFile>, which makes the new daemon
+ *      boot with the restored VFS state instead of a blank filesystem.
+ *   4. The temp file is cleaned up; a brand-new session is returned. The original
+ *      instance (if still running) is completely unaffected.
+ *
+ * Routes:
+ *   POST   /api/sessions/:id/snapshot  — capture a snapshot from a running instance
+ *   GET    /api/snapshots              — list all saved snapshots with metadata
+ *   POST   /api/snapshots/restore      — boot a new instance from a snapshot
+ *   GET    /api/snapshots/:filename    — download a snapshot zip file
+ *   DELETE /api/snapshots/:filename    — permanently delete a snapshot zip file
  */
 
 import * as fs from 'node:fs';
@@ -17,6 +37,12 @@ import { sendJson, readJsonBody } from '../router.js';
 import type { ApiRequest } from '../types.js';
 import type * as http from 'node:http';
 
+/**
+ * Resolves the compiled CLI entry point (dist/index.js) so startDaemon() can
+ * spawn new daemon processes. Tries two strategies:
+ *   1. Resolve via require() relative to the lifo-sh package (works in prod).
+ *   2. Walk up to the monorepo root and find packages/cli/dist/index.js (dev).
+ */
 function getCliEntryPath(): string {
   try {
     const sessionModulePath = require.resolve('lifo-sh/session');
@@ -133,6 +159,8 @@ export async function restoreSnapshot(req: ApiRequest, res: http.ServerResponse)
     mountPath = fs.mkdtempSync(path.join(os.tmpdir(), 'lifo-'));
   }
 
+  // Write snapshot payload to a temp file. The daemon reads this on boot and
+  // deletes it itself, but we also attempt cleanup here in case startDaemon throws.
   const tmpSnap = path.join(os.tmpdir(), `lifo-snap-${Date.now()}.json`);
   fs.writeFileSync(tmpSnap, JSON.stringify({ vfs: data.vfs, cwd: data.cwd, env: data.env }), 'utf-8');
 
@@ -173,8 +201,10 @@ export function downloadSnapshot(req: ApiRequest, res: http.ServerResponse): voi
     res.writeHead(200, {
       'Content-Type': 'application/zip',
       'Content-Disposition': `attachment; filename="${safeName}"`,
+      // Content-Length lets the client show download progress.
       'Content-Length': String(stat.size),
     });
+    // Stream directly from disk — avoids loading the whole zip into memory.
     fs.createReadStream(filePath).pipe(res);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
