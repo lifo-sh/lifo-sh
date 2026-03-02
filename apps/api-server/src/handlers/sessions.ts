@@ -36,8 +36,8 @@ function getCliEntryPath(): string {
   }
 
   // Fallback: navigate from this file's location in the monorepo
-  // apps/api-server/dist/index.js → packages/cli/dist/index.js
-  const monoRoot = path.resolve(import.meta.dirname, '../../..');
+  // src/handlers/ (dev) or dist/ (built) → monorepo root → packages/cli/dist/index.js
+  const monoRoot = path.resolve(import.meta.dirname, '../../../..');
   const fallback = path.join(monoRoot, 'packages/cli/dist/index.js');
   if (fs.existsSync(fallback)) return fallback;
 
@@ -75,7 +75,7 @@ export async function createSession(req: ApiRequest, res: http.ServerResponse): 
 
   try {
     const cliEntry = getCliEntryPath();
-    const id = await startDaemon(mountPath, port, cliEntry);
+    const id = await startDaemon(mountPath, port, undefined, cliEntry);
     const session = readSession(id);
     if (!session) {
       sendJson(res, 500, { error: 'Session created but metadata not found' });
