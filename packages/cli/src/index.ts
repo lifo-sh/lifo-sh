@@ -108,6 +108,14 @@ interface CliOptions {
   id?: string;
   /** Internal flag — path to a snapshot JSON file to restore on daemon boot. */
   snapshot?: string;
+  /**
+   * Internal flag — stable tag used as the terminal output log filename.
+   * When set, the daemon writes output to ~/.lifo/sessions/<logTag>.output
+   * instead of the default <sessionId>.output. Pass the project ID here so
+   * logs persist across stop/start cycles (each restart has a new session ID
+   * but the same project ID, so the log file is always the same).
+   */
+  logTag?: string;
 }
 
 function parseArgs(args: string[]): CliOptions {
@@ -133,6 +141,9 @@ function parseArgs(args: string[]): CliOptions {
       i++;
     } else if (args[i] === '--snapshot' && args[i + 1]) {
       opts.snapshot = args[i + 1]!;
+      i++;
+    } else if (args[i] === '--log-tag' && args[i + 1]) {
+      opts.logTag = args[i + 1]!;
       i++;
     } else if (args[i]!.startsWith('-')) {
       console.error(`Error: unknown option '${args[i]}'`);
@@ -222,7 +233,7 @@ function handleStop(id: string): void {
  *   SIGTERM / SIGHUP → close socket server + delete session files + exit.
  *   `exit` typed in the shell → disconnects all clients, VM keeps running.
  */
-async function runDaemon(id: string, mountPath: string, port?: number, snapshotPath?: string): Promise<void> {
+async function runDaemon(id: string, mountPath: string, port?: number, snapshotPath?: string, logTag?: string): Promise<void> {
   const socketPath = path.join(SESSIONS_DIR, `${id}.sock`);
 
   fs.mkdirSync(SESSIONS_DIR, { recursive: true });
@@ -230,7 +241,16 @@ async function runDaemon(id: string, mountPath: string, port?: number, snapshotP
   // Remove a stale socket left by a previously crashed daemon with this ID.
   try { fs.unlinkSync(socketPath); } catch { /* ok if it doesn't exist */ }
 
-  const daemonTerminal = new DaemonTerminal();
+  // Use logTag (e.g. project ID) as the log filename when provided so output
+  // accumulates in the same file across stop/start cycles. Fall back to the
+  // session ID for CLI-created instances that have no project association.
+  const outputLogPath = path.join(SESSIONS_DIR, `${logTag ?? id}.output`);
+
+  // Clear the output log on each restart so the log only contains output from
+  // the current session, not accumulated history across many restarts.
+  try { fs.unlinkSync(outputLogPath); } catch { /* ok if it doesn't exist yet */ }
+
+  const daemonTerminal = new DaemonTerminal(outputLogPath);
 
   // ── Kernel ────────────────────────────────────────────────────────────────
   const kernel = new Kernel();
@@ -709,7 +729,7 @@ async function main() {
   if (opts.daemon) {
     if (!opts.id)    { console.error('--daemon requires --id');    process.exit(1); }
     if (!opts.mount) { console.error('--daemon requires --mount'); process.exit(1); }
-    await runDaemon(opts.id, opts.mount, opts.port, opts.snapshot);
+    await runDaemon(opts.id, opts.mount, opts.port, opts.snapshot, opts.logTag);
     return;
   }
 

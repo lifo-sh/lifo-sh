@@ -19,11 +19,15 @@
  *     { "type": "output", "data": "<terminal output string>" }
  */
 
+import * as fs from 'node:fs';
 import * as net from 'node:net';
 import type { ITerminal } from '@lifo-sh/core';
 
 /** Maximum per-client lineBuffer size (1 MB). Client is dropped on overflow. */
 const MAX_LINE_BUFFER = 1024 * 1024;
+
+/** Maximum number of NDJSON lines to keep in the output log. */
+const MAX_LOG_LINES = 1000;
 
 /** Internal representation of one connected attach client. */
 interface DaemonClient {
@@ -47,6 +51,24 @@ export class DaemonTerminal implements ITerminal {
   /** Terminal dimensions — kept in sync with the first connected client. */
   private _cols: number = 80;
   private _rows: number = 24;
+
+  /**
+   * Path to the NDJSON output log file (~/.lifo/sessions/<id>.output).
+   * Each flushed entry: { "ts": "<ISO>", "data": "<raw terminal chunk>" }
+   * Undefined when logging is disabled (e.g. in tests or interactive mode).
+   */
+  private logPath: string | undefined;
+
+  /**
+   * Pending output that hasn't been flushed to disk yet.
+   * Batched for 50 ms to avoid a disk write on every single character echo.
+   */
+  private logBuffer: string = '';
+  private logFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor(logPath?: string) {
+    this.logPath = logPath;
+  }
 
   /**
    * Registers a new socket client (called by the daemon's net.Server on each
@@ -118,8 +140,9 @@ export class DaemonTerminal implements ITerminal {
   }
 
   /**
-   * Broadcasts a string of terminal output to every connected client.
-   * Each message is a single JSON line: { type: "output", data: "..." }
+   * Broadcasts a string of terminal output to every connected client
+   * and appends it to the on-disk output log.
+   * Each socket message is a single JSON line: { type: "output", data: "..." }
    */
   write(data: string): void {
     const msg = JSON.stringify({ type: 'output', data }) + '\n';
@@ -131,6 +154,45 @@ export class DaemonTerminal implements ITerminal {
         // silently ignore; the close/error handlers will remove it.
       }
     }
+    this.bufferLog(data);
+  }
+
+  /**
+   * Accumulates output data and schedules a single disk flush after 50 ms of
+   * inactivity. Batching avoids a syscall per character echo while still
+   * delivering frequent-enough entries for a live log view.
+   */
+  private bufferLog(data: string): void {
+    if (!this.logPath) return;
+    this.logBuffer += data;
+    if (this.logFlushTimer) return;
+    this.logFlushTimer = setTimeout(() => {
+      this.logFlushTimer = null;
+      const chunk = this.logBuffer;
+      this.logBuffer = '';
+      if (!chunk) return;
+      const line = JSON.stringify({ ts: new Date().toISOString(), data: chunk }) + '\n';
+      fs.appendFile(this.logPath!, line, () => {
+        this.trimLogIfNeeded();
+      });
+    }, 50);
+  }
+
+  /**
+   * Trims the output log to MAX_LOG_LINES by dropping the oldest entries.
+   * Called after each flush. Reads the whole file only when it exceeds the
+   * limit, so the overhead is negligible during normal operation.
+   */
+  private trimLogIfNeeded(): void {
+    if (!this.logPath) return;
+    try {
+      const content = fs.readFileSync(this.logPath, 'utf-8');
+      const lines = content.split('\n').filter(Boolean);
+      if (lines.length <= MAX_LOG_LINES) return;
+      // Keep the newest MAX_LOG_LINES entries.
+      const trimmed = lines.slice(-MAX_LOG_LINES).join('\n') + '\n';
+      fs.writeFileSync(this.logPath, trimmed);
+    } catch { /* best-effort */ }
   }
 
   writeln(data: string): void {

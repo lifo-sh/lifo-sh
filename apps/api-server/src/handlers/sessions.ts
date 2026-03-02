@@ -104,10 +104,11 @@ export async function createSession(req: ApiRequest, res: http.ServerResponse): 
   }
 
   const port = typeof body.port === 'number' ? body.port : undefined;
+  const logTag = typeof body.logTag === 'string' && body.logTag ? body.logTag : undefined;
 
   try {
     const cliEntry = getCliEntryPath();
-    const id = await startDaemon(mountPath, port, undefined, cliEntry);
+    const id = await startDaemon(mountPath, port, undefined, cliEntry, logTag);
     const session = readSession(id);
     if (!session) {
       sendJson(res, 500, { error: 'Session created but metadata not found' });
@@ -209,44 +210,94 @@ export function resumeSession(req: ApiRequest, res: http.ServerResponse): void {
 }
 
 /**
- * GET /api/sessions/:id/logs — return all lifecycle events for a session.
+ * GET /api/sessions/:id/logs — return the full session log.
  *
- * Reads ~/.lifo/sessions/<id>.events line by line. Each line is a JSON object;
- * malformed lines are skipped so a single corrupt write never breaks the whole log.
+ * Merges two NDJSON files and returns them sorted by timestamp:
  *
- * Backwards-compat fallback: if no .events file exists (instance was created before
- * event logging was added), we synthesise a single "Instance launched" event from
- * the session JSON so the activity dialog is never completely empty.
+ *   ~/.lifo/sessions/<id>.events  — lifecycle events (launch, stop, pause, resume)
+ *                                   Each line: { ts, message }
+ *
+ *   ~/.lifo/sessions/<id>.output  — raw terminal output written by the daemon
+ *                                   Each line: { ts, data }
+ *                                   Chunks may contain ANSI escape codes; the
+ *                                   client is responsible for stripping them.
+ *
+ * Response shape:
+ *   { events: Array<{ ts, type: "lifecycle", message } | { ts, type: "output", data }> }
+ *
+ * Malformed lines in either file are silently skipped. If both files are empty
+ * (instance predates logging), a synthetic launch event is returned for
+ * backwards compatibility.
  */
 export function getSessionLogs(req: ApiRequest, res: http.ServerResponse): void {
   const { id } = req.params;
+
+  // ?logTag=<projectId> pins the output log to a stable filename that persists
+  // across restarts. When provided, <logTag>.output is read instead of <id>.output.
+  const qs = new URLSearchParams((req.url ?? '').split('?')[1] ?? '');
+  const logTag = qs.get('logTag') ?? null;
+
+  type LifecycleEvent = { ts: string; type: 'lifecycle'; message: string };
+  type OutputEvent    = { ts: string; type: 'output';    data: string };
+  type LogEntry = LifecycleEvent | OutputEvent;
+
+  const entries: LogEntry[] = [];
+
+  // Read lifecycle events (.events) — always keyed by session ID.
   const eventsPath = path.join(SESSIONS_DIR, `${id}.events`);
-
-  interface LogEvent { ts: string; message: string }
-  const events: LogEvent[] = [];
-
   if (fs.existsSync(eventsPath)) {
     try {
       const lines = fs.readFileSync(eventsPath, 'utf-8').split('\n').filter(Boolean);
       for (const line of lines) {
-        try { events.push(JSON.parse(line) as LogEvent); } catch { /* skip malformed */ }
+        try {
+          const e = JSON.parse(line);
+          entries.push({ ts: e.ts, type: 'lifecycle', message: e.message });
+        } catch { /* skip malformed */ }
       }
     } catch { /* ignore read errors */ }
   }
 
-  // Fallback for instances created before event logging was introduced.
-  if (events.length === 0) {
+  // Read terminal output — keyed by logTag when provided so the output file
+  // survives stop/start cycles (new session ID each restart, same logTag file).
+  const outputKey = logTag ?? id;
+  const outputPath = path.join(SESSIONS_DIR, `${outputKey}.output`);
+  if (fs.existsSync(outputPath)) {
+    try {
+      const lines = fs.readFileSync(outputPath, 'utf-8').split('\n').filter(Boolean);
+      for (const line of lines) {
+        try {
+          const e = JSON.parse(line);
+          entries.push({ ts: e.ts, type: 'output', data: e.data });
+        } catch { /* skip malformed */ }
+      }
+    } catch { /* ignore read errors */ }
+  }
+
+  // Sort everything by timestamp so lifecycle events interleave with output correctly.
+  entries.sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
+
+  // Backwards-compat: synthesise a launch event for instances created before logging.
+  if (entries.length === 0) {
     const session = readSession(id!);
     if (session) {
       const portMsg = session.port ? `, port ${session.port}` : '';
-      events.push({
+      entries.push({
         ts: session.startedAt,
+        type: 'lifecycle',
         message: `Instance launched — PID ${session.pid}, mount ${session.mountPath}${portMsg}`,
       });
     }
   }
 
-  sendJson(res, 200, { events });
+  sendJson(res, 200, { events: entries });
+}
+
+/** DELETE /api/output/:logTag — delete a persistent output log file. */
+export function deleteOutputLog(req: ApiRequest, res: http.ServerResponse): void {
+  const { logTag } = req.params;
+  const filePath = path.join(SESSIONS_DIR, `${logTag}.output`);
+  try { fs.unlinkSync(filePath); } catch { /* ok if already gone */ }
+  sendJson(res, 200, { ok: true });
 }
 
 /** DELETE /api/sessions/:id — stop a session. */
@@ -273,5 +324,9 @@ export function stopSession(req: ApiRequest, res: http.ServerResponse): void {
   }
 
   deleteSession(id!);
+
+  // Clean up the output log alongside the events log that deleteSession() removes.
+  try { fs.unlinkSync(path.join(SESSIONS_DIR, `${id}.output`)); } catch { /* ok if absent */ }
+
   sendJson(res, 200, { ok: true, id });
 }

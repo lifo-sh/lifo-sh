@@ -117,6 +117,7 @@ export async function restoreSnapshot(req: ApiRequest, res: http.ServerResponse)
   }
 
   const filename = typeof body.filename === 'string' ? body.filename : null;
+  const logTag = typeof body.logTag === 'string' && body.logTag ? body.logTag : undefined;
   if (!filename) {
     sendJson(res, 400, { error: 'filename is required' });
     return;
@@ -166,7 +167,7 @@ export async function restoreSnapshot(req: ApiRequest, res: http.ServerResponse)
 
   try {
     const cliEntry = getCliEntryPath();
-    const id = await startDaemon(mountPath, undefined, tmpSnap, cliEntry);
+    const id = await startDaemon(mountPath, undefined, tmpSnap, cliEntry, logTag);
     try { fs.unlinkSync(tmpSnap); } catch { /* daemon already cleaned it up */ }
     const session = readSession(id);
     if (!session) {

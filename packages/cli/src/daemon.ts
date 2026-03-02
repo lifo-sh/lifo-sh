@@ -82,7 +82,7 @@ function getSpawnExecutable(): { executable: string; prefixArgs: string[] } {
  * @returns            The session ID (hex string) once the daemon is ready.
  * @throws             If the daemon fails to become ready within 5 seconds.
  */
-export async function startDaemon(mountPath: string, port?: number, snapshotPath?: string, scriptPath?: string): Promise<string> {
+export async function startDaemon(mountPath: string, port?: number, snapshotPath?: string, scriptPath?: string, logTag?: string): Promise<string> {
   const id = generateId();
   const jsonPath = path.join(SESSIONS_DIR, `${id}.json`);
   const daemonLogPath = logPath(id);
@@ -94,6 +94,9 @@ export async function startDaemon(mountPath: string, port?: number, snapshotPath
   const extraArgs: string[] = [];
   if (port !== undefined) extraArgs.push('--port', String(port));
   if (snapshotPath !== undefined) extraArgs.push('--snapshot', snapshotPath);
+  // logTag pins terminal output to a stable filename across restarts (e.g. project ID).
+  // Without it the daemon defaults to <sessionId>.output which changes each restart.
+  if (logTag !== undefined) extraArgs.push('--log-tag', logTag);
 
   // Redirect daemon stderr to a log file so startup errors aren't silently lost.
   // The log is cleaned up by deleteSession() on normal shutdown; if the daemon

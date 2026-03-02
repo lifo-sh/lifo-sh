@@ -18,13 +18,14 @@
  *   GET    /api/snapshots                → list all saved snapshots
  *   POST   /api/snapshots/restore        → restore snapshot into new instance
  *   DELETE /api/snapshots/:filename      → delete a snapshot file
+ *   DELETE /api/output/:logTag           → delete a project's persistent output log
  */
 
 import * as http from 'node:http';
 import { Router, sendJson } from './router.js';
 import { corsMiddleware, handlePreflight } from './cors.js';
 import { authMiddleware } from './auth.js';
-import { createSession, getSessions, getSession, stopSession, pauseSession, resumeSession, getSessionLogs } from './handlers/sessions.js';
+import { createSession, getSessions, getSession, stopSession, pauseSession, resumeSession, getSessionLogs, deleteOutputLog } from './handlers/sessions.js';
 import { handleAttach } from './handlers/attach.js';
 import { saveSnapshot, getSnapshots, restoreSnapshot, deleteSnapshot, downloadSnapshot } from './handlers/snapshots.js';
 
@@ -51,6 +52,7 @@ router.post('/api/sessions/:id/pause', pauseSession);
 router.post('/api/sessions/:id/resume', resumeSession);
 router.get('/api/sessions/:id/logs', getSessionLogs);
 router.delete('/api/sessions/:id', stopSession);
+router.delete('/api/output/:logTag', deleteOutputLog);
 
 // Snapshots
 router.post('/api/sessions/:id/snapshot', saveSnapshot);
