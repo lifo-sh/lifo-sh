@@ -67,6 +67,7 @@ import {
 	readSnapshotZip,
 	listSnapshots,
 } from './snapshot.js';
+import { handleTunnel, createHostTunnelCommand } from './tunnel.js';
 import { serialize, deserialize } from '@lifo-sh/core';
 
 // ─── CLI argument parsing ──────────────────────────────────────────────────────
@@ -75,7 +76,7 @@ import { serialize, deserialize } from '@lifo-sh/core';
  * All recognised user-facing subcommands. Used by getEffectiveArgs() to find
  * where the real user input starts when pnpm dev mode injects extra args.
  */
-const SUBCOMMANDS = new Set(['login', 'logout', 'whoami', 'list', 'attach', 'stop', 'new', 'snapshot']);
+const SUBCOMMANDS = new Set(['login', 'logout', 'whoami', 'list', 'attach', 'stop', 'new', 'snapshot', 'tunnel']);
 
 /**
  * Returns the user-facing args, stripping any leading positional args that
@@ -290,6 +291,7 @@ async function runDaemon(id: string, mountPath: string, port?: number, snapshotP
 	registry.register('help', createHelpCommand(registry));
 	registry.register('node', createNodeCommand(kernel));
 	registry.register('curl', createCurlCommand(kernel));
+	registry.register('tunnel', createHostTunnelCommand());
 
 	const npmShellExecute = async (
 		cmd: string,
@@ -460,6 +462,7 @@ async function runInteractive(opts: CliOptions): Promise<void> {
 	registry.register('help', createHelpCommand(registry));
 	registry.register('node', createNodeCommand(kernel));
 	registry.register('curl', createCurlCommand(kernel));
+	registry.register('tunnel', createHostTunnelCommand());
 
 	const npmShellExecute = async (
 		cmd: string,
@@ -551,6 +554,23 @@ async function main() {
 		const id = args[1];
 		if (!id) { console.error('Usage: lifo stop <id>'); process.exit(1); }
 		handleStop(id);
+		return;
+	}
+
+	if (cmd === 'tunnel') {
+		const token = readToken();
+		if (!token) {
+			console.error('Not logged in. Run `lifo login` first.');
+			process.exit(1);
+		}
+		const portArg = args[1];
+		const tunnelPort = portArg ? parseInt(portArg, 10) : NaN;
+		if (!portArg || isNaN(tunnelPort) || tunnelPort < 1 || tunnelPort > 65535) {
+			console.error('Usage: lifo tunnel <port>');
+			console.error('Example: lifo tunnel 5173');
+			process.exit(1);
+		}
+		await handleTunnel(tunnelPort);
 		return;
 	}
 

@@ -98,6 +98,9 @@ importers:
       adm-zip:
         specifier: ^0.5.10
         version: 0.5.16
+      ws:
+        specifier: ^8.19.0
+        version: 8.19.0
     devDependencies:
       '@types/adm-zip':
         specifier: ^0.5.5
@@ -105,6 +108,9 @@ importers:
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.11
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
       tsup:
         specifier: ^8.0.0
         version: 8.5.1(@microsoft/api-extractor@7.57.3(@types/node@22.19.11))(jiti@2.6.1)(postcss@8.5.6)(tsx@4.21.0)(typescript@5.9.3)
