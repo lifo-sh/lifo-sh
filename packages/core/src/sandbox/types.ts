@@ -15,8 +15,8 @@ export interface SandboxOptions {
   cwd?: string;
   /** Pre-populate files: path → content */
   files?: Record<string, string | Uint8Array>;
-  /** Attach to a DOM element for visual mode (CSS selector or element), or pass a pre-created ITerminal */
-  terminal?: string | HTMLElement | ITerminal;
+  /** Attach a pre-created ITerminal for visual mode */
+  terminal?: ITerminal;
   /**
    * Mount native filesystem directories into the virtual filesystem at boot time.
    * Only works in Node.js environments (or when a custom fsModule is provided).

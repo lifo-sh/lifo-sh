@@ -47,14 +47,18 @@ import ffmpegCommand from 'lifo-pkg-ffmpeg';
 
 const CODE_INTERACTIVE = `\
 <span class="code-keyword">import</span> { Terminal } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/ui'</span>
-<span class="code-keyword">import</span> {
-  Kernel, Shell,
-  createDefaultRegistry, <span class="code-comment">...</span>
-} <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/core'</span>
+<span class="code-keyword">import</span> { Sandbox } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/core'</span>
 
-<span class="code-comment">// Boot one persistent kernel</span>
-<span class="code-keyword">const</span> kernel = <span class="code-keyword">new</span> <span class="code-fn">Kernel</span>()
-<span class="code-keyword">await</span> kernel.<span class="code-fn">boot</span>({ <span class="code-const">persist</span>: <span class="code-keyword">true</span> })
+<span class="code-comment">// Create a terminal and attach it to a DOM element</span>
+<span class="code-keyword">const</span> terminal = <span class="code-keyword">new</span> <span class="code-fn">Terminal</span>(
+  document.<span class="code-fn">getElementById</span>(<span class="code-string">'terminal'</span>)
+)
+
+<span class="code-comment">// Boot a full interactive shell</span>
+<span class="code-keyword">const</span> sandbox = <span class="code-keyword">await</span> Sandbox.<span class="code-fn">create</span>({
+  <span class="code-const">persist</span>: <span class="code-keyword">true</span>,
+  <span class="code-const">terminal</span>,
+})
 
 <span class="code-comment">// Helper: create a shell tab</span>
 <span class="code-keyword">function</span> <span class="code-fn">createShell</span>(container) {
@@ -247,12 +251,14 @@ registry.<span class="code-fn">register</span>(<span class="code-string">'ffmpeg
 <span class="code-string">ffmpeg -version</span>`;
 
 const CODE_NPM = `\
+<span class="code-keyword">import</span> { Terminal } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/ui'</span>
 <span class="code-keyword">import</span> { Sandbox } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/core'</span>
 
-<span class="code-comment">// One line to get a shell with npm support</span>
-<span class="code-keyword">const</span> sandbox = <span class="code-keyword">await</span> Sandbox.<span class="code-fn">create</span>({
-  <span class="code-const">terminal</span>: <span class="code-string">'#terminal'</span>,
-})
+<span class="code-comment">// Create a terminal and boot a shell</span>
+<span class="code-keyword">const</span> terminal = <span class="code-keyword">new</span> <span class="code-fn">Terminal</span>(
+  document.<span class="code-fn">getElementById</span>(<span class="code-string">'terminal'</span>)
+)
+<span class="code-keyword">const</span> sandbox = <span class="code-keyword">await</span> Sandbox.<span class="code-fn">create</span>({ <span class="code-const">terminal</span> })
 
 <span class="code-comment">// Try these in the terminal:</span>
 
@@ -1055,6 +1061,7 @@ async function addMultiTab(): Promise<MultiTab> {
 
 	const terminal = new Terminal(container);
 	const registry = createDefaultRegistry();
+	registry.register('git', gitCommand);
 	bootLifoPackages(kernel.vfs, registry);
 
 	const env = kernel.getDefaultEnv();
@@ -1249,6 +1256,7 @@ async function addHttpTab(label: string): Promise<HttpTab> {
 
 	const terminal = new Terminal(container);
 	const registry = createDefaultRegistry();
+	registry.register('git', gitCommand);
 	bootLifoPackages(kernel.vfs, registry);
 
 	// Register node, curl, and tunnel with kernel
@@ -1469,6 +1477,7 @@ async function bootExplorer() {
 	const termContainer = document.getElementById('explorer-terminal')!;
 	const terminal = new Terminal(termContainer);
 	const registry = createDefaultRegistry();
+	registry.register('git', gitCommand);
 	bootLifoPackages(vfs, registry);
 
 	const env = explorerKernel.getDefaultEnv();
@@ -1576,6 +1585,7 @@ async function bootFfmpeg() {
 	const termContainer = document.getElementById('ffmpeg-terminal')!;
 	const terminal = new Terminal(termContainer);
 	const registry = createDefaultRegistry();
+	registry.register('git', gitCommand);
 	registry.register('ffmpeg', ffmpegCommand);
 	bootLifoPackages(vfs, registry);
 
@@ -1610,8 +1620,9 @@ async function bootFfmpeg() {
 // ─── 8. npm ───
 
 async function bootNpm() {
+	const terminal = new Terminal(document.getElementById('terminal-npm')!);
 	await Sandbox.create({
-		terminal: '#terminal-npm',
+		terminal,
 	});
 }
 
