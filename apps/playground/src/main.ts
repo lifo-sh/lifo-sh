@@ -4,32 +4,46 @@ import { Terminal, FileExplorer } from '@lifo-sh/ui';
 import type { EditorProvider, EditorInstance } from '@lifo-sh/ui';
 
 declare global {
-  interface Window {
-    MonacoEnvironment?: {
-      getWorker(workerId: string, label: string): Worker;
-    };
-  }
+	interface Window {
+		MonacoEnvironment?: {
+			getWorker(workerId: string, label: string): Worker;
+		};
+	}
 }
 import {
-  Sandbox,
-  Kernel,
-  Shell,
-  createDefaultRegistry,
-  bootLifoPackages,
-  createPsCommand,
-  createTopCommand,
-  createKillCommand,
-  createWatchCommand,
-  createHelpCommand,
-  createNodeCommand,
-  createCurlCommand,
-  createNpmCommand,
-  createLifoPkgCommand,
+	Sandbox,
+	Kernel,
+	Shell,
+	createDefaultRegistry,
+	bootLifoPackages,
+	createPsCommand,
+	createTopCommand,
+	createKillCommand,
+	createWatchCommand,
+	createHelpCommand,
+	createNodeCommand,
+	createCurlCommand,
+	createTunnelCommand,
+	createTunnelCommandV2,
+	createIfconfigCommand,
+	createRouteCommand,
+	createNetstatCommand,
+	createHostCommand,
+	createIPCommand,
+	createNpmCommand,
+	createNpxCommand,
+	createLifoPkgCommand,
+	createSystemctlCommand,
+	createForwardCommand,
+	createUnforwardCommand,
+	createPortsCommand,
+	createTestRegistryCommand,
+	createNewtabCommand,
 } from '@lifo-sh/core';
 import gitCommand from 'lifo-pkg-git';
 import ffmpegCommand from 'lifo-pkg-ffmpeg';
 
-// ─── Code snippets for each example ───
+/// ─── Code snippets for each example ───
 
 const CODE_INTERACTIVE = `\
 <span class="code-keyword">import</span> { Terminal } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/ui'</span>
@@ -46,13 +60,21 @@ const CODE_INTERACTIVE = `\
   <span class="code-const">terminal</span>,
 })
 
-<span class="code-comment">// Interactive shell is running.</span>
-<span class="code-comment">// Persistence keeps state across reloads.</span>
-<span class="code-comment">// Low-level access:</span>
-<span class="code-comment">//   sandbox.kernel</span>
-<span class="code-comment">//   sandbox.shell</span>
-<span class="code-comment">//   sandbox.cwd</span>
-<span class="code-comment">//   sandbox.env</span>`;
+<span class="code-comment">// Helper: create a shell tab</span>
+<span class="code-keyword">function</span> <span class="code-fn">createShell</span>(container) {
+  <span class="code-keyword">const</span> term = <span class="code-keyword">new</span> <span class="code-fn">Terminal</span>(container)
+  <span class="code-keyword">const</span> reg  = <span class="code-fn">createDefaultRegistry</span>()
+  <span class="code-keyword">const</span> env  = kernel.<span class="code-fn">getDefaultEnv</span>()
+  <span class="code-keyword">const</span> sh   = <span class="code-keyword">new</span> <span class="code-fn">Shell</span>(
+    term, kernel.vfs, reg, env
+  )
+  sh.<span class="code-fn">start</span>()
+  <span class="code-keyword">return</span> sh
+}
+
+<span class="code-comment">// Tabs share the same persistent VFS.</span>
+<span class="code-comment">// State keeps across reloads.</span>
+<span class="code-comment">// Click + to add more tabs.</span>`;
 
 const CODE_HEADLESS = `\
 <span class="code-keyword">import</span> { Sandbox } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/core'</span>
@@ -146,14 +168,16 @@ kernel.vfs.<span class="code-fn">writeFile</span>(<span class="code-string">'/ho
   })
 \`)
 
-<span class="code-comment">// Register node &amp; curl with portRegistry</span>
+<span class="code-comment">// Register node &amp; curl with kernel</span>
 registry.<span class="code-fn">register</span>(<span class="code-string">'node'</span>,
-  <span class="code-fn">createNodeCommand</span>(kernel.portRegistry))
+  <span class="code-fn">createNodeCommand</span>(kernel))
 registry.<span class="code-fn">register</span>(<span class="code-string">'curl'</span>,
-  <span class="code-fn">createCurlCommand</span>(kernel.portRegistry))
+  <span class="code-fn">createCurlCommand</span>(kernel))
 
 <span class="code-comment">// Tab 1: node server.js</span>
-<span class="code-comment">// Tab 2: curl localhost:3000</span>`;
+<span class="code-comment">// Tab 2: curl localhost:3000</span>
+<span class="code-comment">// Tab 3: node server2.js (proxy to 3000)</span>
+<span class="code-comment">//         curl localhost:3001</span>`;
 
 const CODE_EXPLORER = `\
 <span class="code-keyword">import</span> { Terminal, FileExplorer } <span class="code-keyword">from</span> <span class="code-string">'@lifo-sh/ui'</span>
@@ -375,17 +399,17 @@ sandbox.kernel.vfs.<span class="code-fn">mount</span>(
 )`;
 
 const codeSnippets: Record<string, string> = {
-  interactive: CODE_INTERACTIVE,
-  headless: CODE_HEADLESS,
-  multi: CODE_MULTI,
-  http: CODE_HTTP,
-  explorer: CODE_EXPLORER,
-  git: CODE_GIT,
-  ffmpeg: CODE_FFMPEG,
-  npm: CODE_NPM,
-  cli: CODE_CLI,
-  'lifo-pkg': CODE_LIFO_PKG,
-  'build-pkg': CODE_BUILD_PKG,
+	interactive: CODE_INTERACTIVE,
+	headless: CODE_HEADLESS,
+	multi: CODE_MULTI,
+	http: CODE_HTTP,
+	explorer: CODE_EXPLORER,
+	git: CODE_GIT,
+	ffmpeg: CODE_FFMPEG,
+	npm: CODE_NPM,
+	cli: CODE_CLI,
+	'lifo-pkg': CODE_LIFO_PKG,
+	'build-pkg': CODE_BUILD_PKG,
 };
 
 // ─── State ───
@@ -393,17 +417,17 @@ const codeSnippets: Record<string, string> = {
 type ExampleId = 'interactive' | 'headless' | 'multi' | 'http' | 'explorer' | 'git' | 'ffmpeg' | 'npm' | 'cli' | 'lifo-pkg' | 'build-pkg';
 
 const examples: Record<ExampleId, { booted: boolean; boot: () => Promise<void> }> = {
-  interactive:  { booted: false, boot: bootInteractive },
-  headless:     { booted: false, boot: bootHeadless },
-  multi:        { booted: false, boot: bootMulti },
-  http:         { booted: false, boot: bootHttp },
-  explorer:     { booted: false, boot: bootExplorer },
-  git:          { booted: false, boot: bootGit },
-  ffmpeg:       { booted: false, boot: bootFfmpeg },
-  npm:          { booted: false, boot: bootNpm },
-  cli:          { booted: false, boot: bootCli },
-  'lifo-pkg':   { booted: false, boot: bootLifoPkg },
-  'build-pkg':  { booted: false, boot: bootBuildPkg },
+	interactive: { booted: false, boot: bootInteractive },
+	headless: { booted: false, boot: bootHeadless },
+	multi: { booted: false, boot: bootMulti },
+	http: { booted: false, boot: bootHttp },
+	explorer: { booted: false, boot: bootExplorer },
+	git: { booted: false, boot: bootGit },
+	ffmpeg: { booted: false, boot: bootFfmpeg },
+	npm: { booted: false, boot: bootNpm },
+	cli: { booted: false, boot: bootCli },
+	'lifo-pkg': { booted: false, boot: bootLifoPkg },
+	'build-pkg': { booted: false, boot: bootBuildPkg },
 };
 
 let activeExample: ExampleId = 'interactive';
@@ -417,34 +441,34 @@ const colCode = document.getElementById('col-code')!;
 const codeToggle = document.getElementById('code-toggle')!;
 
 function openSidebar() {
-  sidebar.classList.remove('-translate-x-full');
-  sidebar.classList.add('translate-x-0');
-  sidebarBackdrop.classList.remove('hidden');
+	sidebar.classList.remove('-translate-x-full');
+	sidebar.classList.add('translate-x-0');
+	sidebarBackdrop.classList.remove('hidden');
 }
 
 function closeSidebar() {
-  sidebar.classList.add('-translate-x-full');
-  sidebar.classList.remove('translate-x-0');
-  sidebarBackdrop.classList.add('hidden');
+	sidebar.classList.add('-translate-x-full');
+	sidebar.classList.remove('translate-x-0');
+	sidebarBackdrop.classList.add('hidden');
 }
 
 sidebarToggle.addEventListener('click', () => {
-  const isOpen = sidebar.classList.contains('translate-x-0');
-  if (isOpen) closeSidebar();
-  else openSidebar();
+	const isOpen = sidebar.classList.contains('translate-x-0');
+	if (isOpen) closeSidebar();
+	else openSidebar();
 });
 
 sidebarBackdrop.addEventListener('click', closeSidebar);
 
 codeToggle.addEventListener('click', () => {
-  const isVisible = colCode.classList.contains('flex');
-  if (isVisible) {
-    colCode.classList.remove('flex');
-    colCode.classList.add('hidden');
-  } else {
-    colCode.classList.remove('hidden');
-    colCode.classList.add('flex');
-  }
+	const isVisible = colCode.classList.contains('flex');
+	if (isVisible) {
+		colCode.classList.remove('flex');
+		colCode.classList.add('hidden');
+	} else {
+		colCode.classList.remove('hidden');
+		colCode.classList.add('flex');
+	}
 });
 
 // ─── Navigation ───
@@ -452,116 +476,539 @@ codeToggle.addEventListener('click', () => {
 const codeBlockEl = document.getElementById('code-block')!;
 
 document.querySelectorAll<HTMLButtonElement>('.sidebar-item').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    const id = btn.dataset.example as ExampleId;
-    if (id === activeExample) return;
-    switchExample(id);
-  });
+	btn.addEventListener('click', () => {
+		const id = btn.dataset.example as ExampleId;
+		if (id === activeExample) return;
+		switchExample(id);
+	});
 });
 
 function switchExample(id: ExampleId) {
-  // Sidebar
-  document.querySelectorAll('.sidebar-item').forEach((el) => el.classList.remove('active'));
-  document.querySelector(`[data-example="${id}"]`)?.classList.add('active');
+	// Sidebar
+	document.querySelectorAll('.sidebar-item').forEach((el) => el.classList.remove('active'));
+	document.querySelector(`[data-example="${id}"]`)?.classList.add('active');
 
-  // Code column -- hide for examples that don't need it
-  if (id === 'cli' || id === 'lifo-pkg' || id === 'build-pkg') {
-    colCode.classList.remove('lg:flex');
-    colCode.classList.add('lg:hidden');
-  } else {
-    colCode.classList.remove('lg:hidden');
-    colCode.classList.add('lg:flex');
-    codeBlockEl.innerHTML = codeSnippets[id];
-  }
+	// Code column -- hide for examples that don't need it
+	if (id === 'cli' || id === 'lifo-pkg' || id === 'build-pkg') {
+		colCode.classList.remove('lg:flex');
+		colCode.classList.add('lg:hidden');
+	} else {
+		colCode.classList.remove('lg:hidden');
+		colCode.classList.add('lg:flex');
+		codeBlockEl.innerHTML = codeSnippets[id];
+	}
 
-  // Output column
-  document.querySelectorAll('.output-panel').forEach((el) => el.classList.remove('active'));
-  document.getElementById(`out-${id}`)?.classList.add('active');
+	// Output column
+	document.querySelectorAll('.output-panel').forEach((el) => el.classList.remove('active'));
+	document.getElementById(`out-${id}`)?.classList.add('active');
 
-  activeExample = id;
+	activeExample = id;
 
-  // Close sidebar on mobile after selecting
-  closeSidebar();
+	// Close sidebar on mobile after selecting
+	closeSidebar();
 
-  // Lazy-boot
-  const ex = examples[id];
-  if (!ex.booted) {
-    ex.booted = true;
-    ex.boot();
+	// Lazy-boot
+	const ex = examples[id];
+	if (!ex.booted) {
+		ex.booted = true;
+		ex.boot();
+	}
+}
+// ─── 1. Interactive Shell (tabbed, persistent) ───
+
+let interactiveKernel: Kernel | null = null;
+
+interface InteractiveTab {
+	id: number;
+	tabBtn: HTMLButtonElement;
+	panel: HTMLDivElement;
+	terminal: Terminal;
+	shell: Shell;
+}
+
+let interactiveTabs: InteractiveTab[] = [];
+let interactiveActiveTabId = -1;
+let interactiveNextId = 1;
+
+async function bootInteractive() {
+	interactiveKernel = new Kernel();
+	await interactiveKernel.boot({ persist: true });
+
+	// Expose kernel to Vite dev server for port bridging
+	if (typeof (globalThis as any).__setLifoKernel === 'function') {
+		(globalThis as any).__setLifoKernel(() => interactiveKernel);
+	}
+
+	// Initialize service manager for systemctl support
+	const env = interactiveKernel.getDefaultEnv();
+	const tempRegistry = createDefaultRegistry();
+	tempRegistry.register('tunnel', createTunnelCommandV2(interactiveKernel));
+	interactiveKernel.initServiceManager(tempRegistry, env);
+
+	// Create tunnel systemd service unit
+	interactiveKernel.vfs.mkdir('/etc/systemd/system', { recursive: true });
+	interactiveKernel.vfs.writeFile('/etc/systemd/system/tunnel.service', `[Unit]
+Description=WebSocket Tunnel Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=tunnel --server ws://localhost:3005 --port 5173
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+`);
+
+	// Enable the tunnel service
+	if (interactiveKernel.serviceManager) {
+		interactiveKernel.serviceManager.enable('tunnel');
+	}
+
+	// Create sample Vite app for testing
+	const vfs = interactiveKernel.vfs;
+	vfs.mkdir('/home/user/vite-project', { recursive: true });
+	vfs.writeFile('/home/user/vite-project/package.json', JSON.stringify({
+		name: 'vite-project',
+		version: '1.0.0',
+		type: 'module',
+		scripts: {
+			dev: 'vite --port 5173 --host localhost',
+			build: 'vite build',
+			start: 'node vite-direct.js'
+		},
+		dependencies: {
+			vite: '^5.0.0',
+		},
+	}, null, 2));
+
+	vfs.writeFile('/home/user/vite-project/index.html', `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vite App in Lifo</title>
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module" src="/main.js"></script>
+</body>
+</html>`);
+
+	vfs.writeFile('/home/user/vite-project/main.js', `document.getElementById('app').innerHTML = \`
+  <h1>Hello from Vite in Lifo! 🚀</h1>
+  <p>This Vite dev server is running entirely in your browser!</p>
+  <p>Port: <strong>5173</strong></p>
+  <p>Try accessing from another tab with: <code>curl localhost:5173</code></p>
+\`;
+
+console.log('Vite app loaded successfully!');
+`);
+
+	// NOTE: We intentionally DO NOT create vite.config.js because esbuild-wasm
+	// cannot handle config file loading in the VFS (directory traversal issues).
+	// Users should either:
+	// 1. Use vite-direct.js (which sets configFile: false)
+	// 2. Use CLI flags: npx vite --port 5173 --host localhost
+
+	// Create a simple test server to verify HTTP registration works
+	vfs.writeFile('/home/user/vite-project/test-server.js', `// Simple HTTP server test
+// This verifies that virtual HTTP servers work correctly
+
+const http = require('http');
+
+console.log('Creating HTTP server...');
+console.log('NOTE: Server must stay running! Do NOT press Ctrl+C');
+console.log('Open a NEW tab (+) to test with "ports" and "curl"');
+console.log('');
+
+const server = http.createServer((req, res) => {
+  console.log(\`✅ Request received: \${req.method} \${req.url}\`);
+
+  res.writeHead(200, {
+    'Content-Type': 'text/html',
+    'X-Powered-By': 'Lifo Virtual HTTP'
+  });
+
+  res.end(\`<!DOCTYPE html>
+<html>
+<head><title>Test Server</title></head>
+<body>
+  <h1>✅ HTTP Server Works!</h1>
+  <p>Port: <strong>3000</strong></p>
+  <p>This proves the virtual HTTP server is registered correctly.</p>
+  <p>Try: <code>curl localhost:3000</code> from another tab</p>
+  <p>Or visit: <a href="/api/proxy/3000/">/api/proxy/3000/</a></p>
+</body>
+</html>\`);
+});
+
+console.log('Starting server on port 3000...');
+
+server.listen(3000, () => {
+  console.log('');
+  console.log('🎉 ===================================');
+  console.log('🎉 Server is RUNNING on port 3000!');
+  console.log('🎉 ===================================');
+  console.log('');
+  console.log('Test commands IN A NEW TAB (+):');
+  console.log('  1. ports');
+  console.log('  2. curl localhost:3000');
+  console.log('');
+  console.log('⚠️  IMPORTANT: Keep this tab running!');
+  console.log('⚠️  Do NOT close or stop this process');
+  console.log('');
+});
+
+server.on('error', (err) => {
+  console.error('❌ Server error:', err.message);
+});
+
+// Keep the process alive
+setInterval(() => {
+  // Noop to prevent process exit
+}, 60000);
+`);
+
+	// Create direct Vite runner that doesn't use npm
+	vfs.writeFile('/home/user/vite-project/vite-direct.js', `#!/usr/bin/env node
+// Direct Vite runner - runs Vite without npm spawning a child process
+// This keeps the server process alive so ports stay registered
+
+console.log('🚀 Starting Vite directly...');
+console.log('');
+
+// Import and run Vite's CLI directly
+async function startVite() {
+  try {
+    // Dynamically import Vite
+    const vite = await import('vite');
+
+    console.log('📦 Vite imported successfully');
+    console.log('⚙️  Creating dev server...');
+
+    // Create Vite dev server
+    const server = await vite.createServer({
+      configFile: false, // Skip config file to avoid esbuild issues in VFS
+      root: process.cwd(),
+      server: {
+        port: 5173,
+        host: 'localhost',
+      },
+    });
+
+    console.log('🎯 Starting server on port 5173...');
+    await server.listen();
+
+    const info = server.config.logger.info;
+    info('');
+    info('  ✅ Vite dev server is running!');
+    info('');
+    info('  Test in another tab:');
+    info('    1. ports');
+    info('    2. curl localhost:5173');
+    info('');
+    info('  ⚠️  Keep this tab open - do NOT stop the process!');
+    info('');
+
+    // Keep process alive - wait for server close
+    await new Promise((resolve) => {
+      server.httpServer?.on('close', resolve);
+    });
+
+  } catch (error) {
+    console.error('❌ Error starting Vite:', error.message);
+    console.error('');
+    console.error('Vite may not be installed. Try:');
+    console.error('  npm install vite');
+    console.error('');
+    console.error('Or use the test server instead:');
+    console.error('  node test-server.js');
+    process.exit(1);
   }
 }
 
-// ─── 1. Interactive Shell ───
+// Handle errors
+process.on('uncaughtException', (err) => {
+  console.error('❌ Uncaught exception:', err);
+});
 
-async function bootInteractive() {
-  const terminal = new Terminal(document.getElementById('terminal-interactive')!);
-  const sandbox = await Sandbox.create({
-    persist: true,
-    terminal,
-  });
-  sandbox.commands.register('git', gitCommand);
+process.on('unhandledRejection', (err) => {
+  console.error('❌ Unhandled rejection:', err);
+});
+
+// Start Vite
+startVite().catch((err) => {
+  console.error('❌ Fatal error:', err);
+  process.exit(1);
+});
+`);
+
+	vfs.writeFile('/home/user/vite-project/README.md', `# Vite Project in Lifo
+
+⚠️ **IMPORTANT**: Use \`node vite-direct.js\` to run Vite (NOT \`npm run dev\`)
+
+## Quick Start
+
+### Step 1: Test Basic HTTP Server (START HERE!)
+\`\`\`bash
+cd vite-project
+node test-server.js
+\`\`\`
+
+**Leave this running!** Open a NEW tab (+) and run:
+\`\`\`bash
+ports          # Should show port 3000
+curl localhost:3000
+\`\`\`
+
+If this works, HTTP is working correctly! ✅
+
+### Step 2: Run Vite Directly (Recommended)
+\`\`\`bash
+node vite-direct.js
+\`\`\`
+
+This runs Vite without a config file, avoiding esbuild issues in the VFS.
+
+**Alternative methods:**
+\`\`\`bash
+# Using npm with CLI flags (also works)
+npm run dev
+
+# Manual with CLI flags
+npx vite --port 5173 --host localhost
+\`\`\`
+
+### Step 3: Access the Server (in another tab)
+
+\`\`\`bash
+ports          # Should show port 5173
+curl localhost:5173
+\`\`\`
+
+Or browser: http://localhost:3000/api/proxy/5173/
+
+## Why node vite-direct.js?
+
+1. **No config file loading**: Avoids esbuild-wasm directory traversal issues
+2. **Process stays alive**: Runs Vite in the same process, keeping ports registered
+3. **Better control**: Inline configuration, easier to debug
+
+## Troubleshooting
+
+### "No ports registered" after starting server
+- The process exited and cleaned up the port
+- Use \`node vite-direct.js\` instead of \`npm run dev\`
+- Check console for \`[lifo-http] ❌ Server.close()\` messages
+
+### Test if kernel is shared between tabs
+\`\`\`bash
+# Tab 1:
+test-registry set
+
+# Tab 2:
+test-registry get    # Should show "Has port: true"
+\`\`\`
+
+## How It Works
+
+1. **Virtual HTTP Server**: Uses node-compat's virtual HTTP implementation
+2. **Port Registry**: Servers register in kernel.portRegistry[port]
+3. **Process Lifetime**: Server must stay running to keep port registered
+4. **Port Bridge**: Vite dev server plugin proxies to virtual ports
+
+Enjoy your browser-native development server! 🚀
+`);
+
+	await addInteractiveTab();
+
+	document.getElementById('interactive-add-tab')!.addEventListener('click', () => {
+		addInteractiveTab();
+	});
+}
+
+async function addInteractiveTab(): Promise<InteractiveTab> {
+	const kernel = interactiveKernel!;
+	const id = interactiveNextId++;
+
+	const tabBar = document.getElementById('interactive-tab-bar')!;
+	const addBtn = document.getElementById('interactive-add-tab')!;
+	const tabBtn = document.createElement('button');
+	tabBtn.className = 'tab-btn px-3.5 py-[5px] bg-transparent border-none text-tokyo-comment text-xs font-medium cursor-pointer rounded-t-[5px] transition-colors whitespace-nowrap hover:text-tokyo-muted hover:bg-tokyo-hover';
+	tabBtn.textContent = `Terminal ${id}`;
+	tabBtn.addEventListener('click', () => switchInteractiveTab(id));
+	tabBar.insertBefore(tabBtn, addBtn);
+
+	const panels = document.getElementById('interactive-tab-panels')!;
+	const panel = document.createElement('div');
+	panel.className = 'tab-panel';
+	const container = document.createElement('div');
+	container.className = 'w-full h-full';
+	panel.appendChild(container);
+	panels.appendChild(panel);
+
+	const terminal = new Terminal(container);
+	const registry = createDefaultRegistry();
+	bootLifoPackages(kernel.vfs, registry);
+
+	const env = kernel.getDefaultEnv();
+	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry);
+
+	const jobTable = shell.getJobTable();
+	const processRegistry = shell.getProcessRegistry();
+	registry.register('ps', createPsCommand(processRegistry));
+	registry.register('top', createTopCommand(processRegistry));
+	registry.register('kill', createKillCommand(processRegistry));
+
+	registry.register('watch', createWatchCommand(registry));
+	registry.register('help', createHelpCommand(registry));
+
+
+	const httpNpmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
+		const result = await shell.execute(cmd, {
+			cwd: cmdCtx.cwd,
+			env: cmdCtx.env,
+			onStdout: (data: string) => cmdCtx.stdout.write(data),
+			onStderr: (data: string) => cmdCtx.stderr.write(data),
+		});
+		return result.exitCode;
+	};
+	registry.register('npm', createNpmCommand(registry, httpNpmShellExecute));
+	registry.register('npx', createNpxCommand(registry, httpNpmShellExecute));
+	registry.register('lifo', createLifoPkgCommand(registry, httpNpmShellExecute));
+
+
+
+
+	// Register node, curl, and tunnel with kernel
+	registry.register('node', createNodeCommand(kernel));
+	registry.register('curl', createCurlCommand(kernel));
+	registry.register('tunnel', createTunnelCommandV2(kernel));
+
+
+	// Register network commands
+	registry.register('ifconfig', createIfconfigCommand(kernel));
+	registry.register('route', createRouteCommand(kernel));
+	registry.register('netstat', createNetstatCommand(kernel));
+	registry.register('host', createHostCommand(kernel));
+	registry.register('ip', createIPCommand(kernel));
+	registry.register('forward', createForwardCommand(kernel));
+	registry.register('unforward', createUnforwardCommand(kernel));
+	registry.register('ports', createPortsCommand(kernel));
+	registry.register('test-registry', createTestRegistryCommand(kernel));
+	registry.register('newtab', createNewtabCommand());
+
+	// Register systemctl command
+	registry.register('systemctl', createSystemctlCommand(kernel));
+
+
+	registry.register('ps', createPsCommand(processRegistry));
+	registry.register('top', createTopCommand(processRegistry));
+	registry.register('kill', createKillCommand(processRegistry));
+	registry.register('watch', createWatchCommand(registry));
+	registry.register('help', createHelpCommand(registry));
+
+
+
+	const interactiveNpmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
+		const result = await shell.execute(cmd, {
+			cwd: cmdCtx.cwd,
+			env: cmdCtx.env,
+			onStdout: (data: string) => cmdCtx.stdout.write(data),
+			onStderr: (data: string) => cmdCtx.stderr.write(data),
+		});
+		return result.exitCode;
+	};
+	registry.register('npm', createNpmCommand(registry, interactiveNpmShellExecute, interactiveKernel));
+	registry.register('lifo', createLifoPkgCommand(registry, interactiveNpmShellExecute));
+
+	await shell.sourceFile('/etc/profile');
+	await shell.sourceFile(env.HOME + '/.bashrc');
+	await kernel.bootServices();
+	shell.start();
+
+	const tab: InteractiveTab = { id, tabBtn, panel, terminal, shell };
+	interactiveTabs.push(tab);
+	switchInteractiveTab(id);
+
+	return tab;
+}
+
+function switchInteractiveTab(id: number) {
+	if (id === interactiveActiveTabId) return;
+	interactiveActiveTabId = id;
+
+	for (const tab of interactiveTabs) {
+		const isActive = tab.id === id;
+		tab.tabBtn.classList.toggle('active', isActive);
+		tab.panel.classList.toggle('active', isActive);
+		if (isActive) tab.terminal.focus();
+	}
 }
 
 // ─── 2. Headless / AI Agent ───
 
+
 let headlessSandbox: Sandbox | null = null;
 
 async function bootHeadless() {
-  document.getElementById('headless-run')!.addEventListener('click', runHeadlessExample);
+	document.getElementById('headless-run')!.addEventListener('click', runHeadlessExample);
 }
 
 async function runHeadlessExample() {
-  const outputEl = document.getElementById('headless-output')!;
-  const runBtn = document.getElementById('headless-run') as HTMLButtonElement;
+	const outputEl = document.getElementById('headless-output')!;
+	const runBtn = document.getElementById('headless-run') as HTMLButtonElement;
 
-  runBtn.disabled = true;
-  outputEl.textContent = 'Running...\n';
-  headlessSandbox?.destroy();
+	runBtn.disabled = true;
+	outputEl.textContent = 'Running...\n';
+	headlessSandbox?.destroy();
 
-  try {
-    const log = (text: string) => { outputEl.textContent += text; };
+	try {
+		const log = (text: string) => { outputEl.textContent += text; };
 
-    log('> Creating sandbox...\n');
-    headlessSandbox = await Sandbox.create();
-    log('  Sandbox ready. cwd = ' + headlessSandbox.cwd + '\n\n');
+		log('> Creating sandbox...\n');
+		headlessSandbox = await Sandbox.create();
+		log('  Sandbox ready. cwd = ' + headlessSandbox.cwd + '\n\n');
 
-    log('> sandbox.commands.run(\'echo "Hello from Lifo!"\')\n');
-    const r1 = await headlessSandbox.commands.run('echo "Hello from Lifo!"');
-    log('  stdout: ' + JSON.stringify(r1.stdout) + '\n');
-    log('  exitCode: ' + r1.exitCode + '\n\n');
+		log('> sandbox.commands.run(\'echo "Hello from Lifo!"\')\n');
+		const r1 = await headlessSandbox.commands.run('echo "Hello from Lifo!"');
+		log('  stdout: ' + JSON.stringify(r1.stdout) + '\n');
+		log('  exitCode: ' + r1.exitCode + '\n\n');
 
-    log('> sandbox.fs.writeFile(\'/home/user/app.js\', ...)\n');
-    await headlessSandbox.fs.writeFile('/home/user/app.js', 'console.log("hi")');
-    log('  Done.\n\n');
+		log('> sandbox.fs.writeFile(\'/home/user/app.js\', ...)\n');
+		await headlessSandbox.fs.writeFile('/home/user/app.js', 'console.log("hi")');
+		log('  Done.\n\n');
 
-    log('> sandbox.fs.readFile(\'/home/user/app.js\')\n');
-    const content = await headlessSandbox.fs.readFile('/home/user/app.js');
-    log('  content: ' + JSON.stringify(content) + '\n\n');
+		log('> sandbox.fs.readFile(\'/home/user/app.js\')\n');
+		const content = await headlessSandbox.fs.readFile('/home/user/app.js');
+		log('  content: ' + JSON.stringify(content) + '\n\n');
 
-    log('> sandbox.commands.run(\'export GREETING=world\')\n');
-    await headlessSandbox.commands.run('export GREETING=world');
-    log('  Done.\n\n');
+		log('> sandbox.commands.run(\'export GREETING=world\')\n');
+		await headlessSandbox.commands.run('export GREETING=world');
+		log('  Done.\n\n');
 
-    log('> sandbox.commands.run(\'echo $GREETING | cat\')\n');
-    const r2 = await headlessSandbox.commands.run('echo $GREETING | cat');
-    log('  stdout: ' + JSON.stringify(r2.stdout) + '\n\n');
+		log('> sandbox.commands.run(\'echo $GREETING | cat\')\n');
+		const r2 = await headlessSandbox.commands.run('echo $GREETING | cat');
+		log('  stdout: ' + JSON.stringify(r2.stdout) + '\n\n');
 
-    log('> sandbox.fs.readdir(\'/home/user\')\n');
-    const entries = await headlessSandbox.fs.readdir('/home/user');
-    for (const e of entries) {
-      log('  ' + (e.type === 'directory' ? '/' : ' ') + e.name + '\n');
-    }
-    log('\n');
+		log('> sandbox.fs.readdir(\'/home/user\')\n');
+		const entries = await headlessSandbox.fs.readdir('/home/user');
+		for (const e of entries) {
+			log('  ' + (e.type === 'directory' ? '/' : ' ') + e.name + '\n');
+		}
+		log('\n');
 
-    log('> sandbox.destroy()\n');
-    headlessSandbox.destroy();
-    headlessSandbox = null;
-    log('  Done. All resources released.\n');
-  } catch (e) {
-    outputEl.textContent += '\nError: ' + (e instanceof Error ? e.message : String(e)) + '\n';
-  } finally {
-    runBtn.disabled = false;
-  }
+		log('> sandbox.destroy()\n');
+		headlessSandbox.destroy();
+		headlessSandbox = null;
+		log('  Done. All resources released.\n');
+	} catch (e) {
+		outputEl.textContent += '\nError: ' + (e instanceof Error ? e.message : String(e)) + '\n';
+	} finally {
+		runBtn.disabled = false;
+	}
 }
 
 // ─── 3. Multi Terminal (tabbed, shared kernel) ───
@@ -569,11 +1016,11 @@ async function runHeadlessExample() {
 let multiKernel: Kernel | null = null;
 
 interface MultiTab {
-  id: number;
-  tabBtn: HTMLButtonElement;
-  panel: HTMLDivElement;
-  terminal: Terminal;
-  shell: Shell;
+	id: number;
+	tabBtn: HTMLButtonElement;
+	panel: HTMLDivElement;
+	terminal: Terminal;
+	shell: Shell;
 }
 
 let multiTabs: MultiTab[] = [];
@@ -581,85 +1028,87 @@ let multiActiveTabId = -1;
 let multiNextId = 1;
 
 async function bootMulti() {
-  multiKernel = new Kernel();
-  await multiKernel.boot({ persist: false });
+	multiKernel = new Kernel();
+	await multiKernel.boot({ persist: false });
 
-  await addMultiTab();
-  await addMultiTab();
+	await addMultiTab();
+	await addMultiTab();
 
-  document.getElementById('multi-add-tab')!.addEventListener('click', () => {
-    addMultiTab();
-  });
+	document.getElementById('multi-add-tab')!.addEventListener('click', () => {
+		addMultiTab();
+	});
 }
 
 async function addMultiTab(): Promise<MultiTab> {
-  const kernel = multiKernel!;
-  const id = multiNextId++;
+	const kernel = multiKernel!;
+	const id = multiNextId++;
 
-  const tabBar = document.getElementById('multi-tab-bar')!;
-  const addBtn = document.getElementById('multi-add-tab')!;
-  const tabBtn = document.createElement('button');
-  tabBtn.className = 'tab-btn px-3.5 py-[5px] bg-transparent border-none text-tokyo-comment text-xs font-medium cursor-pointer rounded-t-[5px] transition-colors whitespace-nowrap hover:text-tokyo-muted hover:bg-tokyo-hover';
-  tabBtn.textContent = `Terminal ${id}`;
-  tabBtn.addEventListener('click', () => switchMultiTab(id));
-  tabBar.insertBefore(tabBtn, addBtn);
+	const tabBar = document.getElementById('multi-tab-bar')!;
+	const addBtn = document.getElementById('multi-add-tab')!;
+	const tabBtn = document.createElement('button');
+	tabBtn.className = 'tab-btn px-3.5 py-[5px] bg-transparent border-none text-tokyo-comment text-xs font-medium cursor-pointer rounded-t-[5px] transition-colors whitespace-nowrap hover:text-tokyo-muted hover:bg-tokyo-hover';
+	tabBtn.textContent = `Terminal ${id}`;
+	tabBtn.addEventListener('click', () => switchMultiTab(id));
+	tabBar.insertBefore(tabBtn, addBtn);
 
-  const panels = document.getElementById('multi-tab-panels')!;
-  const panel = document.createElement('div');
-  panel.className = 'tab-panel';
-  const container = document.createElement('div');
-  container.className = 'w-full h-full';
-  panel.appendChild(container);
-  panels.appendChild(panel);
+	const panels = document.getElementById('multi-tab-panels')!;
+	const panel = document.createElement('div');
+	panel.className = 'tab-panel';
+	const container = document.createElement('div');
+	container.className = 'w-full h-full';
+	panel.appendChild(container);
+	panels.appendChild(panel);
 
-  const terminal = new Terminal(container);
-  const registry = createDefaultRegistry();
-  registry.register('git', gitCommand);
-  bootLifoPackages(kernel.vfs, registry);
+	const terminal = new Terminal(container);
+	const registry = createDefaultRegistry();
+	registry.register('git', gitCommand);
+	bootLifoPackages(kernel.vfs, registry);
 
-  const env = kernel.getDefaultEnv();
-  const shell = new Shell(terminal, kernel.vfs, registry, env);
+	const env = kernel.getDefaultEnv();
+	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry);
 
-  const jobTable = shell.getJobTable();
-  registry.register('ps', createPsCommand(jobTable));
-  registry.register('top', createTopCommand(jobTable));
-  registry.register('kill', createKillCommand(jobTable));
-  registry.register('watch', createWatchCommand(registry));
-  registry.register('help', createHelpCommand(registry));
+	const jobTable = shell.getJobTable();
+	const processRegistry = shell.getProcessRegistry();
+	registry.register('ps', createPsCommand(processRegistry));
+	registry.register('top', createTopCommand(processRegistry));
+	registry.register('kill', createKillCommand(processRegistry));
 
-  const multiNpmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
-    const result = await shell.execute(cmd, {
-      cwd: cmdCtx.cwd,
-      env: cmdCtx.env,
-      onStdout: (data: string) => cmdCtx.stdout.write(data),
-      onStderr: (data: string) => cmdCtx.stderr.write(data),
-    });
-    return result.exitCode;
-  };
-  registry.register('npm', createNpmCommand(registry, multiNpmShellExecute));
-  registry.register('lifo', createLifoPkgCommand(registry, multiNpmShellExecute));
+	registry.register('watch', createWatchCommand(registry));
+	registry.register('help', createHelpCommand(registry));
 
-  await shell.sourceFile('/etc/profile');
-  await shell.sourceFile(env.HOME + '/.bashrc');
-  shell.start();
+	const multiNpmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
+		const result = await shell.execute(cmd, {
+			cwd: cmdCtx.cwd,
+			env: cmdCtx.env,
+			onStdout: (data: string) => cmdCtx.stdout.write(data),
+			onStderr: (data: string) => cmdCtx.stderr.write(data),
+		});
+		return result.exitCode;
+	};
+	registry.register('npm', createNpmCommand(registry, multiNpmShellExecute));
+	registry.register('lifo', createLifoPkgCommand(registry, multiNpmShellExecute));
 
-  const tab: MultiTab = { id, tabBtn, panel, terminal, shell };
-  multiTabs.push(tab);
-  switchMultiTab(id);
+	await shell.sourceFile('/etc/profile');
+	await shell.sourceFile(env.HOME + '/.bashrc');
+	shell.start();
 
-  return tab;
+	const tab: MultiTab = { id, tabBtn, panel, terminal, shell };
+	multiTabs.push(tab);
+	switchMultiTab(id);
+
+	return tab;
 }
 
 function switchMultiTab(id: number) {
-  if (id === multiActiveTabId) return;
-  multiActiveTabId = id;
+	if (id === multiActiveTabId) return;
+	multiActiveTabId = id;
 
-  for (const tab of multiTabs) {
-    const isActive = tab.id === id;
-    tab.tabBtn.classList.toggle('active', isActive);
-    tab.panel.classList.toggle('active', isActive);
-    if (isActive) tab.terminal.focus();
-  }
+	for (const tab of multiTabs) {
+		const isActive = tab.id === id;
+		tab.tabBtn.classList.toggle('active', isActive);
+		tab.panel.classList.toggle('active', isActive);
+		if (isActive) tab.terminal.focus();
+	}
 }
 
 // ─── 4. HTTP Server (tabbed, shared kernel with virtual ports) ───
@@ -667,321 +1116,439 @@ function switchMultiTab(id: number) {
 let httpKernel: Kernel | null = null;
 
 interface HttpTab {
-  id: string;
-  tabBtn: HTMLButtonElement;
-  panel: HTMLDivElement;
-  terminal: Terminal;
-  shell: Shell;
+	id: string;
+	tabBtn: HTMLButtonElement;
+	panel: HTMLDivElement;
+	terminal: Terminal;
+	shell: Shell;
 }
 
 let httpTabs: HttpTab[] = [];
 let httpActiveTabId = '';
 
 async function bootHttp() {
-  httpKernel = new Kernel();
-  await httpKernel.boot({ persist: false });
+	httpKernel = new Kernel();
+	await httpKernel.boot({ persist: false });
 
-  // Write server.js to VFS
-  httpKernel.vfs.writeFile('/home/user/server.js', `const http = require('http');
+	// Expose kernel to Vite dev server for port bridging
+	if (typeof (globalThis as any).__setLifoKernel === 'function') {
+		(globalThis as any).__setLifoKernel(() => httpKernel);
+	}
+
+	// Initialize service manager for systemctl support
+	const env = httpKernel.getDefaultEnv();
+	const tempRegistry = createDefaultRegistry();
+	// Register tunnel command so it's available for service execution
+	tempRegistry.register('tunnel', createTunnelCommandV2(httpKernel));
+	httpKernel.initServiceManager(tempRegistry, env);
+
+	// Create tunnel systemd service unit
+	httpKernel.vfs.mkdir('/etc/systemd/system', { recursive: true });
+	httpKernel.vfs.writeFile('/etc/systemd/system/tunnel.service', `[Unit]
+Description=WebSocket Tunnel Service
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=tunnel --server ws://localhost:3005 --port 5173
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+`);
+
+	// Enable the tunnel service so it can be started with systemctl
+	if (httpKernel.serviceManager) {
+		httpKernel.serviceManager.enable('tunnel');
+	}
+
+	// Write server.js to VFS
+	httpKernel.vfs.writeFile('/home/user/server.js', `const http = require('http');
 const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Hello from Lifo!\\n');
+  res.end('Hello from Lifo 333!\\n');
 });
 server.listen(3000, () => {
   console.log('Server running on port 3000');
 });
 `);
 
-  await addHttpTab('Server');
-  await addHttpTab('Client');
+
+	httpKernel.vfs.writeFile('/home/user/server2.js', `const http = require('http');
+
+	// Proxy server that forwards all requests to port 3000
+	const server = http.createServer((req, res) => {
+		// Use synchronous internal API to forward to port 3000
+		// This works because both servers are in the same virtual environment
+		const proxyRes = http._syncRequest({
+			hostname: 'localhost',
+			port: 3000,
+			path: req.url,
+			method: req.method,
+			headers: req.headers
+		});
+
+		if (proxyRes) {
+			// Forward the response from port 3000
+			res.writeHead(proxyRes.statusCode, proxyRes.headers);
+			res.end(proxyRes.body);
+			console.log(\`[Proxy] \${req.method} \${req.url} -> 3000 -> \${proxyRes.statusCode}\`);
+		} else {
+			// Port 3000 is not running
+			res.writeHead(502, { 'Content-Type': 'text/plain' });
+			res.end('Bad Gateway: Server on port 3000 is not running.\\n');
+			console.error('[Proxy] Port 3000 is not available');
+		}
+	});
+
+	server.listen(3004, () => {
+		console.log('Proxy server running on port 3004 (forwarding to 3000)');
+		console.log('All requests to 3001 will be tunneled to 3000');
+	});
+	`);
+
+	httpKernel.vfs.writeFile('/home/user/server5173.js', `const http = require('http');
+const server = http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Hello from Lifo5173!\\n');
+});
+server.listen(5173, () => {
+  console.log('Server running on port 5173');
+});
+`);
+
+	await addHttpTab('Server');
+	await addHttpTab('Client');
+	await addHttpTab('Client2');
+	await addHttpTab('Server 5173');
+	await addHttpTab('New Tab');
+
+	// Start the tunnel service automatically
+	if (httpKernel.serviceManager) {
+		try {
+			await httpKernel.serviceManager.start('tunnel');
+			console.log('Tunnel service started automatically');
+		} catch (error) {
+			console.error('Failed to start tunnel service:', error);
+		}
+	}
 }
 
 async function addHttpTab(label: string): Promise<HttpTab> {
-  const kernel = httpKernel!;
-  const id = label.toLowerCase();
+	const kernel = httpKernel!;
+	const id = label.toLowerCase();
 
-  const tabBar = document.getElementById('http-tab-bar')!;
-  const tabBtn = document.createElement('button');
-  tabBtn.className = 'tab-btn px-3.5 py-[5px] bg-transparent border-none text-tokyo-comment text-xs font-medium cursor-pointer rounded-t-[5px] transition-colors whitespace-nowrap hover:text-tokyo-muted hover:bg-tokyo-hover';
-  tabBtn.textContent = label;
-  tabBtn.addEventListener('click', () => switchHttpTab(id));
-  tabBar.appendChild(tabBtn);
+	const tabBar = document.getElementById('http-tab-bar')!;
+	const tabBtn = document.createElement('button');
+	tabBtn.className = 'tab-btn px-3.5 py-[5px] bg-transparent border-none text-tokyo-comment text-xs font-medium cursor-pointer rounded-t-[5px] transition-colors whitespace-nowrap hover:text-tokyo-muted hover:bg-tokyo-hover';
+	tabBtn.textContent = label;
+	tabBtn.addEventListener('click', () => switchHttpTab(id));
+	tabBar.appendChild(tabBtn);
 
-  const panels = document.getElementById('http-tab-panels')!;
-  const panel = document.createElement('div');
-  panel.className = 'tab-panel';
-  const container = document.createElement('div');
-  container.className = 'w-full h-full';
-  panel.appendChild(container);
-  panels.appendChild(panel);
+	const panels = document.getElementById('http-tab-panels')!;
+	const panel = document.createElement('div');
+	panel.className = 'tab-panel';
+	const container = document.createElement('div');
+	container.className = 'w-full h-full';
+	panel.appendChild(container);
+	panels.appendChild(panel);
 
-  const terminal = new Terminal(container);
-  const registry = createDefaultRegistry();
-  registry.register('git', gitCommand);
-  bootLifoPackages(kernel.vfs, registry);
+	const terminal = new Terminal(container);
+	const registry = createDefaultRegistry();
+	registry.register('git', gitCommand);
+	bootLifoPackages(kernel.vfs, registry);
 
-  // Register node and curl with the shared portRegistry
-  registry.register('node', createNodeCommand(kernel.portRegistry));
-  registry.register('curl', createCurlCommand(kernel.portRegistry));
+	// Register node, curl, and tunnel with kernel
+	registry.register('node', createNodeCommand(kernel));
+	registry.register('curl', createCurlCommand(kernel));
+	registry.register('tunnel', createTunnelCommandV2(kernel));
 
-  const env = kernel.getDefaultEnv();
-  const shell = new Shell(terminal, kernel.vfs, registry, env);
 
-  const jobTable = shell.getJobTable();
-  registry.register('ps', createPsCommand(jobTable));
-  registry.register('top', createTopCommand(jobTable));
-  registry.register('kill', createKillCommand(jobTable));
-  registry.register('watch', createWatchCommand(registry));
-  registry.register('help', createHelpCommand(registry));
+	// Register network commands
+	registry.register('ifconfig', createIfconfigCommand(kernel));
+	registry.register('route', createRouteCommand(kernel));
+	registry.register('netstat', createNetstatCommand(kernel));
+	registry.register('host', createHostCommand(kernel));
+	registry.register('ip', createIPCommand(kernel));
+	registry.register('forward', createForwardCommand(kernel));
+	registry.register('unforward', createUnforwardCommand(kernel));
+	registry.register('ports', createPortsCommand(kernel));
+	registry.register('newtab', createNewtabCommand());
 
-  const httpNpmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
-    const result = await shell.execute(cmd, {
-      cwd: cmdCtx.cwd,
-      env: cmdCtx.env,
-      onStdout: (data: string) => cmdCtx.stdout.write(data),
-      onStderr: (data: string) => cmdCtx.stderr.write(data),
-    });
-    return result.exitCode;
-  };
-  registry.register('npm', createNpmCommand(registry, httpNpmShellExecute));
-  registry.register('lifo', createLifoPkgCommand(registry, httpNpmShellExecute));
+	// Register systemctl command
+	registry.register('systemctl', createSystemctlCommand(kernel));
 
-  await shell.sourceFile('/etc/profile');
-  await shell.sourceFile(env.HOME + '/.bashrc');
-  shell.start();
+	const env = kernel.getDefaultEnv();
+	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry);
 
-  const tab: HttpTab = { id, tabBtn, panel, terminal, shell };
-  httpTabs.push(tab);
-  switchHttpTab(id);
+	const jobTable = shell.getJobTable();
+	const processRegistry = shell.getProcessRegistry();
+	registry.register('ps', createPsCommand(processRegistry));
+	registry.register('top', createTopCommand(processRegistry));
+	registry.register('kill', createKillCommand(processRegistry));
+	registry.register('watch', createWatchCommand(registry));
+	registry.register('help', createHelpCommand(registry));
 
-  return tab;
+
+	const httpNpmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
+		const result = await shell.execute(cmd, {
+			cwd: cmdCtx.cwd,
+			env: cmdCtx.env,
+			onStdout: (data: string) => cmdCtx.stdout.write(data),
+			onStderr: (data: string) => cmdCtx.stderr.write(data),
+		});
+		return result.exitCode;
+	};
+	registry.register('npm', createNpmCommand(registry, httpNpmShellExecute));
+	registry.register('npx', createNpxCommand(registry, httpNpmShellExecute));
+	registry.register('lifo', createLifoPkgCommand(registry, httpNpmShellExecute));
+
+	await shell.sourceFile('/etc/profile');
+	await shell.sourceFile(env.HOME + '/.bashrc');
+	await kernel.bootServices();
+	shell.start();
+
+	const tab: HttpTab = { id, tabBtn, panel, terminal, shell };
+	httpTabs.push(tab);
+	switchHttpTab(id);
+
+	return tab;
 }
 
 function switchHttpTab(id: string) {
-  if (id === httpActiveTabId) return;
-  httpActiveTabId = id;
+	if (id === httpActiveTabId) return;
+	httpActiveTabId = id;
 
-  for (const tab of httpTabs) {
-    const isActive = tab.id === id;
-    tab.tabBtn.classList.toggle('active', isActive);
-    tab.panel.classList.toggle('active', isActive);
-    if (isActive) tab.terminal.focus();
-  }
+	for (const tab of httpTabs) {
+		const isActive = tab.id === id;
+		tab.tabBtn.classList.toggle('active', isActive);
+		tab.panel.classList.toggle('active', isActive);
+		if (isActive) tab.terminal.focus();
+	}
 }
+
+// Expose addHttpTab globally for adding tabs dynamically
+(window as any).addHttpTab = (label?: string) => {
+	const tabName = label || `Tab ${httpTabs.length + 1}`;
+	return addHttpTab(tabName);
+};
 
 // ─── 5. File Explorer (split pane: explorer + terminal) ───
 
 let explorerKernel: Kernel | null = null;
 
 function createMonacoProvider(): EditorProvider {
-  return {
-    create(container: HTMLElement, content: string, language: string): EditorInstance {
-      // Lazy-load Monaco
-      let editor: import('monaco-editor').editor.IStandaloneCodeEditor | null = null;
-      let disposed = false;
-      const changeCallbacks: (() => void)[] = [];
+	return {
+		create(container: HTMLElement, content: string, language: string): EditorInstance {
+			// Lazy-load Monaco
+			let editor: import('monaco-editor').editor.IStandaloneCodeEditor | null = null;
+			let disposed = false;
+			const changeCallbacks: (() => void)[] = [];
 
-      import('monaco-editor').then((monaco) => {
-        if (disposed) return;
+			import('monaco-editor').then((monaco) => {
+				if (disposed) return;
 
-        // Configure Monaco workers
-        window.MonacoEnvironment = {
-          getWorker(_workerId: string, label: string) {
-            if (label === 'json') {
-              return new Worker(
-                new URL('monaco-editor/esm/vs/language/json/json.worker.js', import.meta.url),
-                { type: 'module' },
-              );
-            }
-            if (label === 'css' || label === 'scss' || label === 'less') {
-              return new Worker(
-                new URL('monaco-editor/esm/vs/language/css/css.worker.js', import.meta.url),
-                { type: 'module' },
-              );
-            }
-            if (label === 'html' || label === 'handlebars' || label === 'razor') {
-              return new Worker(
-                new URL('monaco-editor/esm/vs/language/html/html.worker.js', import.meta.url),
-                { type: 'module' },
-              );
-            }
-            if (label === 'typescript' || label === 'javascript') {
-              return new Worker(
-                new URL('monaco-editor/esm/vs/language/typescript/ts.worker.js', import.meta.url),
-                { type: 'module' },
-              );
-            }
-            return new Worker(
-              new URL('monaco-editor/esm/vs/editor/editor.worker.js', import.meta.url),
-              { type: 'module' },
-            );
-          },
-        };
+				// Configure Monaco workers
+				window.MonacoEnvironment = {
+					getWorker(_workerId: string, label: string) {
+						if (label === 'json') {
+							return new Worker(
+								new URL('monaco-editor/esm/vs/language/json/json.worker.js', import.meta.url),
+								{ type: 'module' },
+							);
+						}
+						if (label === 'css' || label === 'scss' || label === 'less') {
+							return new Worker(
+								new URL('monaco-editor/esm/vs/language/css/css.worker.js', import.meta.url),
+								{ type: 'module' },
+							);
+						}
+						if (label === 'html' || label === 'handlebars' || label === 'razor') {
+							return new Worker(
+								new URL('monaco-editor/esm/vs/language/html/html.worker.js', import.meta.url),
+								{ type: 'module' },
+							);
+						}
+						if (label === 'typescript' || label === 'javascript') {
+							return new Worker(
+								new URL('monaco-editor/esm/vs/language/typescript/ts.worker.js', import.meta.url),
+								{ type: 'module' },
+							);
+						}
+						return new Worker(
+							new URL('monaco-editor/esm/vs/editor/editor.worker.js', import.meta.url),
+							{ type: 'module' },
+						);
+					},
+				};
 
-        // Define Tokyo Night theme
-        monaco.editor.defineTheme('tokyo-night', {
-          base: 'vs-dark',
-          inherit: true,
-          rules: [
-            { token: 'comment', foreground: '565f89', fontStyle: 'italic' },
-            { token: 'keyword', foreground: 'bb9af7' },
-            { token: 'string', foreground: '9ece6a' },
-            { token: 'number', foreground: 'ff9e64' },
-            { token: 'type', foreground: '2ac3de' },
-            { token: 'identifier', foreground: 'c0caf5' },
-            { token: 'delimiter', foreground: '89ddff' },
-          ],
-          colors: {
-            'editor.background': '#1a1b26',
-            'editor.foreground': '#a9b1d6',
-            'editor.selectionBackground': '#33467c',
-            'editor.lineHighlightBackground': '#1e2030',
-            'editorCursor.foreground': '#c0caf5',
-            'editorLineNumber.foreground': '#3b4261',
-            'editorLineNumber.activeForeground': '#737aa2',
-          },
-        });
+				// Define Tokyo Night theme
+				monaco.editor.defineTheme('tokyo-night', {
+					base: 'vs-dark',
+					inherit: true,
+					rules: [
+						{ token: 'comment', foreground: '565f89', fontStyle: 'italic' },
+						{ token: 'keyword', foreground: 'bb9af7' },
+						{ token: 'string', foreground: '9ece6a' },
+						{ token: 'number', foreground: 'ff9e64' },
+						{ token: 'type', foreground: '2ac3de' },
+						{ token: 'identifier', foreground: 'c0caf5' },
+						{ token: 'delimiter', foreground: '89ddff' },
+					],
+					colors: {
+						'editor.background': '#1a1b26',
+						'editor.foreground': '#a9b1d6',
+						'editor.selectionBackground': '#33467c',
+						'editor.lineHighlightBackground': '#1e2030',
+						'editorCursor.foreground': '#c0caf5',
+						'editorLineNumber.foreground': '#3b4261',
+						'editorLineNumber.activeForeground': '#737aa2',
+					},
+				});
 
-        editor = monaco.editor.create(container, {
-          value: content,
-          language,
-          theme: 'tokyo-night',
-          fontSize: 13,
-          fontFamily: '"Cascadia Code", "Fira Code", "JetBrains Mono", Menlo, monospace',
-          lineHeight: 20,
-          minimap: { enabled: false },
-          scrollBeyondLastLine: false,
-          automaticLayout: true,
-          padding: { top: 8, bottom: 8 },
-          renderLineHighlight: 'line',
-          overviewRulerLanes: 0,
-          hideCursorInOverviewRuler: true,
-          overviewRulerBorder: false,
-          scrollbar: {
-            verticalScrollbarSize: 6,
-            horizontalScrollbarSize: 6,
-          },
-        });
+				editor = monaco.editor.create(container, {
+					value: content,
+					language,
+					theme: 'tokyo-night',
+					fontSize: 13,
+					fontFamily: '"Cascadia Code", "Fira Code", "JetBrains Mono", Menlo, monospace',
+					lineHeight: 20,
+					minimap: { enabled: false },
+					scrollBeyondLastLine: false,
+					automaticLayout: true,
+					padding: { top: 8, bottom: 8 },
+					renderLineHighlight: 'line',
+					overviewRulerLanes: 0,
+					hideCursorInOverviewRuler: true,
+					overviewRulerBorder: false,
+					scrollbar: {
+						verticalScrollbarSize: 6,
+						horizontalScrollbarSize: 6,
+					},
+				});
 
-        editor.onDidChangeModelContent(() => {
-          for (const cb of changeCallbacks) cb();
-        });
-      });
+				editor.onDidChangeModelContent(() => {
+					for (const cb of changeCallbacks) cb();
+				});
+			});
 
-      return {
-        getValue(): string {
-          return editor?.getValue() ?? content;
-        },
-        onDidChangeContent(callback: () => void): void {
-          changeCallbacks.push(callback);
-        },
-        dispose(): void {
-          disposed = true;
-          editor?.dispose();
-          editor = null;
-        },
-      };
-    },
-  };
+			return {
+				getValue(): string {
+					return editor?.getValue() ?? content;
+				},
+				onDidChangeContent(callback: () => void): void {
+					changeCallbacks.push(callback);
+				},
+				dispose(): void {
+					disposed = true;
+					editor?.dispose();
+					editor = null;
+				},
+			};
+		},
+	};
 }
 
 async function bootExplorer() {
-  explorerKernel = new Kernel();
-  await explorerKernel.boot({ persist: false });
+	explorerKernel = new Kernel();
+	await explorerKernel.boot({ persist: false });
 
-  // Create some sample files so the explorer isn't empty
-  const vfs = explorerKernel.vfs;
-  vfs.mkdir('/home/user/projects', { recursive: true });
-  vfs.mkdir('/home/user/projects/my-app/src', { recursive: true });
-  vfs.writeFile('/home/user/projects/my-app/package.json', JSON.stringify({ name: 'my-app', version: '1.0.0' }, null, 2));
-  vfs.writeFile('/home/user/projects/my-app/src/index.ts', 'console.log("Hello from my-app!");\n');
-  vfs.writeFile('/home/user/projects/my-app/src/utils.ts', 'export function add(a: number, b: number) {\n  return a + b;\n}\n');
-  vfs.writeFile('/home/user/projects/my-app/README.md', '# My App\n\nA sample project.\n');
-  vfs.mkdir('/home/user/notes');
-  vfs.writeFile('/home/user/notes/todo.txt', '- Try the file explorer\n- Edit some files\n- Create new folders\n');
-  vfs.writeFile('/home/user/hello.sh', '#!/bin/sh\necho "Hello, world!"\n');
+	// Create some sample files so the explorer isn't empty
+	const vfs = explorerKernel.vfs;
+	vfs.mkdir('/home/user/projects', { recursive: true });
+	vfs.mkdir('/home/user/projects/my-app/src', { recursive: true });
+	vfs.writeFile('/home/user/projects/my-app/package.json', JSON.stringify({ name: 'my-app', version: '1.0.0' }, null, 2));
+	vfs.writeFile('/home/user/projects/my-app/src/index.ts', 'console.log("Hello from my-app!");\n');
+	vfs.writeFile('/home/user/projects/my-app/src/utils.ts', 'export function add(a: number, b: number) {\n  return a + b;\n}\n');
+	vfs.writeFile('/home/user/projects/my-app/README.md', '# My App\n\nA sample project.\n');
+	vfs.mkdir('/home/user/notes');
+	vfs.writeFile('/home/user/notes/todo.txt', '- Try the file explorer\n- Edit some files\n- Create new folders\n');
+	vfs.writeFile('/home/user/hello.sh', '#!/bin/sh\necho "Hello, world!"\n');
 
-  // Mount file explorer with Monaco editor
-  const explorerContainer = document.getElementById('explorer-panel')!;
-  new FileExplorer(explorerContainer, vfs, {
-    cwd: '/home/user',
-    editorProvider: createMonacoProvider(),
-  });
+	// Mount file explorer with Monaco editor
+	const explorerContainer = document.getElementById('explorer-panel')!;
+	new FileExplorer(explorerContainer, vfs, {
+		cwd: '/home/user',
+		editorProvider: createMonacoProvider(),
+	});
 
-  // Mount terminal sharing the same kernel
-  const termContainer = document.getElementById('explorer-terminal')!;
-  const terminal = new Terminal(termContainer);
-  const registry = createDefaultRegistry();
-  registry.register('git', gitCommand);
-  bootLifoPackages(vfs, registry);
+	// Mount terminal sharing the same kernel
+	const termContainer = document.getElementById('explorer-terminal')!;
+	const terminal = new Terminal(termContainer);
+	const registry = createDefaultRegistry();
+	registry.register('git', gitCommand);
+	bootLifoPackages(vfs, registry);
 
-  const env = explorerKernel.getDefaultEnv();
-  const shell = new Shell(terminal, vfs, registry, env);
+	const env = explorerKernel.getDefaultEnv();
+	const shell = new Shell(terminal, vfs, registry, env, explorerKernel.processRegistry);
 
-  const jobTable = shell.getJobTable();
-  registry.register('ps', createPsCommand(jobTable));
-  registry.register('top', createTopCommand(jobTable));
-  registry.register('kill', createKillCommand(jobTable));
-  registry.register('watch', createWatchCommand(registry));
-  registry.register('help', createHelpCommand(registry));
+	const jobTable = shell.getJobTable();
+	const processRegistry = shell.getProcessRegistry();
+	registry.register('ps', createPsCommand(processRegistry));
+	registry.register('top', createTopCommand(processRegistry));
+	registry.register('kill', createKillCommand(processRegistry));
+	registry.register('watch', createWatchCommand(registry));
+	registry.register('help', createHelpCommand(registry));
 
-  const explorerNpmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
-    const result = await shell.execute(cmd, {
-      cwd: cmdCtx.cwd,
-      env: cmdCtx.env,
-      onStdout: (data: string) => cmdCtx.stdout.write(data),
-      onStderr: (data: string) => cmdCtx.stderr.write(data),
-    });
-    return result.exitCode;
-  };
-  registry.register('npm', createNpmCommand(registry, explorerNpmShellExecute));
-  registry.register('lifo', createLifoPkgCommand(registry, explorerNpmShellExecute));
+	const explorerNpmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
+		const result = await shell.execute(cmd, {
+			cwd: cmdCtx.cwd,
+			env: cmdCtx.env,
+			onStdout: (data: string) => cmdCtx.stdout.write(data),
+			onStderr: (data: string) => cmdCtx.stderr.write(data),
+		});
+		return result.exitCode;
+	};
+	registry.register('npm', createNpmCommand(registry, explorerNpmShellExecute));
+	registry.register('lifo', createLifoPkgCommand(registry, explorerNpmShellExecute));
 
-  await shell.sourceFile('/etc/profile');
-  await shell.sourceFile(env.HOME + '/.bashrc');
-  shell.start();
+	await shell.sourceFile('/etc/profile');
+	await shell.sourceFile(env.HOME + '/.bashrc');
+	shell.start();
 }
 
 // ─── 6. Git (via lifo-pkg-git) ───
 
 async function bootGit() {
-  const kernel = new Kernel();
-  await kernel.boot({ persist: false });
+	const kernel = new Kernel();
+	await kernel.boot({ persist: false });
 
-  const container = document.getElementById('terminal-git')!;
-  const terminal = new Terminal(container);
+	const container = document.getElementById('terminal-git')!;
+	const terminal = new Terminal(container);
 
-  const registry = createDefaultRegistry();
-  registry.register('git', gitCommand);      // register from lifo-pkg-git
-  registry.register('ffmpeg', ffmpegCommand); // register from lifo-pkg-ffmpeg
-  bootLifoPackages(kernel.vfs, registry);
+	const registry = createDefaultRegistry();
+	registry.register('git', gitCommand);      // register from lifo-pkg-git
+	registry.register('ffmpeg', ffmpegCommand); // register from lifo-pkg-ffmpeg
+	bootLifoPackages(kernel.vfs, registry);
 
-  const env = kernel.getDefaultEnv();
-  const shell = new Shell(terminal, kernel.vfs, registry, env);
+	const env = kernel.getDefaultEnv();
+	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry);
 
-  const jobTable = shell.getJobTable();
-  registry.register('ps', createPsCommand(jobTable));
-  registry.register('top', createTopCommand(jobTable));
-  registry.register('kill', createKillCommand(jobTable));
-  registry.register('watch', createWatchCommand(registry));
-  registry.register('help', createHelpCommand(registry));
+	const jobTable = shell.getJobTable();
+	const processRegistry = shell.getProcessRegistry();
+	registry.register('ps', createPsCommand(processRegistry));
+	registry.register('top', createTopCommand(processRegistry));
+	registry.register('kill', createKillCommand(processRegistry));
+	registry.register('watch', createWatchCommand(registry));
+	registry.register('help', createHelpCommand(registry));
 
-  // Register npm + lifo commands
-  const npmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
-    const result = await shell.execute(cmd, {
-      cwd: cmdCtx.cwd,
-      env: cmdCtx.env,
-      onStdout: (data: string) => cmdCtx.stdout.write(data),
-      onStderr: (data: string) => cmdCtx.stderr.write(data),
-    });
-    return result.exitCode;
-  };
-  registry.register('npm', createNpmCommand(registry, npmShellExecute));
-  registry.register('lifo', createLifoPkgCommand(registry, npmShellExecute));
+	// Register npm + lifo commands
+	const npmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
+		const result = await shell.execute(cmd, {
+			cwd: cmdCtx.cwd,
+			env: cmdCtx.env,
+			onStdout: (data: string) => cmdCtx.stdout.write(data),
+			onStderr: (data: string) => cmdCtx.stderr.write(data),
+		});
+		return result.exitCode;
+	};
+	registry.register('npm', createNpmCommand(registry, npmShellExecute));
+	registry.register('lifo', createLifoPkgCommand(registry, npmShellExecute));
 
-  await shell.sourceFile('/etc/profile');
-  await shell.sourceFile(env.HOME + '/.bashrc');
-  shell.start();
+	await shell.sourceFile('/etc/profile');
+	await shell.sourceFile(env.HOME + '/.bashrc');
+	shell.start();
 }
 
 // ─── 7. FFmpeg ───
@@ -989,81 +1556,82 @@ async function bootGit() {
 let ffmpegKernel: Kernel | null = null;
 
 async function bootFfmpeg() {
-  ffmpegKernel = new Kernel();
-  await ffmpegKernel.boot({ persist: false });
+	ffmpegKernel = new Kernel();
+	await ffmpegKernel.boot({ persist: false });
 
-  const vfs = ffmpegKernel.vfs;
+	const vfs = ffmpegKernel.vfs;
 
-  // Create media directory and load sample video
-  vfs.mkdir('/home/user/media', { recursive: true });
+	// Create media directory and load sample video
+	vfs.mkdir('/home/user/media', { recursive: true });
 
-  try {
-    const resp = await fetch('/sample.mp4');
-    if (resp.ok) {
-      const buf = await resp.arrayBuffer();
-      vfs.writeFile('/home/user/media/sample.mp4', new Uint8Array(buf));
-    }
-  } catch {
-    // Sample not available, user can upload via explorer
-  }
+	try {
+		const resp = await fetch('/sample.mp4');
+		if (resp.ok) {
+			const buf = await resp.arrayBuffer();
+			vfs.writeFile('/home/user/media/sample.mp4', new Uint8Array(buf));
+		}
+	} catch {
+		// Sample not available, user can upload via explorer
+	}
 
-  // Mount file explorer
-  const explorerContainer = document.getElementById('ffmpeg-explorer-panel')!;
-  new FileExplorer(explorerContainer, vfs, {
-    cwd: '/home/user/media',
-    editorProvider: createMonacoProvider(),
-  });
+	// Mount file explorer
+	const explorerContainer = document.getElementById('ffmpeg-explorer-panel')!;
+	new FileExplorer(explorerContainer, vfs, {
+		cwd: '/home/user/media',
+		editorProvider: createMonacoProvider(),
+	});
 
-  // Mount terminal sharing same kernel
-  const termContainer = document.getElementById('ffmpeg-terminal')!;
-  const terminal = new Terminal(termContainer);
-  const registry = createDefaultRegistry();
-  registry.register('git', gitCommand);
-  registry.register('ffmpeg', ffmpegCommand);
-  bootLifoPackages(vfs, registry);
+	// Mount terminal sharing same kernel
+	const termContainer = document.getElementById('ffmpeg-terminal')!;
+	const terminal = new Terminal(termContainer);
+	const registry = createDefaultRegistry();
+	registry.register('git', gitCommand);
+	registry.register('ffmpeg', ffmpegCommand);
+	bootLifoPackages(vfs, registry);
 
-  const env = ffmpegKernel.getDefaultEnv();
-  const shell = new Shell(terminal, vfs, registry, env);
+	const env = ffmpegKernel.getDefaultEnv();
+	const shell = new Shell(terminal, vfs, registry, env, ffmpegKernel.processRegistry);
 
-  const jobTable = shell.getJobTable();
-  registry.register('ps', createPsCommand(jobTable));
-  registry.register('top', createTopCommand(jobTable));
-  registry.register('kill', createKillCommand(jobTable));
-  registry.register('watch', createWatchCommand(registry));
-  registry.register('help', createHelpCommand(registry));
+	const jobTable = shell.getJobTable();
+	const processRegistry = shell.getProcessRegistry();
+	registry.register('ps', createPsCommand(processRegistry));
+	registry.register('top', createTopCommand(processRegistry));
+	registry.register('kill', createKillCommand(processRegistry));
+	registry.register('watch', createWatchCommand(registry));
+	registry.register('help', createHelpCommand(registry));
 
-  const ffmpegNpmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
-    const result = await shell.execute(cmd, {
-      cwd: cmdCtx.cwd,
-      env: cmdCtx.env,
-      onStdout: (data: string) => cmdCtx.stdout.write(data),
-      onStderr: (data: string) => cmdCtx.stderr.write(data),
-    });
-    return result.exitCode;
-  };
-  registry.register('npm', createNpmCommand(registry, ffmpegNpmShellExecute));
-  registry.register('lifo', createLifoPkgCommand(registry, ffmpegNpmShellExecute));
+	const ffmpegNpmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
+		const result = await shell.execute(cmd, {
+			cwd: cmdCtx.cwd,
+			env: cmdCtx.env,
+			onStdout: (data: string) => cmdCtx.stdout.write(data),
+			onStderr: (data: string) => cmdCtx.stderr.write(data),
+		});
+		return result.exitCode;
+	};
+	registry.register('npm', createNpmCommand(registry, ffmpegNpmShellExecute));
+	registry.register('lifo', createLifoPkgCommand(registry, ffmpegNpmShellExecute));
 
-  await shell.sourceFile('/etc/profile');
-  await shell.sourceFile(env.HOME + '/.bashrc');
-  shell.start();
+	await shell.sourceFile('/etc/profile');
+	await shell.sourceFile(env.HOME + '/.bashrc');
+	shell.start();
 }
 
 // ─── 8. npm ───
 
 async function bootNpm() {
-  const terminal = new Terminal(document.getElementById('terminal-npm')!);
-  await Sandbox.create({
-    terminal,
-  });
+	const terminal = new Terminal(document.getElementById('terminal-npm')!);
+	await Sandbox.create({
+		terminal,
+	});
 }
 
 // ─── 8. CLI (Node.js) ───
 
 async function bootCli() {
-  const outputEl = document.getElementById('cli-output')!;
+	const outputEl = document.getElementById('cli-output')!;
 
-  outputEl.innerHTML = `\
+	outputEl.innerHTML = `\
 <span style="color:#7aa2f7;font-weight:bold">Lifo CLI</span> <span style="color:#565f89">-- run a Linux-like shell in your terminal</span>
 
 <span style="color:#bb9af7">Install:</span>
@@ -1118,8 +1686,8 @@ async function bootCli() {
 // ─── 9. Lifo Package Manager (docs) ───
 
 async function bootLifoPkg() {
-  const el = document.getElementById('lifo-pkg-output')!;
-  el.innerHTML = `\
+	const el = document.getElementById('lifo-pkg-output')!;
+	el.innerHTML = `\
 <span style="color:#7aa2f7;font-weight:bold">lifo</span> <span style="color:#565f89">-- Lifo Package Manager</span>
 
 <span style="color:#bb9af7">Overview:</span>
@@ -1170,8 +1738,8 @@ async function bootLifoPkg() {
 // ─── 10. Build Lifo Packages (docs) ───
 
 async function bootBuildPkg() {
-  const el = document.getElementById('build-pkg-output')!;
-  el.innerHTML = `\
+	const el = document.getElementById('build-pkg-output')!;
+	el.innerHTML = `\
 <span style="color:#7aa2f7;font-weight:bold">Building Lifo Packages</span>
 
 <span style="color:#bb9af7">Create a package (on your host machine):</span>
