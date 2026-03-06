@@ -426,8 +426,8 @@ const THREADABLE_COMMANDS = new Set([
 	'grep', 'find', 'sort', 'wc', 'uniq',
 	'sed', 'awk', 'gzip', 'gunzip', 'tar',
 	'diff', 'sha256sum', 'md5',
-	// 'npm',
-	// 'npx',
+	'npm',
+	'npx',
 ]);
 
 /**

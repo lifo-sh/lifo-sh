@@ -1,0 +1,11 @@
+node_modules/
+dist/
+packages/*/dist/
+packages/*/node_modules/
+apps/*/dist/
+apps/*/.next/
+.turbo/
+*.log
+.DS_Store
+bun.lock
+pnpm-lock.yaml
