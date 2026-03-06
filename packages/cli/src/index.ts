@@ -570,7 +570,7 @@ async function main() {
 			console.error('Example: lifo tunnel 5173');
 			process.exit(1);
 		}
-		await handleTunnel(tunnelPort);
+		await handleTunnel(tunnelPort, token);
 		return;
 	}
 

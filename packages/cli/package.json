@@ -1,6 +1,6 @@
 {
   "name": "lifo-sh",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Run Lifo (a Linux-like OS) in your terminal -- npx lifo-sh",
   "license": "MIT",
   "repository": {
@@ -19,8 +19,7 @@
   ],
   "type": "module",
   "bin": {
-    "lifo-sh": "./dist/index.js",
-    "lifo": "./dist/index.js"
+    "lifo-sh": "./dist/index.js"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

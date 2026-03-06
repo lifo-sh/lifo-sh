@@ -37,8 +37,15 @@ function startTunnel(
 	write: (s: string) => void,
 	writeErr: (s: string) => void,
 	signal?: AbortSignal,
+	token?: string,
 ): Promise<number> {
-	const ws = new WS(TUNNEL_SERVER);
+	const wsHeaders: Record<string, string> = {
+		'x-local-port': String(localPort),
+	};
+	if (token) {
+		wsHeaders.authorization = `Bearer ${token}`;
+	}
+	const ws = new WS(TUNNEL_SERVER, { headers: wsHeaders });
 
 	function forwardRequest(msg: TunnelMessage): void {
 		const { id, method, path: reqPath, headers, body } = msg;
@@ -104,8 +111,16 @@ function startTunnel(
 		proxyReq.end();
 	}
 
+	let pingTimer: NodeJS.Timeout | null = null;
 	return new Promise<number>((resolve) => {
+
 		ws.on('open', () => {
+			// Send a ping every 25s to keep the connection alive
+			pingTimer = setInterval(() => {
+				if (ws.readyState === WebSocket.OPEN) {
+					ws.ping();
+				}
+			}, 25000);
 			write('Connected to tunnel server\n');
 		});
 
@@ -125,6 +140,7 @@ function startTunnel(
 		});
 
 		ws.on('close', () => {
+			clearInterval(pingTimer);
 			write('Disconnected from tunnel server\n');
 			resolve(0);
 		});
@@ -145,7 +161,7 @@ function startTunnel(
 
 // ─── Host CLI: `lifo tunnel 5173` ────────────────────────────────────────────
 
-export async function handleTunnel(port: number): Promise<void> {
+export async function handleTunnel(port: number, token?: string): Promise<void> {
 	let WS: typeof import('ws').default;
 	try {
 		WS = await loadWebSocket();
@@ -164,6 +180,7 @@ export async function handleTunnel(port: number): Promise<void> {
 		(s) => process.stdout.write(s),
 		(s) => process.stderr.write(s),
 		ac.signal,
+		token,
 	);
 	process.exit(code);
 }
@@ -189,12 +206,15 @@ export function createHostTunnelCommand(): Command {
 			return 1;
 		}
 
+		const token = ctx.env?.LIFO_AUTH_TOKEN || undefined;
+
 		return startTunnel(
 			port,
 			WS,
 			(s) => ctx.stdout.write(s),
 			(s) => ctx.stderr.write(s),
 			ctx.signal,
+			token,
 		);
 	};
 }
