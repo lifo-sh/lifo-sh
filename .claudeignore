@@ -9,3 +9,4 @@ apps/*/.next/
 .DS_Store
 bun.lock
 pnpm-lock.yaml
+my-app/

@@ -539,26 +539,26 @@ async function bootInteractive() {
 	tempRegistry.register('tunnel', createTunnelCommandV2(interactiveKernel));
 	interactiveKernel.initServiceManager(tempRegistry, env);
 
-	// Create tunnel systemd service unit
-	interactiveKernel.vfs.mkdir('/etc/systemd/system', { recursive: true });
-	interactiveKernel.vfs.writeFile('/etc/systemd/system/tunnel.service', `[Unit]
-Description=WebSocket Tunnel Service
-After=network.target
+	// 	// Create tunnel systemd service unit
+	// 	interactiveKernel.vfs.mkdir('/etc/systemd/system', { recursive: true });
+	// 	interactiveKernel.vfs.writeFile('/etc/systemd/system/tunnel.service', `[Unit]
+	// Description=WebSocket Tunnel Service
+	// After=network.target
 
-[Service]
-Type=simple
-ExecStart=tunnel --server ws://localhost:3005 --port 5173
-Restart=always
-RestartSec=5
+	// [Service]
+	// Type=simple
+	// ExecStart=tunnel --server ws://localhost:3005 --port 5173
+	// Restart=always
+	// RestartSec=5
 
-[Install]
-WantedBy=multi-user.target
-`);
+	// [Install]
+	// WantedBy=multi-user.target
+	// `);
 
-	// Enable the tunnel service
-	if (interactiveKernel.serviceManager) {
-		interactiveKernel.serviceManager.enable('tunnel');
-	}
+	// 	// Enable the tunnel service
+	// 	if (interactiveKernel.serviceManager) {
+	// 		interactiveKernel.serviceManager.enable('tunnel');
+	// 	}
 
 	// Create sample Vite app for testing
 	const vfs = interactiveKernel.vfs;
@@ -1142,25 +1142,25 @@ async function bootHttp() {
 	httpKernel.initServiceManager(tempRegistry, env);
 
 	// Create tunnel systemd service unit
-	httpKernel.vfs.mkdir('/etc/systemd/system', { recursive: true });
-	httpKernel.vfs.writeFile('/etc/systemd/system/tunnel.service', `[Unit]
-Description=WebSocket Tunnel Service
-After=network.target
+	// 	httpKernel.vfs.mkdir('/etc/systemd/system', { recursive: true });
+	// 	httpKernel.vfs.writeFile('/etc/systemd/system/tunnel.service', `[Unit]
+	// Description=WebSocket Tunnel Service
+	// After=network.target
 
-[Service]
-Type=simple
-ExecStart=tunnel --server ws://localhost:3005 --port 5173
-Restart=always
-RestartSec=5
+	// [Service]
+	// Type=simple
+	// ExecStart=tunnel --server ws://localhost:3005 --port 5173
+	// Restart=always
+	// RestartSec=5
 
-[Install]
-WantedBy=multi-user.target
-`);
+	// [Install]
+	// WantedBy=multi-user.target
+	// `);
 
-	// Enable the tunnel service so it can be started with systemctl
-	if (httpKernel.serviceManager) {
-		httpKernel.serviceManager.enable('tunnel');
-	}
+	// 	// Enable the tunnel service so it can be started with systemctl
+	// 	if (httpKernel.serviceManager) {
+	// 		httpKernel.serviceManager.enable('tunnel');
+	// 	}
 
 	// Write server.js to VFS
 	httpKernel.vfs.writeFile('/home/user/server.js', `const http = require('http');
