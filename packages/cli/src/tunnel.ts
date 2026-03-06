@@ -53,13 +53,19 @@ function startTunnel(
 	const localWsConnections = new Map<string, InstanceType<typeof WS>>();
 
 	function handleWsOpen(msg: TunnelMessage): void {
-		const { wsId, path: wsPath } = msg;
+		const { wsId, path: wsPath, headers } = msg;
 		if (!wsId || !wsPath) return;
 
 		const localUrl = `ws://localhost:${localPort}${wsPath}`;
 		write(`WS proxy: opening ${wsPath} (${wsId.slice(0, 8)})\n`);
 
-		const localWs = new WS(localUrl);
+		// Forward subprotocol (e.g. "vite-hmr") so the local server accepts the connection
+		const protocols: string[] = [];
+		if (headers?.['sec-websocket-protocol']) {
+			protocols.push(...headers['sec-websocket-protocol'].split(',').map((s: string) => s.trim()));
+		}
+
+		const localWs = new WS(localUrl, protocols);
 		localWsConnections.set(wsId, localWs);
 
 		localWs.on('open', () => {
