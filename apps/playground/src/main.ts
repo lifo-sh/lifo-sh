@@ -847,8 +847,11 @@ async function addInteractiveTab(): Promise<InteractiveTab> {
 	const registry = createDefaultRegistry();
 	bootLifoPackages(kernel.vfs, registry);
 
+	// Initialize ProcessExecutor with the registry (enables worker threading)
+	kernel.setRegistry(registry);
+
 	const env = kernel.getDefaultEnv();
-	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry);
+	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry, kernel.processExecutor);
 
 	const jobTable = shell.getJobTable();
 	const processRegistry = shell.getProcessRegistry();
@@ -1057,8 +1060,11 @@ async function addMultiTab(): Promise<MultiTab> {
 	const registry = createDefaultRegistry();
 	bootLifoPackages(kernel.vfs, registry);
 
+	// Initialize ProcessExecutor with the registry (enables worker threading)
+	kernel.setRegistry(registry);
+
 	const env = kernel.getDefaultEnv();
-	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry);
+	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry, kernel.processExecutor);
 
 	const jobTable = shell.getJobTable();
 	const processRegistry = shell.getProcessRegistry();
@@ -1271,8 +1277,11 @@ async function addHttpTab(label: string): Promise<HttpTab> {
 	// Register systemctl command
 	registry.register('systemctl', createSystemctlCommand(kernel));
 
+	// Initialize ProcessExecutor with the registry (enables worker threading)
+	kernel.setRegistry(registry);
+
 	const env = kernel.getDefaultEnv();
-	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry);
+	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry, kernel.processExecutor);
 
 	const jobTable = shell.getJobTable();
 	const processRegistry = shell.getProcessRegistry();
@@ -1471,8 +1480,11 @@ async function bootExplorer() {
 	const registry = createDefaultRegistry();
 	bootLifoPackages(vfs, registry);
 
+	// Initialize ProcessExecutor with the registry (enables worker threading)
+	explorerKernel.setRegistry(registry);
+
 	const env = explorerKernel.getDefaultEnv();
-	const shell = new Shell(terminal, vfs, registry, env, explorerKernel.processRegistry);
+	const shell = new Shell(terminal, vfs, registry, env, explorerKernel.processRegistry, explorerKernel.processExecutor);
 
 	const jobTable = shell.getJobTable();
 	const processRegistry = shell.getProcessRegistry();
@@ -1513,8 +1525,11 @@ async function bootGit() {
 	registry.register('ffmpeg', ffmpegCommand); // register from lifo-pkg-ffmpeg
 	bootLifoPackages(kernel.vfs, registry);
 
+	// Initialize ProcessExecutor with the registry (enables worker threading)
+	kernel.setRegistry(registry);
+
 	const env = kernel.getDefaultEnv();
-	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry);
+	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry, kernel.processExecutor);
 
 	const jobTable = shell.getJobTable();
 	const processRegistry = shell.getProcessRegistry();
@@ -1579,8 +1594,11 @@ async function bootFfmpeg() {
 	registry.register('ffmpeg', ffmpegCommand);
 	bootLifoPackages(vfs, registry);
 
+	// Initialize ProcessExecutor with the registry (enables worker threading)
+	ffmpegKernel.setRegistry(registry);
+
 	const env = ffmpegKernel.getDefaultEnv();
-	const shell = new Shell(terminal, vfs, registry, env, ffmpegKernel.processRegistry);
+	const shell = new Shell(terminal, vfs, registry, env, ffmpegKernel.processRegistry, ffmpegKernel.processExecutor);
 
 	const jobTable = shell.getJobTable();
 	const processRegistry = shell.getProcessRegistry();

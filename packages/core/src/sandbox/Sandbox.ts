@@ -78,6 +78,9 @@ export class Sandbox {
 		const registry = createDefaultRegistry();
 		bootLifoPackages(kernel.vfs, registry);
 
+		// 2a. Initialize kernel's process executor with registry
+		kernel.setRegistry(registry);
+
 		// 3. Pre-populate files if provided
 		if (options?.files) {
 			for (const [path, content] of Object.entries(options.files)) {
@@ -118,7 +121,19 @@ export class Sandbox {
 		}
 
 		// 6. Create shell
-		const shell = new Shell(shellTerminal, kernel.vfs, registry, env, kernel.processRegistry);
+		const shell = new Shell(shellTerminal, kernel.vfs, registry, env, kernel.processRegistry, kernel.processExecutor);
+
+		// 6a. Wire shell execution to kernel so worker threads (npm/npx) can run
+		// commands like `node` on the main thread via the shellExecute proxy.
+		kernel.setShellExecute(async (cmd: string, ctx: any) => {
+			const result = await shell.execute(cmd, {
+				cwd: ctx.cwd,
+				env: ctx.env,
+				onStdout: (data: string) => ctx.stdout?.write(data),
+				onStderr: (data: string) => ctx.stderr?.write(data),
+			});
+			return result.exitCode;
+		});
 
 		// 7. Register factory commands
 		const processRegistry = shell.getProcessRegistry();

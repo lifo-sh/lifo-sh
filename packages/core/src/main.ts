@@ -24,6 +24,9 @@ async function boot(): Promise<void> {
 	// 3. Command registry
 	const registry = createDefaultRegistry();
 
+	// 3a. Initialize kernel's process executor with registry
+	kernel.setRegistry(registry);
+
 	// 3b. Boot lifo packages (dev links + installed lifo-pkg-* upgrades)
 	bootLifoPackages(kernel.vfs, registry);
 
@@ -34,7 +37,7 @@ async function boot(): Promise<void> {
 
 	// 5. Shell
 	const env = kernel.getDefaultEnv();
-	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry);
+	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry, kernel.processExecutor);
 
 	// 5b. Register factory commands that need shell/registry access
 	const jobTable = shell.getJobTable();

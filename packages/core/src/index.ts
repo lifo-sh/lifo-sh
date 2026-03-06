@@ -106,6 +106,14 @@ export { JobTable } from './shell/jobs.js';
 export { ProcessRegistry } from './shell/ProcessRegistry.js';
 export type { Process, SpawnOptions } from './shell/ProcessRegistry.js';
 
+// Runtime
+export {
+  createProcessExecutor,
+  MainThreadExecutor,
+  WorkerExecutor,
+} from './runtime/ProcessExecutor.js';
+export type { ProcessExecutor } from './runtime/ProcessExecutor.js';
+
 // Terminal
 export type { ITerminal } from './terminal/ITerminal.js';
 export { HeadlessTerminal } from './sandbox/HeadlessTerminal.js';

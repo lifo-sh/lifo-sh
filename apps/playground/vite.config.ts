@@ -14,4 +14,7 @@ export default defineConfig(({ command }) => ({
       '@lifo-sh/core': path.resolve(__dirname, '../../packages/core/src/index.ts'),
     },
   },
+  worker: {
+    format: 'es',
+  },
 }));

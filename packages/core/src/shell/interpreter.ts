@@ -28,6 +28,7 @@ import { ProcessRegistry } from './ProcessRegistry.js';
 import { resolve } from '../utils/path.js';
 import { globMatch } from '../utils/glob.js';
 import type { TerminalStdin } from './terminal-stdin.js';
+import type { ProcessExecutor } from '../runtime/ProcessExecutor.js';
 
 // ─── Signal classes for control flow ───
 
@@ -59,6 +60,7 @@ export interface InterpreterConfig {
   builtins: Map<string, BuiltinFn>;
   jobTable: JobTable;
   processRegistry: ProcessRegistry;
+  processExecutor?: ProcessExecutor;
   writeToTerminal: (text: string) => void;
   aliases?: Map<string, string>;
   /** Override default stdout for programmatic capture */
@@ -596,8 +598,17 @@ export class Interpreter {
                 abortController,
               });
 
+              // Execute the command using ProcessExecutor (if available) or directly
+              const executeCommand = async () => {
+                if (this.config.processExecutor) {
+                  return this.config.processExecutor.executeCommand(name, ctx, abortController);
+                } else {
+                  return command(ctx);
+                }
+              };
+
               // Now execute the command and wire it to the registered promise
-              commandPromise = command(ctx).then(
+              commandPromise = executeCommand().then(
                 (code) => {
                   resolvePromise!(code);
                   return code;
@@ -609,8 +620,12 @@ export class Interpreter {
                 }
               );
             } else {
-              // Background context - just execute
-              commandPromise = command(ctx);
+              // Background context - execute using ProcessExecutor or directly
+              if (this.config.processExecutor) {
+                commandPromise = this.config.processExecutor.executeCommand(name, ctx, abortController);
+              } else {
+                commandPromise = command(ctx);
+              }
             }
 
             try {

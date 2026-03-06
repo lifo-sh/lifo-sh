@@ -16,9 +16,10 @@ export interface RimrafOptions {
   filter?: (path: string) => boolean;
 }
 
-export function createRimraf(vfs: VFS, cwd: string) {
+export function createRimraf(vfs: VFS, cwd: string | (() => string)) {
   function removeSync(p: string): void {
-    const abs = resolve(cwd, p);
+    const cwdValue = typeof cwd === 'function' ? cwd() : cwd;
+    const abs = resolve(cwdValue, p);
     if (!vfs.exists(abs)) return;
 
     const stat = vfs.stat(abs);

@@ -12,6 +12,7 @@ import { ProcessRegistry } from './ProcessRegistry.js';
 import { complete, type CompletionContext } from './completer.js';
 import { evaluateTest } from './test-builtin.js';
 import { TerminalStdin } from './terminal-stdin.js';
+import type { ProcessExecutor } from '../runtime/ProcessExecutor.js';
 
 export interface ExecuteOptions {
   cwd?: string;
@@ -54,6 +55,7 @@ export class Shell {
   private historyManager: HistoryManager;
   private jobTable: JobTable;
   private processRegistry: ProcessRegistry;
+  private processExecutor: ProcessExecutor | undefined;
   private builtins: Map<string, BuiltinFn>;
 
   // Tab completion state
@@ -68,6 +70,7 @@ export class Shell {
     registry: CommandRegistry,
     env: Record<string, string>,
     processRegistry: ProcessRegistry,
+    processExecutor?: ProcessExecutor,
   ) {
     this.terminal = terminal;
     this.vfs = vfs;
@@ -82,8 +85,21 @@ export class Shell {
     // Initialize job table (legacy - still used for backward compat)
     this.jobTable = new JobTable();
 
-    // Use shared process registry from Kernel
+    // Use shared process registry and executor from Kernel
     this.processRegistry = processRegistry;
+    this.processExecutor = processExecutor;
+
+    // Register shellExecute callback for worker threads (npm run, npx, etc.)
+    if (processExecutor && 'setShellExecute' in processExecutor) {
+      (processExecutor as any).setShellExecute(async (cmd: string, ctx: any) => {
+        return this.execute(cmd, {
+          cwd: ctx.cwd,
+          env: ctx.env,
+          onStdout: (data: string) => ctx.stdout?.write(data),
+          onStderr: (data: string) => ctx.stderr?.write(data),
+        });
+      });
+    }
 
     // Initialize history manager
     this.historyManager = new HistoryManager(vfs);
@@ -99,6 +115,7 @@ export class Shell {
       builtins: this.builtins,
       jobTable: this.jobTable,
       processRegistry: this.processRegistry,
+      processExecutor: this.processExecutor,
       writeToTerminal: (text: string) => this.writeToTerminal(text),
       aliases: this.aliases,
       getAbortSignal: () => this.abortController?.signal ?? new AbortController().signal,

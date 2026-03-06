@@ -25,7 +25,7 @@ import { createEsbuild } from './esbuild.js';
 
 export interface NodeContext {
   vfs: VFS;
-  cwd: string;
+  cwd: string | (() => string);  // Support dynamic cwd for process.chdir()
   env: Record<string, string>;
   stdout: CommandOutputStream;
   stderr: CommandOutputStream;
@@ -38,18 +38,25 @@ export interface NodeContext {
 }
 
 export function createModuleMap(ctx: NodeContext): Record<string, () => unknown> {
+  // Create process module first to get dynamic cwd access
+  const processModule = createProcess({
+    argv: ctx.argv,
+    env: ctx.env,
+    cwd: ctx.cwd,
+    stdout: ctx.stdout,
+    stderr: ctx.stderr,
+    vfs: ctx.vfs,
+  });
+
+  // Use process.cwd() for dynamic cwd in other modules
+  const getCwd = () => processModule.cwd();
+
   const map: Record<string, () => unknown> = {
-    fs: () => createFs(ctx.vfs, ctx.cwd),
-    'fs/promises': () => createFs(ctx.vfs, ctx.cwd).promises,
+    fs: () => createFs(ctx.vfs, getCwd),
+    'fs/promises': () => createFs(ctx.vfs, getCwd).promises,
     path: () => pathModule,
     os: () => createOs(ctx.env),
-    process: () => createProcess({
-      argv: ctx.argv,
-      env: ctx.env,
-      cwd: ctx.cwd,
-      stdout: ctx.stdout,
-      stderr: ctx.stderr,
-    }),
+    process: () => processModule,
     events: () => {
       // Node.js CJS: require('events') returns the EventEmitter constructor itself
       const mod = EventEmitter as typeof EventEmitter & { EventEmitter: typeof EventEmitter; default: typeof EventEmitter };
@@ -92,7 +99,7 @@ export function createModuleMap(ctx: NodeContext): Record<string, () => unknown>
     readline: () => readlineModule,
     'readline/promises': () => readlineModule.promises,
     constants: () => {
-      const fs = createFs(ctx.vfs, ctx.cwd);
+      const fs = createFs(ctx.vfs, getCwd);
       const os = createOs(ctx.env);
       return { ...os.constants, ...fs.constants };
     },
@@ -282,7 +289,7 @@ export function createModuleMap(ctx: NodeContext): Record<string, () => unknown>
   map.module = () => createModuleShim(map);
 
   // npm package shims
-  map.rimraf = () => createRimraf(ctx.vfs, ctx.cwd);
+  map.rimraf = () => createRimraf(ctx.vfs, getCwd);
   map.esbuild = () => createEsbuild();
 
   return map;

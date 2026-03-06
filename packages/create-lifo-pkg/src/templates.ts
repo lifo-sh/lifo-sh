@@ -220,10 +220,11 @@ async function main() {
   registry.register('${name}', ${camelCase(name)}Command);
   registry.register('help', createHelpCommand(registry));
   registry.register('lifo', createLifoPkgCommand(registry));
+  kernel.setRegistry(registry);
 
   // 3. Create terminal + shell
   const terminal = new Terminal(document.getElementById('terminal')!);
-  const shell = new Shell(terminal, kernel.vfs, registry, kernel.getDefaultEnv());
+  const shell = new Shell(terminal, kernel.vfs, registry, kernel.getDefaultEnv(), kernel.processRegistry, kernel.processExecutor);
 
   await shell.sourceFile('/etc/profile');
   shell.start();
@@ -315,10 +316,11 @@ async function main() {
   registry.register('${name}', ${camelCase(name)}Command);
   registry.register('help', createHelpCommand(registry));
   registry.register('lifo', createLifoPkgCommand(registry));
+  kernel.setRegistry(registry);
 
   // Create shell
   const env = kernel.getDefaultEnv();
-  const shell = new Shell(terminal, kernel.vfs, registry, env);
+  const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry, kernel.processExecutor);
 
   // Override exit to terminate the process
   shell.builtins.set('exit', async () => {

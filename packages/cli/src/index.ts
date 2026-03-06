@@ -262,6 +262,7 @@ async function runDaemon(id: string, mountPath: string, port?: number, snapshotP
 	// ── Shell ─────────────────────────────────────────────────────────────────
 	const registry = createDefaultRegistry();
 	rehydrateGlobalPackages(kernel.vfs, registry);
+	kernel.setRegistry(registry);
 
 	const env = kernel.getDefaultEnv();
 	env.PWD = MOUNT_PATH;          // start the shell inside the mounted directory
@@ -280,7 +281,7 @@ async function runDaemon(id: string, mountPath: string, port?: number, snapshotP
 	if (token) env.LIFO_AUTH_TOKEN = token;
 	env.LIFO_TOKEN_PATH = TOKEN_PATH;
 
-	const shell = new Shell(daemonTerminal, kernel.vfs, registry, env);
+	const shell = new Shell(daemonTerminal, kernel.vfs, registry, env, kernel.processRegistry, kernel.processExecutor);
 
 	const jobTable = shell.getJobTable();
 	registry.register('ps', createPsCommand(jobTable));
@@ -441,6 +442,7 @@ async function runInteractive(opts: CliOptions): Promise<void> {
 
 	const registry = createDefaultRegistry();
 	rehydrateGlobalPackages(kernel.vfs, registry);
+	kernel.setRegistry(registry);
 
 	const env = kernel.getDefaultEnv();
 	env.PWD = MOUNT_PATH;
@@ -450,7 +452,7 @@ async function runInteractive(opts: CliOptions): Promise<void> {
 	if (token) env.LIFO_AUTH_TOKEN = token;
 	env.LIFO_TOKEN_PATH = TOKEN_PATH;
 
-	const shell = new Shell(terminal, kernel.vfs, registry, env);
+	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry, kernel.processExecutor);
 
 	const jobTable = shell.getJobTable();
 	registry.register('ps', createPsCommand(jobTable));

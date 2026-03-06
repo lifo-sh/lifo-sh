@@ -15,18 +15,23 @@ export interface PersistenceBackend {
 // IndexedDBPersistenceBackend
 // ---------------------------------------------------------------------------
 
-const DB_NAME = 'lifo';
+const DEFAULT_DB_NAME = 'lifo';
 const STORE_NAME = 'filesystem';
 const KEY = 'root';
 
 export class IndexedDBPersistenceBackend implements PersistenceBackend {
   private db: IDBDatabase | null = null;
+  private dbName: string;
+
+  constructor(dbName?: string) {
+    this.dbName = dbName ?? DEFAULT_DB_NAME;
+  }
 
   async open(): Promise<void> {
     if (typeof indexedDB === 'undefined') return;
 
     return new Promise((resolve) => {
-      const request = indexedDB.open(DB_NAME, 1);
+      const request = indexedDB.open(this.dbName, 1);
       request.onupgradeneeded = () => {
         const db = request.result;
         if (!db.objectStoreNames.contains(STORE_NAME)) {

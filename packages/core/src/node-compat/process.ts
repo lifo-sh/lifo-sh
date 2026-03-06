@@ -12,21 +12,42 @@ export class ProcessExitError extends Error {
 export interface ProcessOptions {
   argv: string[];
   env: Record<string, string>;
-  cwd: string;
+  cwd: string | (() => string);  // Support dynamic cwd
   stdout: CommandOutputStream;
   stderr: CommandOutputStream;
+  vfs?: any;  // Optional VFS for path validation
 }
 
 export function createProcess(opts: ProcessOptions) {
   const startTime = Date.now();
   const listeners: Record<string, Array<(...args: unknown[]) => void>> = {};
 
+  // Support dynamic cwd
+  let currentCwd = typeof opts.cwd === 'function' ? opts.cwd() : opts.cwd;
+
   const proc = {
     argv: ['/usr/bin/node', ...opts.argv],
     argv0: 'node',
     env: { ...opts.env },
-    cwd: () => opts.cwd,
-    chdir: (_dir: string) => { throw new Error('process.chdir() is not supported in Lifo'); },
+    cwd: () => currentCwd,
+    chdir: (dir: string) => {
+      // Resolve the new directory
+      const resolved = dir.startsWith('/') ? dir : `${currentCwd}/${dir}`;
+
+      // Validate that the directory exists if VFS is available
+      if (opts.vfs && !opts.vfs.exists(resolved)) {
+        throw new Error(`ENOENT: no such file or directory, chdir '${dir}'`);
+      }
+      if (opts.vfs) {
+        const stat = opts.vfs.stat(resolved);
+        if (stat.type !== 'directory') {
+          throw new Error(`ENOTDIR: not a directory, chdir '${dir}'`);
+        }
+      }
+
+      currentCwd = resolved;
+      console.log(`🔧 [process] chdir: ${resolved}`);
+    },
     exit: (code = 0) => {
       if (code !== 0) {
         opts.stderr.write(`[process.exit] code=${code}\n`);

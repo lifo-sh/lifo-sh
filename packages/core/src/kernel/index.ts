@@ -10,6 +10,7 @@ import { PortBridge } from './network/PortBridge.js';
 import { installSamples } from './samples.js';
 import { ServiceManager } from './ServiceManager.js';
 import type { CommandRegistry } from '../commands/registry.js';
+import { createProcessExecutor, type ProcessExecutor } from '../runtime/ProcessExecutor.js';
 
 const MOTD = `\x1b[1;36m
  _     _  __
@@ -74,15 +75,73 @@ export class Kernel {
 	processRegistry: ProcessRegistry;
 	networkStack: NetworkStack;
 	serviceManager: ServiceManager | null = null;
+	processExecutor: ProcessExecutor;
 	private persistence: PersistenceManager;
+	private vfsDbName: string;
 
-	constructor(backend?: PersistenceBackend) {
+	private enableThreading: boolean;
+	private shellExecuteCallback?: (cmd: string, ctx: any) => Promise<number>;
+
+	constructor(backend?: PersistenceBackend, options?: { enableThreading?: boolean; vfsDbName?: string }) {
+		// VFS database name for IndexedDB (shared across workers)
+		this.vfsDbName = options?.vfsDbName ?? 'lifo-vfs';
+		this.enableThreading = options?.enableThreading ?? true;
+
 		this.vfs = new VFS();
 		this.processRegistry = new ProcessRegistry();
 		this.networkStack = new NetworkStack();
 		this.portBridge = new PortBridge(this.portRegistry);
 		this.persistence = new PersistenceManager(
-			backend ?? new IndexedDBPersistenceBackend(),
+			backend ?? new IndexedDBPersistenceBackend(this.vfsDbName),
+		);
+
+		// Process executor will be initialized when registry is set via setRegistry()
+		this.processExecutor = {
+			async executeCommand() {
+				throw new Error('ProcessExecutor not initialized. Call kernel.setRegistry() first.');
+			},
+			async terminate() {},
+		};
+	}
+
+	/**
+	 * Set the shellExecute callback for worker threads.
+	 * This allows workers to execute shell commands on the main thread.
+	 * Called by Shell after it's initialized.
+	 */
+	setShellExecute(callback: (cmd: string, ctx: any) => Promise<number>): void {
+		this.shellExecuteCallback = callback;
+	}
+
+	/**
+	 * Initialize process executor with command registry.
+	 * This must be called after the kernel is constructed and before commands are executed.
+	 */
+	setRegistry(registry: CommandRegistry): void {
+		// Always create shellExecuteFn with lazy callback lookup so setShellExecute()
+		// can be called after setRegistry() and still be picked up by workers.
+		const shellExecuteFn = async (cmd: string, ctx: any) => {
+			if (!this.shellExecuteCallback) {
+				throw new Error('shellExecute callback not set. Call kernel.setShellExecute() after creating the shell.');
+			}
+			return this.shellExecuteCallback(cmd, ctx);
+		};
+
+		// Create VFS reload callback to sync worker changes
+		const vfsReloadFn = async () => {
+			const saved = await this.persistence.load();
+			if (saved) {
+				this.vfs.loadFromSerialized(saved);
+			}
+		};
+
+		this.processExecutor = createProcessExecutor(
+			this.vfsDbName,
+			registry,
+			this.enableThreading,
+			shellExecuteFn,
+			vfsReloadFn,
+			this.portRegistry
 		);
 	}
 

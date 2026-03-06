@@ -533,7 +533,7 @@ function transformEsmToCjs(source: string): string {
 	return result;
 }
 
-function createNodeImpl(kernelOrPortRegistry?: Kernel | Map<number, VirtualRequestHandler>): Command {
+export function createNodeImpl(kernelOrPortRegistry?: Kernel | Map<number, VirtualRequestHandler>): Command {
 	return async (ctx) => {
 		// Handle -v/--version
 		if (ctx.args.length > 0 && (ctx.args[0] === '-v' || ctx.args[0] === '--version')) {

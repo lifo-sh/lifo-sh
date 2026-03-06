@@ -122,9 +122,10 @@ function makeEbadf(syscall: string): NodeError {
 
 type Callback<T> = (err: NodeError | null, result?: T) => void;
 
-function resolvePath(cwd: string, p: string | URL): string {
+function resolvePath(cwd: string | (() => string), p: string | URL): string {
   const str = typeof p === 'string' ? p : p.pathname;
-  return resolve(cwd, str);
+  const cwdValue = typeof cwd === 'function' ? cwd() : cwd;
+  return resolve(cwdValue, str);
 }
 
 // ─── File descriptor entry ───
@@ -159,7 +160,7 @@ function parseFlags(flags: string | number): number {
   }
 }
 
-export function createFs(vfs: VFS, cwd: string) {
+export function createFs(vfs: VFS, cwd: string | (() => string)) {
   // ─── File descriptor table ───
 
   const fdTable = new Map<number, FdEntry>();
