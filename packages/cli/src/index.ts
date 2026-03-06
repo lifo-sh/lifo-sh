@@ -560,14 +560,14 @@ async function main() {
 	if (cmd === 'tunnel') {
 		const token = readToken();
 		if (!token) {
-			console.error('Not logged in. Run `lifo login` first.');
+			console.error('Not logged in. Run `npx lifo-sh login` first.');
 			process.exit(1);
 		}
 		const portArg = args[1];
 		const tunnelPort = portArg ? parseInt(portArg, 10) : NaN;
 		if (!portArg || isNaN(tunnelPort) || tunnelPort < 1 || tunnelPort > 65535) {
-			console.error('Usage: lifo tunnel <port>');
-			console.error('Example: lifo tunnel 5173');
+			console.error('Usage: npx lifo-sh tunnel <port>');
+			console.error('Example: npx lifo-sh tunnel 5173');
 			process.exit(1);
 		}
 		await handleTunnel(tunnelPort, token);
