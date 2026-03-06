@@ -17,10 +17,12 @@ const TUNNEL_SERVER = 'wss://tunnel.lifo.sh/_tunnel';
 interface TunnelMessage {
 	type: string;
 	id?: string;
+	wsId?: string;
 	method?: string;
 	path?: string;
 	headers?: Record<string, string>;
 	body?: string;
+	data?: string;
 	url?: string;
 	subdomain?: string;
 	message?: string;
@@ -46,6 +48,73 @@ function startTunnel(
 		wsHeaders.authorization = `Bearer ${token}`;
 	}
 	const ws = new WS(TUNNEL_SERVER, { headers: wsHeaders });
+
+	// Local WebSocket connections for WS proxy: wsId -> WebSocket (to local server)
+	const localWsConnections = new Map<string, InstanceType<typeof WS>>();
+
+	function handleWsOpen(msg: TunnelMessage): void {
+		const { wsId, path: wsPath } = msg;
+		if (!wsId || !wsPath) return;
+
+		const localUrl = `ws://localhost:${localPort}${wsPath}`;
+		write(`WS proxy: opening ${wsPath} (${wsId.slice(0, 8)})\n`);
+
+		const localWs = new WS(localUrl);
+		localWsConnections.set(wsId, localWs);
+
+		localWs.on('open', () => {
+			if (ws.readyState === WS.OPEN) {
+				ws.send(JSON.stringify({ type: 'ws-opened', wsId }));
+			}
+		});
+
+		localWs.on('message', (data: Buffer) => {
+			const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
+			if (ws.readyState === WS.OPEN) {
+				ws.send(JSON.stringify({
+					type: 'ws-data',
+					wsId,
+					data: buf.toString('base64'),
+				}));
+			}
+		});
+
+		localWs.on('close', () => {
+			localWsConnections.delete(wsId);
+			if (ws.readyState === WS.OPEN) {
+				ws.send(JSON.stringify({ type: 'ws-close', wsId }));
+			}
+		});
+
+		localWs.on('error', (err: Error) => {
+			writeErr(`WS proxy error (${wsId.slice(0, 8)}): ${err.message}\n`);
+			localWsConnections.delete(wsId);
+			if (ws.readyState === WS.OPEN) {
+				ws.send(JSON.stringify({
+					type: 'ws-error',
+					wsId,
+					message: err.message,
+				}));
+			}
+		});
+	}
+
+	function handleWsData(msg: TunnelMessage): void {
+		if (!msg.wsId || !msg.data) return;
+		const localWs = localWsConnections.get(msg.wsId);
+		if (localWs && localWs.readyState === WS.OPEN) {
+			localWs.send(Buffer.from(msg.data, 'base64'));
+		}
+	}
+
+	function handleWsClose(msg: TunnelMessage): void {
+		if (!msg.wsId) return;
+		const localWs = localWsConnections.get(msg.wsId);
+		if (localWs) {
+			localWsConnections.delete(msg.wsId);
+			localWs.close();
+		}
+	}
 
 	function forwardRequest(msg: TunnelMessage): void {
 		const { id, method, path: reqPath, headers, body } = msg;
@@ -134,6 +203,12 @@ function startTunnel(
 				write(`Forwarding to: http://localhost:${localPort}\n\n`);
 			} else if (msg.type === 'request') {
 				forwardRequest(msg);
+			} else if (msg.type === 'ws-open') {
+				handleWsOpen(msg);
+			} else if (msg.type === 'ws-data') {
+				handleWsData(msg);
+			} else if (msg.type === 'ws-close') {
+				handleWsClose(msg);
 			} else if (msg.type === 'error') {
 				writeErr(`Server error: ${msg.message}\n`);
 			}
@@ -141,6 +216,11 @@ function startTunnel(
 
 		ws.on('close', () => {
 			clearInterval(pingTimer);
+			// Close all local WS connections
+			for (const [, localWs] of localWsConnections) {
+				localWs.close();
+			}
+			localWsConnections.clear();
 			write('Disconnected from tunnel server\n');
 			resolve(0);
 		});
