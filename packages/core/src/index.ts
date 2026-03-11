@@ -9,11 +9,11 @@ export type {
 } from './sandbox/index.js';
 
 // Kernel
-export { Kernel } from './kernel/index.js';
-export type { VirtualRequest, VirtualResponse, VirtualRequestHandler } from './kernel/index.js';
+export { Kernel } from '@lifo-sh/kernel';
+export type { VirtualRequest, VirtualResponse, VirtualRequestHandler } from '@lifo-sh/kernel';
 
 // Network Stack
-export { NetworkStack } from './kernel/network/index.js';
+export { NetworkStack } from '@lifo-sh/kernel/network';
 export type {
 	IPAddress,
 	SocketType,
@@ -22,19 +22,19 @@ export type {
 	RouteEntry,
 	NetworkTunnel,
 	TunnelType,
-} from './kernel/network/index.js';
+} from '@lifo-sh/kernel/network';
 
 // Tunnels
-export { VETHPair } from './kernel/network/tunnel/VETHPair.js';
-export { WebSocketTunnel } from './kernel/network/tunnel/WebSocketTunnel.js';
+export { VETHPair } from '@lifo-sh/kernel/network';
+export { WebSocketTunnel } from '@lifo-sh/kernel/network';
 
 // Bridge
-export { Bridge } from './kernel/network/Bridge.js';
+export { Bridge } from '@lifo-sh/kernel/network';
 
 // VFS
-export { VFS, VFSError, ErrorCode } from './kernel/vfs/index.js';
-export { getMimeType, getFileCategory, isBinaryMime } from './kernel/vfs/index.js';
-export { NativeFsProvider } from './kernel/vfs/index.js';
+export { VFS, VFSError, ErrorCode } from '@lifo-sh/kernel';
+export { getMimeType, getFileCategory, isBinaryMime } from '@lifo-sh/kernel';
+export { NativeFsProvider } from '@lifo-sh/kernel';
 export type {
 	INode,
 	Stat,
@@ -47,19 +47,19 @@ export type {
 	VFSWatchEvent,
 	VFSWatchListener,
 	VFSEventType,
-} from './kernel/vfs/index.js';
+} from '@lifo-sh/kernel';
 
 // Blob storage & content store
-export { MemoryBlobStore, IndexedDBBlobStore, hashBytes } from './kernel/storage/index.js';
-export { ContentStore, CHUNK_THRESHOLD, CHUNK_SIZE } from './kernel/storage/index.js';
-export type { BlobStore } from './kernel/storage/index.js';
+export { MemoryBlobStore, IndexedDBBlobStore, hashBytes } from '@lifo-sh/kernel/storage';
+export { ContentStore, CHUNK_THRESHOLD, CHUNK_SIZE } from '@lifo-sh/kernel/storage';
+export type { BlobStore } from '@lifo-sh/kernel/storage';
 
 // Persistence
-export { PersistenceManager } from './kernel/persistence/index.js';
-export { IndexedDBPersistenceBackend, MemoryPersistenceBackend } from './kernel/persistence/index.js';
-export type { PersistenceBackend } from './kernel/persistence/index.js';
-export { serialize, deserialize } from './kernel/persistence/index.js';
-export type { SerializedNode } from './kernel/persistence/index.js';
+export { PersistenceManager } from '@lifo-sh/kernel/persistence';
+export { IndexedDBPersistenceBackend, MemoryPersistenceBackend } from '@lifo-sh/kernel/persistence';
+export type { PersistenceBackend } from '@lifo-sh/kernel/persistence';
+export { serialize, deserialize } from '@lifo-sh/kernel/persistence';
+export type { SerializedNode } from '@lifo-sh/kernel/persistence';
 
 // Commands
 export { CommandRegistry, createDefaultRegistry } from './commands/registry.js';
@@ -95,10 +95,10 @@ export { createSystemctlCommand } from './commands/system/systemctl.js';
 export { createNewtabCommand } from './commands/system/newtab.js';
 
 // Service manager
-export { ServiceManager } from './kernel/ServiceManager.js';
-export type { ServiceInfo } from './kernel/ServiceManager.js';
-export type { UnitFile } from './kernel/unit-parser.js';
-export { parseUnitFile } from './kernel/unit-parser.js';
+export { ServiceManager } from '@lifo-sh/kernel';
+export type { ServiceInfo } from '@lifo-sh/kernel';
+export type { UnitFile } from '@lifo-sh/kernel';
+export { parseUnitFile } from '@lifo-sh/kernel';
 
 // Shell
 export { Shell } from './shell/Shell.js';
@@ -125,9 +125,9 @@ export { linkPackage, unlinkPackage, loadDevLinks } from './pkg/lifo-dev.js';
 export type { DevLink, DevLinksMap } from './pkg/lifo-dev.js';
 
 // Node compatibility
-export { createModuleMap, ProcessExitError } from './node-compat/index.js';
-export type { NodeContext } from './node-compat/index.js';
-export { Buffer } from './node-compat/buffer.js';
+export { createModuleMap, ProcessExitError } from '@lifo-sh/node-compat';
+export type { NodeContext } from '@lifo-sh/node-compat';
+export { Buffer } from '@lifo-sh/node-compat/buffer';
 
 // Path utilities
 export { resolve, dirname, join, normalize, basename, extname } from './utils/path.js';

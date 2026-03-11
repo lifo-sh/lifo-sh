@@ -1,8 +1,8 @@
 import type { Command } from '../commands/types.js';
-import type { Kernel } from '../kernel/index.js';
+import type { Kernel } from '@lifo-sh/kernel';
 import type { Shell } from '../shell/Shell.js';
 import type { ITerminal } from '../terminal/ITerminal.js';
-import type { NativeFsModule } from '../kernel/vfs/providers/NativeFsProvider.js';
+import type { NativeFsModule } from '@lifo-sh/kernel';
 
 // ─── Sandbox Options ───
 

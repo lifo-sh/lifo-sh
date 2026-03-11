@@ -1,6 +1,6 @@
 import type { Command } from '../types.js';
-import type { Kernel } from '../../kernel/index.js';
-import { WebSocketTunnel } from '../../kernel/network/tunnel/WebSocketTunnel.js';
+import type { Kernel } from '@lifo-sh/kernel';
+import { WebSocketTunnel } from '@lifo-sh/kernel/network';
 
 /**
  * tunnel - WebSocket-based tunnel for host machine access

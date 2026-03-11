@@ -1,4 +1,4 @@
-import type { VFS } from '../kernel/vfs/index.js';
+import type { VFS } from '@lifo-sh/kernel';
 import { resolve, dirname } from './path.js';
 import { encode, decode, concatBytes } from './encoding.js';
 

@@ -1,7 +1,7 @@
 import type { Command } from '../types.js';
 import { resolve, dirname } from '../../utils/path.js';
 import { parseZip } from '../../utils/archive.js';
-import { VFSError } from '../../kernel/vfs/index.js';
+import { VFSError } from '@lifo-sh/kernel';
 
 const command: Command = async (ctx) => {
   let listOnly = false;

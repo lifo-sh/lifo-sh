@@ -1,0 +1,6 @@
+node_modules
+dist
+dist-node
+.vfs-storage
+*.local
+.DS_Store

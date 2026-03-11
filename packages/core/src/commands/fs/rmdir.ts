@@ -1,7 +1,7 @@
 import type { Command } from '../types.js';
 import { parseArgs } from '../../utils/args.js';
 import { resolve, dirname } from '../../utils/path.js';
-import { VFSError } from '../../kernel/vfs/index.js';
+import { VFSError } from '@lifo-sh/kernel';
 
 const spec = {
   parents: { type: 'boolean' as const, short: 'p' },

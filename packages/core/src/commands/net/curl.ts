@@ -1,6 +1,6 @@
 import type { Command } from '../types.js';
 import { resolve } from '../../utils/path.js';
-import type { Kernel } from '../../kernel/index.js';
+import type { Kernel } from '@lifo-sh/kernel';
 
 function createCurlImpl(kernel?: Kernel): Command {
   return async (ctx) => {

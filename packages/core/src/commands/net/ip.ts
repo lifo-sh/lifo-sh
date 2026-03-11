@@ -1,8 +1,7 @@
 import type { Command } from '../types.js';
-import type { NetworkStack } from '../../kernel/network/index.js';
-import type { Kernel } from '../../kernel/index.js';
-import { VETHPair } from '../../kernel/network/tunnel/VETHPair.js';
-import { Bridge } from '../../kernel/network/Bridge.js';
+import type { NetworkStack } from '@lifo-sh/kernel/network';
+import type { Kernel } from '@lifo-sh/kernel';
+import { VETHPair, Bridge } from '@lifo-sh/kernel/network';
 
 /**
  * ip - Modern Linux network configuration tool

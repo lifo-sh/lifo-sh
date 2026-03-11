@@ -1,4 +1,4 @@
-import type { VFS } from '../kernel/vfs/index.js';
+import type { VFS } from '@lifo-sh/kernel';
 
 export interface CommandOutputStream {
   write(text: string): void;

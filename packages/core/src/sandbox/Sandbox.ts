@@ -1,8 +1,9 @@
-import { Kernel } from '../kernel/index.js';
+import { Kernel } from '@lifo-sh/kernel';
 import { Shell } from '../shell/Shell.js';
 import {
 	createDefaultRegistry,
 } from '../commands/registry.js';
+import { createProcessExecutor } from '../runtime/ProcessExecutor.js';
 import { createPsCommand } from '../commands/system/ps.js';
 import { createTopCommand } from '../commands/system/top.js';
 import { createKillCommand } from '../commands/system/kill.js';
@@ -19,9 +20,9 @@ import { createIPCommand } from '../commands/net/ip.js';
 import { createNpmCommand, createNpxCommand } from '../commands/system/npm.js';
 import { createLifoPkgCommand, bootLifoPackages } from '../commands/system/lifo.js';
 import { createSystemctlCommand } from '../commands/system/systemctl.js';
-import type { VFS } from '../kernel/vfs/index.js';
-import { NativeFsProvider } from '../kernel/vfs/providers/NativeFsProvider.js';
-import type { NativeFsModule } from '../kernel/vfs/providers/NativeFsProvider.js';
+import type { VFS } from '@lifo-sh/kernel';
+import { NativeFsProvider } from '@lifo-sh/kernel';
+import type { NativeFsModule } from '@lifo-sh/kernel';
 import type { ITerminal } from '../terminal/ITerminal.js';
 import type { SandboxOptions, SandboxCommands, SandboxFs } from './types.js';
 import { SandboxFsImpl } from './SandboxFs.js';
@@ -79,7 +80,27 @@ export class Sandbox {
 		bootLifoPackages(kernel.vfs, registry);
 
 		// 2a. Initialize kernel's process executor with registry
-		kernel.setRegistry(registry);
+		const shellExecuteFn = kernel.createShellExecuteFn();
+		const vfsReloadFn = async () => {
+			const saved = await kernel.persistence.load();
+			if (saved) {
+				kernel.vfs.loadFromSerialized(saved);
+			}
+		};
+		const vfsSaveFn = async () => {
+			await kernel.persistence.open();
+			await kernel.persistence.save(kernel.vfs.getRoot());
+		};
+		const executor = createProcessExecutor(
+			kernel.vfsDbName,
+			registry,
+			kernel.enableThreading,
+			shellExecuteFn,
+			vfsReloadFn,
+			kernel.portRegistry,
+			vfsSaveFn,
+		);
+		kernel.setProcessExecutor(executor);
 
 		// 3. Pre-populate files if provided
 		if (options?.files) {
@@ -134,6 +155,9 @@ export class Sandbox {
 			});
 			return result.exitCode;
 		});
+
+		// 6b. Initialize kernel process API (syscall layer for node-compat child_process)
+		kernel.initProcessAPI({ cwd: options?.cwd ?? env.HOME, env });
 
 		// 7. Register factory commands
 		const processRegistry = shell.getProcessRegistry();

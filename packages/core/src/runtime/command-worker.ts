@@ -5,10 +5,9 @@
  */
 
 console.log("hello world")
-import { VFS } from '../kernel/vfs/index.js';
+import { VFS } from '@lifo-sh/kernel';
 import { createDefaultRegistry, type CommandRegistry } from '../commands/registry.js';
-import { PersistenceManager } from '../kernel/persistence/PersistenceManager.js';
-import { IndexedDBPersistenceBackend } from '../kernel/persistence/backends.js';
+import { PersistenceManager, IndexedDBPersistenceBackend } from '@lifo-sh/kernel/persistence';
 import {
 	createMessagePortOutputStream,
 	createMessagePortInputStream,
@@ -125,7 +124,21 @@ function createShellExecuteProxy(): ShellExecuteFn {
 			pendingShellExecute.set(requestId, { resolve, reject });
 
 			// Serialize context for main thread
-			const { serializable, ports } = serializeContext(ctx, currentDbName!);
+			const { serializable, ports, localPorts } = serializeContext(ctx, currentDbName!);
+
+			// Bridge: forward data arriving from main thread back to original ctx streams
+			localPorts.stdout.onmessage = (event: MessageEvent) => {
+				const msg = event.data;
+				if (msg.type === 'data') {
+					ctx.stdout.write(msg.data);
+				}
+			};
+			localPorts.stderr.onmessage = (event: MessageEvent) => {
+				const msg = event.data;
+				if (msg.type === 'data') {
+					ctx.stderr.write(msg.data);
+				}
+			};
 
 			const message: WorkerMessage = {
 				type: 'shellExecute',
@@ -144,45 +157,51 @@ function createShellExecuteProxy(): ShellExecuteFn {
 }
 
 async function initVFS(dbName: string): Promise<void> {
-	console.log(`🔧 [Worker] Initializing VFS with database:`);
+	const isFirstInit = !vfs || currentDbName !== dbName;
 
-	if (vfs && currentDbName === dbName) return;
-	console.log(`🔧 [Worker] Initializing VFS with database: ${dbName}`);
-	currentDbName = dbName;
-	vfs = new VFS();
-	registry = createDefaultRegistry();
+	if (isFirstInit) {
+		console.log(`🔧 [Worker] Initializing VFS with database: ${dbName}`);
+		currentDbName = dbName;
+		vfs = new VFS();
+		registry = createDefaultRegistry();
 
-	// Register npm/npx with shellExecute proxy and fakeKernel so bin scripts
-	// (e.g. vite) installed by npm use proxyPortRegistry instead of the isolated
-	// module-level defaultPortRegistry. proxyPortRegistry forwards port
-	// registrations to the main thread's kernel.portRegistry, making worker-hosted
-	// servers visible to curl and netstat.
-	const shellExecute = createShellExecuteProxy();
-	const fakeKernel = { portRegistry: proxyPortRegistry } as any;
-	registry.register('npm', createNpmCommand(registry, shellExecute, fakeKernel));
-	registry.register('npx', createNpxCommand(registry, shellExecute));
-	console.log('✅ [Worker] Registered npm/npx with shellExecute proxy and proxyPortRegistry');
+		// Register npm/npx with shellExecute proxy and fakeKernel so bin scripts
+		// (e.g. vite) installed by npm use proxyPortRegistry instead of the isolated
+		// module-level defaultPortRegistry. proxyPortRegistry forwards port
+		// registrations to the main thread's kernel.portRegistry, making worker-hosted
+		// servers visible to curl and netstat.
+		const shellExecute = createShellExecuteProxy();
+		const fakeKernel = { portRegistry: proxyPortRegistry } as any;
+		registry.register('npm', createNpmCommand(registry, shellExecute, fakeKernel));
+		registry.register('npx', createNpxCommand(registry, shellExecute));
+		console.log('✅ [Worker] Registered npm/npx with shellExecute proxy and proxyPortRegistry');
 
-	// Override node command to use proxyPortRegistry instead of isolated registry
-	// This allows HTTP servers in worker to be accessible from main thread
-	const { createNodeImpl } = await import('../commands/system/node.js');
-	registry.register('node', createNodeImpl(proxyPortRegistry as any));
-	console.log('✅ [Worker] Registered node command with proxyPortRegistry');
+		// Override node command to use proxyPortRegistry and shellExecute proxy
+		// This allows HTTP servers in worker to be accessible from main thread
+		// and enables child_process.spawn()/fork() via shellExecute fallback
+		const { createNodeImpl } = await import('../commands/system/node.js');
+		registry.register('node', createNodeImpl(proxyPortRegistry as any, shellExecute as any));
+		console.log('✅ [Worker] Registered node command with proxyPortRegistry and shellExecute');
 
-	persistence = new PersistenceManager(new IndexedDBPersistenceBackend(dbName));
-	await persistence.open();
-	const saved = await persistence.load();
-	if (saved) vfs.loadFromSerialized(saved);
+		persistence = new PersistenceManager(new IndexedDBPersistenceBackend(dbName));
+		await persistence.open();
 
-	// Set up VFS watch to auto-save changes (same as main thread)
-	vfs.watch(() => {
-		if (persistence) {
-			persistence.scheduleSave(vfs!.getRoot());
-			console.log('💾 [Worker] VFS change detected, scheduling save...');
-		}
-	});
+		// Set up VFS watch to auto-save changes (same as main thread)
+		vfs.watch(() => {
+			if (persistence) {
+				persistence.scheduleSave(vfs!.getRoot());
+				console.log('💾 [Worker] VFS change detected, scheduling save...');
+			}
+		});
+	}
 
-	console.log('✅ [Worker] VFS and command registry initialized with persistence');
+	// Always reload VFS from IndexedDB to pick up main-thread changes
+	const saved = await persistence!.load();
+	if (saved) vfs!.loadFromSerialized(saved);
+
+	if (isFirstInit) {
+		console.log('✅ [Worker] VFS and command registry initialized with persistence');
+	}
 }
 
 self.onmessage = async (event: MessageEvent<WorkerMessage>): Promise<void> => {

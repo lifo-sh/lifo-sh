@@ -1,4 +1,4 @@
-import type { VFS } from '../kernel/vfs/index.js';
+import type { VFS } from '@lifo-sh/kernel';
 
 const PKG_DIR = '/usr/share/pkg';
 const MODULES_DIR = '/usr/share/pkg/node_modules';

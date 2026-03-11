@@ -53,6 +53,7 @@ import {
 	createNodeCommand,
 	createCurlCommand,
 	rehydrateGlobalPackages,
+	createProcessExecutor,
 } from '@lifo-sh/core';
 import { NodeTerminal } from './NodeTerminal.js';
 import { DaemonTerminal } from './DaemonTerminal.js';
@@ -262,7 +263,26 @@ async function runDaemon(id: string, mountPath: string, port?: number, snapshotP
 	// ── Shell ─────────────────────────────────────────────────────────────────
 	const registry = createDefaultRegistry();
 	rehydrateGlobalPackages(kernel.vfs, registry);
-	kernel.setRegistry(registry);
+	const shellExecuteFn = kernel.createShellExecuteFn();
+	const vfsReloadFn = async () => {
+		const saved = await kernel.persistence.load();
+		if (saved) {
+			kernel.vfs.loadFromSerialized(saved);
+		}
+	};
+	const vfsSaveFn = async () => {
+		await kernel.persistence.open();
+		await kernel.persistence.save(kernel.vfs.getRoot());
+	};
+	kernel.setProcessExecutor(createProcessExecutor(
+		kernel.vfsDbName,
+		registry,
+		kernel.enableThreading,
+		shellExecuteFn,
+		vfsReloadFn,
+		kernel.portRegistry,
+		vfsSaveFn,
+	));
 
 	const env = kernel.getDefaultEnv();
 	env.PWD = MOUNT_PATH;          // start the shell inside the mounted directory
@@ -442,7 +462,26 @@ async function runInteractive(opts: CliOptions): Promise<void> {
 
 	const registry = createDefaultRegistry();
 	rehydrateGlobalPackages(kernel.vfs, registry);
-	kernel.setRegistry(registry);
+	const shellExecuteFn2 = kernel.createShellExecuteFn();
+	const vfsReloadFn2 = async () => {
+		const saved = await kernel.persistence.load();
+		if (saved) {
+			kernel.vfs.loadFromSerialized(saved);
+		}
+	};
+	const vfsSaveFn2 = async () => {
+		await kernel.persistence.open();
+		await kernel.persistence.save(kernel.vfs.getRoot());
+	};
+	kernel.setProcessExecutor(createProcessExecutor(
+		kernel.vfsDbName,
+		registry,
+		kernel.enableThreading,
+		shellExecuteFn2,
+		vfsReloadFn2,
+		kernel.portRegistry,
+		vfsSaveFn2,
+	));
 
 	const env = kernel.getDefaultEnv();
 	env.PWD = MOUNT_PATH;

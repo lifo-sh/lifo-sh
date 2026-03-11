@@ -12,7 +12,7 @@ import type {
   FunctionDefNode,
   GroupNode,
 } from './types.js';
-import type { VFS } from '../kernel/vfs/index.js';
+import type { VFS } from '@lifo-sh/kernel';
 import type { CommandRegistry } from '../commands/registry.js';
 import type {
   CommandOutputStream,
@@ -28,7 +28,7 @@ import { ProcessRegistry } from './ProcessRegistry.js';
 import { resolve } from '../utils/path.js';
 import { globMatch } from '../utils/glob.js';
 import type { TerminalStdin } from './terminal-stdin.js';
-import type { ProcessExecutor } from '../runtime/ProcessExecutor.js';
+import type { IProcessExecutor as ProcessExecutor } from '@lifo-sh/kernel';
 
 // ─── Signal classes for control flow ───
 

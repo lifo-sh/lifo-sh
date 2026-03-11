@@ -13,7 +13,7 @@
 
 import type { Command, CommandContext, CommandOutputStream } from '../types.js';
 import type { CommandRegistry } from '../registry.js';
-import type { VFS } from '../../kernel/vfs/index.js';
+import type { VFS } from '@lifo-sh/kernel';
 import type { ShellExecuteFn } from './npm.js';
 import { npmInstallGlobal, getBinEntries, registerBinCommand } from './npm.js';
 import { resolve, join } from '../../utils/path.js';

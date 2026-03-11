@@ -1,4 +1,4 @@
-import type { VFS } from '../kernel/vfs/index.js';
+import type { VFS } from '@lifo-sh/kernel';
 import type { SandboxFs as ISandboxFs } from './types.js';
 import { resolve, dirname } from '../utils/path.js';
 import { createTar, parseTar, compressGzip, decompressGzip } from '../utils/archive.js';

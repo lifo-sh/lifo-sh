@@ -1,6 +1,6 @@
 import type { Command } from '../types.js';
 import { resolve } from '../../utils/path.js';
-import { VFSError } from '../../kernel/vfs/index.js';
+import { VFSError } from '@lifo-sh/kernel';
 
 function extractStrings(data: Uint8Array, minLen: number): string[] {
   const results: string[] = [];

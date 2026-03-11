@@ -207,6 +207,7 @@ import {
   createDefaultRegistry,
   createHelpCommand,
   createLifoPkgCommand,
+  createProcessExecutor,
 } from '@lifo-sh/core';
 import ${camelCase(name)}Command from '${npmName}';
 
@@ -220,7 +221,26 @@ async function main() {
   registry.register('${name}', ${camelCase(name)}Command);
   registry.register('help', createHelpCommand(registry));
   registry.register('lifo', createLifoPkgCommand(registry));
-  kernel.setRegistry(registry);
+  const shellExecuteFn = kernel.createShellExecuteFn();
+  const vfsReloadFn = async () => {
+    const saved = await kernel.persistence.load();
+    if (saved) {
+      kernel.vfs.loadFromSerialized(saved);
+    }
+  };
+  const vfsSaveFn = async () => {
+    await kernel.persistence.open();
+    await kernel.persistence.save(kernel.vfs.getRoot());
+  };
+  kernel.setProcessExecutor(createProcessExecutor(
+    kernel.vfsDbName,
+    registry,
+    kernel.enableThreading,
+    shellExecuteFn,
+    vfsReloadFn,
+    kernel.portRegistry,
+    vfsSaveFn,
+  ));
 
   // 3. Create terminal + shell
   const terminal = new Terminal(document.getElementById('terminal')!);
@@ -271,6 +291,7 @@ import {
   createDefaultRegistry,
   createHelpCommand,
   createLifoPkgCommand,
+  createProcessExecutor,
 } from '@lifo-sh/core';
 import ${camelCase(name)}Command from './dist/index.js';
 
@@ -316,7 +337,26 @@ async function main() {
   registry.register('${name}', ${camelCase(name)}Command);
   registry.register('help', createHelpCommand(registry));
   registry.register('lifo', createLifoPkgCommand(registry));
-  kernel.setRegistry(registry);
+  const shellExecuteFn = kernel.createShellExecuteFn();
+  const vfsReloadFn = async () => {
+    const saved = await kernel.persistence.load();
+    if (saved) {
+      kernel.vfs.loadFromSerialized(saved);
+    }
+  };
+  const vfsSaveFn = async () => {
+    await kernel.persistence.open();
+    await kernel.persistence.save(kernel.vfs.getRoot());
+  };
+  kernel.setProcessExecutor(createProcessExecutor(
+    kernel.vfsDbName,
+    registry,
+    kernel.enableThreading,
+    shellExecuteFn,
+    vfsReloadFn,
+    kernel.portRegistry,
+    vfsSaveFn,
+  ));
 
   // Create shell
   const env = kernel.getDefaultEnv();

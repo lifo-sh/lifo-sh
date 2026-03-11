@@ -1,4 +1,4 @@
-import type { VFS } from '../kernel/vfs/index.js';
+import type { VFS } from '@lifo-sh/kernel';
 import type { CommandRegistry } from '../commands/registry.js';
 import type { Command, CommandContext } from '../commands/types.js';
 

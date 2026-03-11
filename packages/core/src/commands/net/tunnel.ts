@@ -1,7 +1,7 @@
 import type { Command } from '../types.js';
-import type { Kernel } from '../../kernel/index.js';
-import type { VirtualResponseWithDone } from '../../node-compat/http.js';
-import { Buffer } from '../../node-compat/buffer.js';
+import type { Kernel } from '@lifo-sh/kernel';
+import type { VirtualResponseWithDone } from '@lifo-sh/node-compat/http';
+import { Buffer } from '@lifo-sh/node-compat/buffer';
 
 interface TunnelOptions {
 	server: string;
@@ -200,7 +200,7 @@ function createTunnelImpl(kernel?: Kernel): Command {
 							requestId,
 							statusCode: vRes.statusCode,
 							headers: vRes.headers,
-							body: Buffer.from(vRes.body).toString('base64'),
+							body: Buffer.from(vRes.body ?? '').toString('base64'),
 						};
 
 						ws?.send(JSON.stringify(response));

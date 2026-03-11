@@ -1,7 +1,7 @@
 import type { Command, CommandContext, CommandOutputStream } from '../types.js';
 import type { CommandRegistry } from '../registry.js';
-import type { VFS } from '../../kernel/vfs/index.js';
-import type { Kernel } from '../../kernel/index.js';
+import type { VFS } from '@lifo-sh/kernel';
+import type { Kernel } from '@lifo-sh/kernel';
 import { resolve, join } from '../../utils/path.js';
 import { decompressGzip, parseTar } from '../../utils/archive.js';
 
@@ -9,6 +9,34 @@ const GLOBAL_MODULES = '/usr/lib/node_modules';
 const GLOBAL_BIN = '/usr/bin';
 const DEFAULT_REGISTRY = 'https://registry.npmjs.org';
 const NPM_VERSION = '10.0.0';
+
+// ─── Browser compatibility ───
+
+// Packages that should be replaced with browser/WASM-compatible alternatives.
+// The substitute is downloaded from npm but installed under the original name
+// so that `require('rollup')` etc. resolve transparently.
+const BROWSER_SUBSTITUTIONS: Record<string, string> = {
+	'rollup': '@rollup/wasm-node',
+	'esbuild': 'esbuild-wasm',
+};
+
+// Native platform packages that cannot run in a browser VM.
+// These are silently skipped during dependency installation.
+const NATIVE_PACKAGE_PATTERNS: RegExp[] = [
+	/^@rollup\/rollup-/,       // @rollup/rollup-linux-x64-gnu, etc.
+	/^@esbuild\//,             // @esbuild/linux-x64, etc.
+	/^@swc\/core-/,            // @swc/core-linux-x64-gnu, etc.
+	/^@parcel\/watcher-/,      // @parcel/watcher-linux-x64-gnu, etc.
+	/^@biomejs\/biome-/,       // @biomejs/biome-linux-x64, etc.
+	/^@next\/swc-/,            // @next/swc-linux-x64-gnu, etc.
+	/^@tailwindcss\/oxide-/,   // @tailwindcss/oxide-linux-x64-gnu, etc.
+	/^@napi-rs\//,             // @napi-rs/* native bindings
+	/^fsevents$/,              // macOS-only native module
+];
+
+function isNativePackage(name: string): boolean {
+	return NATIVE_PACKAGE_PATTERNS.some(pattern => pattern.test(name));
+}
 
 // ─── Types ───
 
@@ -34,6 +62,7 @@ interface RegistryVersionInfo {
 	scripts?: Record<string, string>;
 	dependencies?: Record<string, string>;
 	devDependencies?: Record<string, string>;
+	optionalDependencies?: Record<string, string>;
 	dist: {
 		tarball: string;
 		shasum?: string;
@@ -299,6 +328,12 @@ async function installSinglePackage(
 	if (seen.has(name)) return 0;
 	seen.add(name);
 
+	// Skip native platform packages (can't run in browser)
+	if (isNativePackage(name)) {
+		stderr.write(`  skip: ${name} (native binary, not supported in browser)\n`);
+		return 0;
+	}
+
 	const targetDir = join(targetBase, name);
 
 	// Skip if already installed
@@ -306,9 +341,17 @@ async function installSinglePackage(
 		return 0;
 	}
 
-	stdout.write(`  ${name}${version ? '@' + version : ''}...\n`);
+	// Substitute packages with browser-compatible WASM alternatives
+	const substitute = BROWSER_SUBSTITUTIONS[name];
+	const fetchName = substitute || name;
 
-	const info = await fetchPackageInfo(npmRegistry, name, version, signal);
+	if (substitute) {
+		stdout.write(`  ${name}${version ? '@' + version : ''} → ${substitute} (wasm)...\n`);
+	} else {
+		stdout.write(`  ${name}${version ? '@' + version : ''}...\n`);
+	}
+
+	const info = await fetchPackageInfo(npmRegistry, fetchName, version, signal);
 
 	await downloadAndExtract(info.dist.tarball, targetDir, vfs, signal);
 
@@ -329,16 +372,43 @@ async function installSinglePackage(
 
 	}
 
+	// Collect optional dependency names so we can silence their failures
+	const optionalDeps = new Set(
+		Object.keys(info.optionalDependencies || {}),
+	);
+
 	// Recursively install dependencies (flat into the same targetBase)
 	if (info.dependencies) {
 		for (const [depName, depRange] of Object.entries(info.dependencies)) {
+			const isOptional = optionalDeps.has(depName);
 			try {
 				installed += await installSinglePackage(
 					depName, depRange, targetBase, vfs, npmRegistry, signal,
 					stdout, stderr, isGlobal, registry, seen, kernel,
 				);
 			} catch (e) {
-				stderr.write(`  warn: could not install ${depName}: ${e instanceof Error ? e.message : String(e)}\n`);
+				if (isOptional || isNativePackage(depName)) {
+					// Silently skip optional / native deps that fail
+					stderr.write(`  skip (optional): ${depName}\n`);
+				} else {
+					stderr.write(`  warn: could not install ${depName}: ${e instanceof Error ? e.message : String(e)}\n`);
+				}
+			}
+		}
+	}
+
+	// Install optional dependencies (best-effort, never fatal)
+	if (info.optionalDependencies) {
+		for (const [depName, depRange] of Object.entries(info.optionalDependencies)) {
+			// Skip if already covered by regular dependencies
+			if (info.dependencies?.[depName]) continue;
+			try {
+				installed += await installSinglePackage(
+					depName, depRange, targetBase, vfs, npmRegistry, signal,
+					stdout, stderr, isGlobal, registry, seen, kernel,
+				);
+			} catch {
+				stderr.write(`  skip (optional): ${depName}\n`);
 			}
 		}
 	}

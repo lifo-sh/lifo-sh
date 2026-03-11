@@ -2,7 +2,7 @@ import type { Command } from '../types.js';
 import { resolve } from '../../utils/path.js';
 import { createZip, collectFiles } from '../../utils/archive.js';
 import type { ZipEntry } from '../../utils/archive.js';
-import { VFSError } from '../../kernel/vfs/index.js';
+import { VFSError } from '@lifo-sh/kernel';
 
 const command: Command = async (ctx) => {
   if (ctx.args.length === 0 || ctx.args[0] === '--help') {

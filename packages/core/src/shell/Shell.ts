@@ -1,10 +1,10 @@
 import type { ITerminal } from '../terminal/ITerminal.js';
-import type { VFS } from '../kernel/vfs/index.js';
+import type { VFS } from '@lifo-sh/kernel';
 import type { CommandRegistry } from '../commands/registry.js';
 import type { CommandOutputStream } from '../commands/types.js';
 import { resolve } from '../utils/path.js';
 import { BOLD, GREEN, BLUE, RESET } from '../utils/colors.js';
-import { VFSError } from '../kernel/vfs/index.js';
+import { VFSError } from '@lifo-sh/kernel';
 import { Interpreter, type BuiltinFn, type InterpreterConfig } from './interpreter.js';
 import { HistoryManager } from './history.js';
 import { JobTable } from './jobs.js';
@@ -12,7 +12,7 @@ import { ProcessRegistry } from './ProcessRegistry.js';
 import { complete, type CompletionContext } from './completer.js';
 import { evaluateTest } from './test-builtin.js';
 import { TerminalStdin } from './terminal-stdin.js';
-import type { ProcessExecutor } from '../runtime/ProcessExecutor.js';
+import type { IProcessExecutor as ProcessExecutor } from '@lifo-sh/kernel';
 
 export interface ExecuteOptions {
   cwd?: string;

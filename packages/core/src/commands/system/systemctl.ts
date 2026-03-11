@@ -1,6 +1,6 @@
 import type { Command } from '../types.js';
-import type { ServiceManager } from '../../kernel/ServiceManager.js';
-import { Kernel } from '../../kernel/index.js';
+import type { ServiceManager } from '@lifo-sh/kernel';
+import { Kernel } from '@lifo-sh/kernel';
 
 const USAGE = `Usage: systemctl <command> [unit]
 

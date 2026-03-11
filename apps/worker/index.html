@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Virtual Node Testing Environment</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header id="toolbar">
+        <div class="toolbar-left">
+          <span class="logo">vnode-test</span>
+          <span id="status" class="status-badge loading">booting</span>
+        </div>
+        <div class="toolbar-right">
+          <label class="toggle">
+            <input type="checkbox" id="worker-toggle" checked />
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">Worker</span>
+          </label>
+          <label class="toggle">
+            <input type="checkbox" id="persist-toggle" checked />
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">Persist</span>
+          </label>
+          <button id="reset-vfs-btn" class="text-btn" title="Reset VFS and reload">Reset VFS</button>
+          <button id="clear-btn" class="icon-btn" title="Clear terminal">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M5.33 4V2.67a1.33 1.33 0 0 1 1.34-1.34h2.66a1.33 1.33 0 0 1 1.34 1.34V4m2 0v9.33a1.33 1.33 0 0 1-1.34 1.34H4.67a1.33 1.33 0 0 1-1.34-1.34V4h9.34Z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <div id="main-layout">
+        <!-- Left: Editor Panel -->
+        <div id="editor-panel">
+          <div id="editor-toolbar">
+            <div class="editor-toolbar-left">
+              <span class="panel-title">Editor</span>
+              <input type="text" id="filename-input" value="/tmp/test.js" spellcheck="false" />
+            </div>
+            <div class="editor-toolbar-right">
+              <button id="run-btn" class="action-btn run" title="Write file & run with node">Run</button>
+              <button id="save-btn" class="action-btn save" title="Write file to VFS">Save</button>
+            </div>
+          </div>
+          <textarea id="code-editor" spellcheck="false" placeholder="// Write Node.js code here..."></textarea>
+          <div id="presets-bar">
+            <span class="presets-label">Presets:</span>
+            <div id="preset-buttons"></div>
+          </div>
+        </div>
+
+        <!-- Resizer -->
+        <div id="resizer"></div>
+
+        <!-- Right: Terminal -->
+        <div id="terminal-panel">
+          <main id="terminal-container"></main>
+        </div>
+      </div>
+
+      <!-- Bottom: VFS Inspector -->
+      <div id="vfs-bar">
+        <div class="vfs-bar-left">
+          <button id="vfs-toggle-btn" class="text-btn small">VFS Inspector</button>
+          <span id="vfs-path" class="vfs-path">/</span>
+        </div>
+        <div id="vfs-content" class="hidden">
+          <div id="vfs-tree"></div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

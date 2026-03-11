@@ -9,14 +9,14 @@
  */
 
 import type { Command, CommandContext } from '../commands/types.js';
-import type { VFS } from '../kernel/vfs/index.js';
+import type { VFS } from '@lifo-sh/kernel';
 import { resolve, dirname, join } from '../utils/path.js';
-import { createProcess } from '../node-compat/process.js';
-import { createConsole } from '../node-compat/console.js';
-import { Buffer } from '../node-compat/buffer.js';
-import { createModuleMap } from '../node-compat/index.js';
-import { ProcessExitError } from '../node-compat/index.js';
-import type { NodeContext } from '../node-compat/index.js';
+import { createProcess } from '@lifo-sh/node-compat/process';
+import { createConsole } from '@lifo-sh/node-compat/console';
+import { Buffer } from '@lifo-sh/node-compat/buffer';
+import { createModuleMap } from '@lifo-sh/node-compat';
+import { ProcessExitError } from '@lifo-sh/node-compat';
+import type { NodeContext } from '@lifo-sh/node-compat';
 
 // ─── Types ───
 

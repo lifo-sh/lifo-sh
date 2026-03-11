@@ -1,6 +1,6 @@
 import type { Command } from '../types.js';
 import { resolve } from '../../utils/path.js';
-import { VFSError } from '../../kernel/vfs/index.js';
+import { VFSError } from '@lifo-sh/kernel';
 
 function toBase64(data: Uint8Array): string {
   let binary = '';

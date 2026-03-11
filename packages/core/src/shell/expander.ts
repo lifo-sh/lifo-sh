@@ -1,5 +1,5 @@
 import type { WordPart } from './types.js';
-import type { VFS } from '../kernel/vfs/index.js';
+import type { VFS } from '@lifo-sh/kernel';
 import { expandGlob, globMatch } from '../utils/glob.js';
 
 export interface ExpandContext {

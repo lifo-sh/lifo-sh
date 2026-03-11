@@ -1,7 +1,8 @@
-import { Kernel } from './kernel/index.js';
+import { Kernel } from '@lifo-sh/kernel';
 import { Terminal } from './terminal/Terminal.js';
 import { Shell } from './shell/Shell.js';
 import { createDefaultRegistry } from './commands/registry.js';
+import { createProcessExecutor } from './runtime/ProcessExecutor.js';
 import { createPsCommand } from './commands/system/ps.js';
 import { createTopCommand } from './commands/system/top.js';
 import { createKillCommand } from './commands/system/kill.js';
@@ -25,7 +26,26 @@ async function boot(): Promise<void> {
 	const registry = createDefaultRegistry();
 
 	// 3a. Initialize kernel's process executor with registry
-	kernel.setRegistry(registry);
+	const shellExecuteFn = kernel.createShellExecuteFn();
+	const vfsReloadFn = async () => {
+		const saved = await kernel.persistence.load();
+		if (saved) {
+			kernel.vfs.loadFromSerialized(saved);
+		}
+	};
+	const vfsSaveFn = async () => {
+		await kernel.persistence.open();
+		await kernel.persistence.save(kernel.vfs.getRoot());
+	};
+	kernel.setProcessExecutor(createProcessExecutor(
+		kernel.vfsDbName,
+		registry,
+		kernel.enableThreading,
+		shellExecuteFn,
+		vfsReloadFn,
+		kernel.portRegistry,
+		vfsSaveFn,
+	));
 
 	// 3b. Boot lifo packages (dev links + installed lifo-pkg-* upgrades)
 	bootLifoPackages(kernel.vfs, registry);

@@ -1,5 +1,5 @@
 import type { Command } from '../types.js';
-import type { Kernel } from '../../kernel/index.js';
+import type { Kernel } from '@lifo-sh/kernel';
 
 /**
  * ports - List all ports in the portRegistry with details

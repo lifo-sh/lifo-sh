@@ -1,6 +1,6 @@
 import type { Command } from '../types.js';
-import type { NetworkStack } from '../../kernel/network/index.js';
-import type { Kernel } from '../../kernel/index.js';
+import type { NetworkStack } from '@lifo-sh/kernel/network';
+import type { Kernel } from '@lifo-sh/kernel';
 
 /**
  * route - Show/manipulate IP routing table

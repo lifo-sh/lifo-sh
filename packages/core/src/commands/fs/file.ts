@@ -1,6 +1,6 @@
 import type { Command } from '../types.js';
 import { resolve, extname } from '../../utils/path.js';
-import { VFSError } from '../../kernel/vfs/index.js';
+import { VFSError } from '@lifo-sh/kernel';
 
 const extTypes: Record<string, string> = {
   '.txt': 'ASCII text',

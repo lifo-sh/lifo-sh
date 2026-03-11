@@ -1,4 +1,4 @@
-import type { VFS } from '../kernel/vfs/index.js';
+import type { VFS } from '@lifo-sh/kernel';
 
 const HISTORY_PATH = '/home/user/.bash_history';
 const MAX_HISTORY = 1000;

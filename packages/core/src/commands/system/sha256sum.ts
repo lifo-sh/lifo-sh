@@ -1,6 +1,6 @@
 import type { Command } from '../types.js';
 import { resolve } from '../../utils/path.js';
-import { VFSError } from '../../kernel/vfs/index.js';
+import { VFSError } from '@lifo-sh/kernel';
 
 async function sha256(data: Uint8Array): Promise<string> {
   const hash = await crypto.subtle.digest('SHA-256', data as unknown as ArrayBuffer);

@@ -5,7 +5,7 @@
  * to local VFS paths.  `lifo link` adds entries, `lifo unlink` removes them.
  */
 
-import type { VFS } from '../kernel/vfs/index.js';
+import type { VFS } from '@lifo-sh/kernel';
 import type { CommandRegistry } from '../commands/registry.js';
 import { join } from '../utils/path.js';
 import { createLifoCommand, readLifoManifest } from './lifo-runtime.js';

@@ -39,6 +39,7 @@ import {
 	createPortsCommand,
 	createTestRegistryCommand,
 	createNewtabCommand,
+	createProcessExecutor,
 } from '@lifo-sh/core';
 import gitCommand from 'lifo-pkg-git';
 import ffmpegCommand from 'lifo-pkg-ffmpeg';
@@ -816,6 +817,167 @@ test-registry get    # Should show "Has port: true"
 Enjoy your browser-native development server! 🚀
 `);
 
+	// ── Process test scripts (spawn/fork/exec) ──
+	vfs.mkdir('/home/user/tests', { recursive: true });
+
+	vfs.writeFile('/home/user/tests/test-spawn.mjs', `// Test child_process.spawn() — delegates to kernel syscalls
+import { spawn } from 'child_process';
+
+console.log('--- spawn: ls /home/user ---');
+const ls = spawn('ls', ['-la', '/home/user']);
+
+ls.stdout.on('data', (data) => {
+  console.log('[stdout]', data);
+});
+
+ls.stderr.on('data', (data) => {
+  console.error('[stderr]', data);
+});
+
+ls.on('exit', (code) => {
+  console.log('ls exited with code', code);
+
+  // Chain: spawn another command after the first finishes
+  console.log('\\n--- spawn: cat /etc/hostname ---');
+  const cat = spawn('cat', ['/etc/hostname']);
+
+  cat.stdout.on('data', (data) => {
+    console.log('[stdout]', data);
+  });
+
+  cat.on('exit', (code2) => {
+    console.log('cat exited with code', code2);
+  });
+});
+`);
+
+	vfs.writeFile('/home/user/tests/test-fork.mjs', [
+		'// Test child_process.fork() — spawns long-running child processes',
+		'// Run this, then open another tab and type "ps" to see all processes',
+		'import fs from "fs";',
+		'import { fork, spawn } from "child_process";',
+		'',
+		'// Write a child script that runs for 30 seconds',
+		'const childSrc = [',
+		'  "const label = process.argv[2] || \'worker\';",',
+		'  "const duration = parseInt(process.argv[3] || \'30\', 10);",',
+		'  "console.log(\'[\' + label + \'] PID started, running for \' + duration + \'s...\');",',
+		'  "console.log(\'[\' + label + \'] env.ROLE:\', process.env.ROLE);",',
+		'  "let tick = 0;",',
+		'  "const iv = setInterval(() => {",',
+		'  "  tick++;",',
+		'  "  console.log(\'[\' + label + \'] tick \' + tick + \'/\' + duration);",',
+		'  "  if (tick >= duration) { clearInterval(iv); console.log(\'[\' + label + \'] Done!\'); }",',
+		'  "}, 1000);",',
+		'].join("\\n");',
+		'fs.writeFileSync("/tmp/child-worker.mjs", childSrc);',
+		'',
+		'console.log("[parent] Forking 2 child workers (30s each)...");',
+		'console.log("[parent] Run ps in another tab to see them!");',
+		'console.log("");',
+		'',
+		'const child1 = fork("/tmp/child-worker.mjs", ["alpha", "30"], {',
+		'  env: { ROLE: "compute" },',
+		'});',
+		'',
+		'const child2 = fork("/tmp/child-worker.mjs", ["beta", "30"], {',
+		'  env: { ROLE: "io" },',
+		'});',
+		'',
+		'const sleeper = spawn("sleep", ["25"]);',
+		'',
+		'child1.stdout.on("data", (d) => process.stdout.write(d));',
+		'child2.stdout.on("data", (d) => process.stdout.write(d));',
+		'',
+		'let exited = 0;',
+		'function onExit(name) {',
+		'  return (code) => {',
+		'    console.log("[parent] " + name + " exited with code " + code);',
+		'    exited++;',
+		'    if (exited >= 3) console.log("[parent] All children finished.");',
+		'  };',
+		'}',
+		'child1.on("exit", onExit("alpha"));',
+		'child2.on("exit", onExit("beta"));',
+		'sleeper.on("exit", onExit("sleeper"));',
+	].join('\n'));
+
+	vfs.writeFile('/home/user/tests/test-exec.mjs', `// Test child_process.exec() — run shell commands and capture output
+import { exec } from 'child_process';
+
+function run(cmd) {
+  return new Promise((resolve, reject) => {
+    exec(cmd, (err, stdout, stderr) => {
+      if (err) {
+        console.error('Error running:', cmd, err.message);
+        reject(err);
+        return;
+      }
+      resolve({ stdout, stderr });
+    });
+  });
+}
+
+console.log('--- exec: echo hello ---');
+const r1 = await run('echo hello world');
+console.log('stdout:', JSON.stringify(r1.stdout));
+
+console.log('\\n--- exec: ls / ---');
+const r2 = await run('ls /');
+console.log('stdout:', r2.stdout);
+
+console.log('\\n--- exec: cat /etc/hostname ---');
+const r3 = await run('cat /etc/hostname');
+console.log('hostname:', r3.stdout.trim());
+
+console.log('\\nAll exec tests passed!');
+`);
+
+	vfs.writeFile('/home/user/tests/test-spawn-pipeline.mjs', `// Test spawning multiple processes in sequence
+import { spawn } from 'child_process';
+import fs from 'fs';
+
+// Write test data
+fs.writeFileSync('/tmp/names.txt', \`Alice
+Bob
+Charlie
+David
+Eve
+\`);
+
+console.log('--- Spawn: cat /tmp/names.txt ---');
+
+function collectOutput(proc) {
+  return new Promise((resolve) => {
+    let out = '';
+    proc.stdout.on('data', (d) => { out += d; });
+    proc.on('exit', (code) => resolve({ out, code }));
+  });
+}
+
+// Step 1: cat the file
+const cat = spawn('cat', ['/tmp/names.txt']);
+const result1 = await collectOutput(cat);
+console.log('cat output:', result1.out);
+
+// Step 2: count lines with wc
+const wc = spawn('wc', ['-l', '/tmp/names.txt']);
+const result2 = await collectOutput(wc);
+console.log('wc output:', result2.out.trim());
+
+console.log('\\nPipeline test done!');
+`);
+
+	vfs.writeFile('/home/user/tests/README.md', `# Process Tests
+
+Test scripts for child_process spawn/fork/exec:
+
+  node tests/test-spawn.mjs          # spawn ls and cat
+  node tests/test-fork.mjs           # fork a child Node.js script
+  node tests/test-exec.mjs           # exec shell commands
+  node tests/test-spawn-pipeline.mjs # spawn multiple processes
+`);
+
 	await addInteractiveTab();
 
 	document.getElementById('interactive-add-tab')!.addEventListener('click', () => {
@@ -831,6 +993,7 @@ async function addInteractiveTab(): Promise<InteractiveTab> {
 	const addBtn = document.getElementById('interactive-add-tab')!;
 	const tabBtn = document.createElement('button');
 	tabBtn.className = 'tab-btn px-3.5 py-[5px] bg-transparent border-none text-tokyo-comment text-xs font-medium cursor-pointer rounded-t-[5px] transition-colors whitespace-nowrap hover:text-tokyo-muted hover:bg-tokyo-hover';
+
 	tabBtn.textContent = `Terminal ${id}`;
 	tabBtn.addEventListener('click', () => switchInteractiveTab(id));
 	tabBar.insertBefore(tabBtn, addBtn);
@@ -848,10 +1011,43 @@ async function addInteractiveTab(): Promise<InteractiveTab> {
 	bootLifoPackages(kernel.vfs, registry);
 
 	// Initialize ProcessExecutor with the registry (enables worker threading)
-	kernel.setRegistry(registry);
+	const shellExecuteFn = kernel.createShellExecuteFn();
+	const vfsReloadFn = async () => {
+		const saved = await kernel.persistence.load();
+		if (saved) {
+			kernel.vfs.loadFromSerialized(saved);
+		}
+	};
+	const vfsSaveFn = async () => {
+		await kernel.persistence.open();
+		await kernel.persistence.save(kernel.vfs.getRoot());
+	};
+	kernel.setProcessExecutor(createProcessExecutor(
+		kernel.vfsDbName,
+		registry,
+		kernel.enableThreading,
+		shellExecuteFn,
+		vfsReloadFn,
+		kernel.portRegistry,
+		vfsSaveFn,
+	));
 
 	const env = kernel.getDefaultEnv();
 	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry, kernel.processExecutor);
+
+	// Wire shell execution to kernel for process API and worker threads
+	kernel.setShellExecute(async (cmd: string, ctx: any) => {
+		const result = await shell.execute(cmd, {
+			cwd: ctx.cwd,
+			env: ctx.env,
+			onStdout: (data: string) => ctx.stdout?.write(data),
+			onStderr: (data: string) => ctx.stderr?.write(data),
+		});
+		return result.exitCode;
+	});
+
+	// Initialize kernel process API (syscall layer for child_process)
+	kernel.initProcessAPI({ env });
 
 	const jobTable = shell.getJobTable();
 	const processRegistry = shell.getProcessRegistry();
@@ -1061,7 +1257,26 @@ async function addMultiTab(): Promise<MultiTab> {
 	bootLifoPackages(kernel.vfs, registry);
 
 	// Initialize ProcessExecutor with the registry (enables worker threading)
-	kernel.setRegistry(registry);
+	const shellExecuteFn = kernel.createShellExecuteFn();
+	const vfsReloadFn = async () => {
+		const saved = await kernel.persistence.load();
+		if (saved) {
+			kernel.vfs.loadFromSerialized(saved);
+		}
+	};
+	const vfsSaveFn = async () => {
+		await kernel.persistence.open();
+		await kernel.persistence.save(kernel.vfs.getRoot());
+	};
+	kernel.setProcessExecutor(createProcessExecutor(
+		kernel.vfsDbName,
+		registry,
+		kernel.enableThreading,
+		shellExecuteFn,
+		vfsReloadFn,
+		kernel.portRegistry,
+		vfsSaveFn,
+	));
 
 	const env = kernel.getDefaultEnv();
 	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry, kernel.processExecutor);
@@ -1168,8 +1383,8 @@ const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('Hello from Lifo 333!\\n');
 });
-server.listen(3000, () => {
-  console.log('Server running on port 3000');
+server.listen(5173, () => {
+  console.log('Server running on port 5173');
 });
 `);
 
@@ -1278,7 +1493,26 @@ async function addHttpTab(label: string): Promise<HttpTab> {
 	registry.register('systemctl', createSystemctlCommand(kernel));
 
 	// Initialize ProcessExecutor with the registry (enables worker threading)
-	kernel.setRegistry(registry);
+	const shellExecuteFn = kernel.createShellExecuteFn();
+	const vfsReloadFn = async () => {
+		const saved = await kernel.persistence.load();
+		if (saved) {
+			kernel.vfs.loadFromSerialized(saved);
+		}
+	};
+	const vfsSaveFn = async () => {
+		await kernel.persistence.open();
+		await kernel.persistence.save(kernel.vfs.getRoot());
+	};
+	kernel.setProcessExecutor(createProcessExecutor(
+		kernel.vfsDbName,
+		registry,
+		kernel.enableThreading,
+		shellExecuteFn,
+		vfsReloadFn,
+		kernel.portRegistry,
+		vfsSaveFn,
+	));
 
 	const env = kernel.getDefaultEnv();
 	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry, kernel.processExecutor);
@@ -1481,7 +1715,26 @@ async function bootExplorer() {
 	bootLifoPackages(vfs, registry);
 
 	// Initialize ProcessExecutor with the registry (enables worker threading)
-	explorerKernel.setRegistry(registry);
+	const shellExecuteFn = explorerKernel.createShellExecuteFn();
+	const vfsReloadFn = async () => {
+		const saved = await explorerKernel.persistence.load();
+		if (saved) {
+			explorerKernel.vfs.loadFromSerialized(saved);
+		}
+	};
+	const vfsSaveFn = async () => {
+		await explorerKernel.persistence.open();
+		await explorerKernel.persistence.save(explorerKernel.vfs.getRoot());
+	};
+	explorerKernel.setProcessExecutor(createProcessExecutor(
+		explorerKernel.vfsDbName,
+		registry,
+		explorerKernel.enableThreading,
+		shellExecuteFn,
+		vfsReloadFn,
+		explorerKernel.portRegistry,
+		vfsSaveFn,
+	));
 
 	const env = explorerKernel.getDefaultEnv();
 	const shell = new Shell(terminal, vfs, registry, env, explorerKernel.processRegistry, explorerKernel.processExecutor);
@@ -1526,7 +1779,26 @@ async function bootGit() {
 	bootLifoPackages(kernel.vfs, registry);
 
 	// Initialize ProcessExecutor with the registry (enables worker threading)
-	kernel.setRegistry(registry);
+	const shellExecuteFn = kernel.createShellExecuteFn();
+	const vfsReloadFn = async () => {
+		const saved = await kernel.persistence.load();
+		if (saved) {
+			kernel.vfs.loadFromSerialized(saved);
+		}
+	};
+	const vfsSaveFn = async () => {
+		await kernel.persistence.open();
+		await kernel.persistence.save(kernel.vfs.getRoot());
+	};
+	kernel.setProcessExecutor(createProcessExecutor(
+		kernel.vfsDbName,
+		registry,
+		kernel.enableThreading,
+		shellExecuteFn,
+		vfsReloadFn,
+		kernel.portRegistry,
+		vfsSaveFn,
+	));
 
 	const env = kernel.getDefaultEnv();
 	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry, kernel.processExecutor);
@@ -1595,7 +1867,26 @@ async function bootFfmpeg() {
 	bootLifoPackages(vfs, registry);
 
 	// Initialize ProcessExecutor with the registry (enables worker threading)
-	ffmpegKernel.setRegistry(registry);
+	const shellExecuteFn = ffmpegKernel.createShellExecuteFn();
+	const vfsReloadFn = async () => {
+		const saved = await ffmpegKernel.persistence.load();
+		if (saved) {
+			ffmpegKernel.vfs.loadFromSerialized(saved);
+		}
+	};
+	const vfsSaveFn = async () => {
+		await ffmpegKernel.persistence.open();
+		await ffmpegKernel.persistence.save(ffmpegKernel.vfs.getRoot());
+	};
+	ffmpegKernel.setProcessExecutor(createProcessExecutor(
+		ffmpegKernel.vfsDbName,
+		registry,
+		ffmpegKernel.enableThreading,
+		shellExecuteFn,
+		vfsReloadFn,
+		ffmpegKernel.portRegistry,
+		vfsSaveFn,
+	));
 
 	const env = ffmpegKernel.getDefaultEnv();
 	const shell = new Shell(terminal, vfs, registry, env, ffmpegKernel.processRegistry, ffmpegKernel.processExecutor);
