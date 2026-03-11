@@ -1,13 +1,13 @@
 /**
  * Worker script for executing commands in a dedicated thread.
- * Initializes its own VFS and command registry, then handles
- * 'execute' and 'abort' messages from the main thread.
+ *
+ * Instead of creating its own VFS instance, the worker receives a VFS
+ * snapshot from the kernel at command start and uses a WorkerVfsProxy
+ * that forwards writes back to the kernel via MessagePort.
  */
 
-console.log("hello world")
-import { VFS } from '@lifo-sh/kernel';
+import { WorkerKernel } from '@lifo-sh/kernel';
 import { createDefaultRegistry, type CommandRegistry } from '../commands/registry.js';
-import { PersistenceManager, IndexedDBPersistenceBackend } from '@lifo-sh/kernel/persistence';
 import {
 	createMessagePortOutputStream,
 	createMessagePortInputStream,
@@ -17,10 +17,8 @@ import {
 import type { CommandContext } from '../commands/types.js';
 import { createNpmCommand, createNpxCommand, type ShellExecuteFn } from '../commands/system/npm.js';
 
-let vfs: VFS | null = null;
+let workerKernel: WorkerKernel | null = null;
 let registry: CommandRegistry | null = null;
-let currentDbName: string | null = null;
-let persistence: PersistenceManager | null = null;
 
 // Port registry port - MessagePort for communicating with main thread's port registry
 let portRegistryPort: MessagePort | null = null;
@@ -30,7 +28,7 @@ const portRequestChannels = new Map<number, MessagePort>();
 // Simple port registry that forwards to main thread via MessagePort
 const proxyPortRegistry = new Map();
 proxyPortRegistry.set = function(port: number, handler: any) {
-	console.log(`🔌 [Worker] Registering port ${port} with main thread`);
+	console.log(`[Worker] Registering port ${port} with main thread`);
 
 	// Store handler locally
 	localPortHandlers.set(port, handler);
@@ -43,7 +41,6 @@ proxyPortRegistry.set = function(port: number, handler: any) {
 		// Listen for HTTP requests on this port
 		channel.port1.onmessage = async (e: MessageEvent) => {
 			const { requestId, method, url, headers, body } = e.data;
-			console.log(`🌐 [Worker] HTTP request for port ${port}: ${method} ${url}`);
 
 			const vReq = { method, url, headers, body };
 			const vRes = { statusCode: 200, headers: {}, body: '' };
@@ -64,7 +61,6 @@ proxyPortRegistry.set = function(port: number, handler: any) {
 					body: vRes.body
 				});
 			} catch (error) {
-				console.error(`❌ [Worker] Error handling port ${port}:`, error);
 				portRegistryPort!.postMessage({
 					type: 'portResponse',
 					requestId,
@@ -87,8 +83,6 @@ proxyPortRegistry.set = function(port: number, handler: any) {
 };
 
 proxyPortRegistry.delete = function(port: number) {
-	console.log(`🔌 [Worker] Unregistering port ${port}`);
-
 	localPortHandlers.delete(port);
 
 	const channel = portRequestChannels.get(port);
@@ -118,13 +112,12 @@ const pendingShellExecute = new Map<string, {
 function createShellExecuteProxy(): ShellExecuteFn {
 	return async (cmd: string, ctx: CommandContext): Promise<number> => {
 		const requestId = crypto.randomUUID();
-		console.log(`📞 [Worker] shellExecute request: ${cmd}`);
 
 		return new Promise<number>((resolve, reject) => {
 			pendingShellExecute.set(requestId, { resolve, reject });
 
 			// Serialize context for main thread
-			const { serializable, ports, localPorts } = serializeContext(ctx, currentDbName!);
+			const { serializable, ports, localPorts } = serializeContext(ctx);
 
 			// Bridge: forward data arriving from main thread back to original ctx streams
 			localPorts.stdout.onmessage = (event: MessageEvent) => {
@@ -156,74 +149,62 @@ function createShellExecuteProxy(): ShellExecuteFn {
 	};
 }
 
-async function initVFS(dbName: string): Promise<void> {
-	const isFirstInit = !vfs || currentDbName !== dbName;
+function initRegistry(): void {
+	if (registry) return;
 
-	if (isFirstInit) {
-		console.log(`🔧 [Worker] Initializing VFS with database: ${dbName}`);
-		currentDbName = dbName;
-		vfs = new VFS();
-		registry = createDefaultRegistry();
+	registry = createDefaultRegistry();
 
-		// Register npm/npx with shellExecute proxy and fakeKernel so bin scripts
-		// (e.g. vite) installed by npm use proxyPortRegistry instead of the isolated
-		// module-level defaultPortRegistry. proxyPortRegistry forwards port
-		// registrations to the main thread's kernel.portRegistry, making worker-hosted
-		// servers visible to curl and netstat.
-		const shellExecute = createShellExecuteProxy();
-		const fakeKernel = { portRegistry: proxyPortRegistry } as any;
-		registry.register('npm', createNpmCommand(registry, shellExecute, fakeKernel));
-		registry.register('npx', createNpxCommand(registry, shellExecute));
-		console.log('✅ [Worker] Registered npm/npx with shellExecute proxy and proxyPortRegistry');
+	// Register npm/npx with shellExecute proxy and workerKernel
+	const shellExecute = createShellExecuteProxy();
+	registry.register('npm', createNpmCommand(registry, shellExecute, workerKernel as any));
+	registry.register('npx', createNpxCommand(registry, shellExecute));
 
-		// Override node command to use proxyPortRegistry and shellExecute proxy
-		// This allows HTTP servers in worker to be accessible from main thread
-		// and enables child_process.spawn()/fork() via shellExecute fallback
-		const { createNodeImpl } = await import('../commands/system/node.js');
-		registry.register('node', createNodeImpl(proxyPortRegistry as any, shellExecute as any));
-		console.log('✅ [Worker] Registered node command with proxyPortRegistry and shellExecute');
-
-		persistence = new PersistenceManager(new IndexedDBPersistenceBackend(dbName));
-		await persistence.open();
-
-		// Set up VFS watch to auto-save changes (same as main thread)
-		vfs.watch(() => {
-			if (persistence) {
-				persistence.scheduleSave(vfs!.getRoot());
-				console.log('💾 [Worker] VFS change detected, scheduling save...');
-			}
-		});
-	}
-
-	// Always reload VFS from IndexedDB to pick up main-thread changes
-	const saved = await persistence!.load();
-	if (saved) vfs!.loadFromSerialized(saved);
-
-	if (isFirstInit) {
-		console.log('✅ [Worker] VFS and command registry initialized with persistence');
-	}
+	// Override node command to use workerKernel's portRegistry and shellExecute proxy
+	import('../commands/system/node.js').then(({ createNodeImpl }) => {
+		registry!.register('node', createNodeImpl(proxyPortRegistry as any, shellExecute as any));
+	});
 }
 
 self.onmessage = async (event: MessageEvent<WorkerMessage>): Promise<void> => {
 	const msg = event.data;
 
 	if (msg.type === 'execute') {
-		const { id, command, ctx, ports } = msg;
-		console.log(`🚀 [Worker] Received command: ${command}`);
+		const { id, command, ctx, ports, vfsSnapshot } = msg;
 		const startTime = performance.now();
 
 		try {
-			// Set port registry port if provided (it's the last port in event.ports after stdout/stderr/stdin)
+			// Set port registry port if provided
 			if ((ctx as any).portRegistryPort && !portRegistryPort && event.ports) {
-				// The portRegistryPort is the last one in the transfer array
-				const portIndex = ports.stdin ? 3 : 2; // After stdout, stderr, (stdin?)
-				if (event.ports.length > portIndex) {
+				const portIndex = ports.stdin ? 3 : 2; // After stdout, stderr, (stdin?), vfsPort
+				// VFS port is at index portIndex, portRegistry is after that
+				if ((ctx as any).hasVfsPort) {
+					if (event.ports.length > portIndex + 1) {
+						portRegistryPort = event.ports[portIndex + 1];
+					}
+				} else if (event.ports.length > portIndex) {
 					portRegistryPort = event.ports[portIndex];
-					console.log('✅ [Worker] Port registry communication channel established via network interface');
 				}
 			}
 
-			await initVFS(ctx.vfsDbName);
+			// Get the VFS MessagePort from transferred ports
+			let vfsPortIndex = ports.stdin ? 3 : 2;
+			const vfsPort = (ctx as any).hasVfsPort ? event.ports[vfsPortIndex] : null;
+
+			// Create or update WorkerKernel
+			if (vfsPort && vfsSnapshot) {
+				if (workerKernel) {
+					workerKernel.reset(vfsPort, vfsSnapshot);
+				} else {
+					workerKernel = new WorkerKernel(vfsPort, vfsSnapshot, proxyPortRegistry);
+				}
+			} else if (workerKernel && vfsSnapshot) {
+				workerKernel.loadSnapshot(vfsSnapshot);
+			} else if (!workerKernel) {
+				throw new Error('No VFS channel or snapshot provided');
+			}
+
+			// Initialize registry (once, after workerKernel is created)
+			initRegistry();
 
 			const abortController = new AbortController();
 			runningTasks.set(id, abortController);
@@ -232,10 +213,11 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>): Promise<void> => {
 			const stderr = createMessagePortOutputStream(ports.stderr);
 
 			const commandCtx: CommandContext = {
+				kernel: workerKernel,
 				args: ctx.args,
 				env: ctx.env,
 				cwd: ctx.cwd,
-				vfs: vfs!,
+				vfs: workerKernel.vfs,
 				stdout,
 				stderr,
 				stdin: ports.stdin ? createMessagePortInputStream(ports.stdin) : undefined,
@@ -245,28 +227,20 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>): Promise<void> => {
 			const commandImpl = await registry!.resolve(command);
 			if (!commandImpl) throw new Error(`Command not found: ${command}`);
 
-			console.log(`⚙️ [Worker] Executing: ${command}`);
 			const exitCode = await commandImpl(commandCtx);
 			runningTasks.delete(id);
-
-			// Explicitly save VFS changes to IndexedDB after command execution
-			if (persistence && vfs) {
-				await persistence.save(vfs.getRoot());
-				console.log(`💾 [Worker] VFS changes saved to IndexedDB after ${command}`);
-			}
 
 			stdout.end();
 			stderr.end();
 
 			const duration = (performance.now() - startTime).toFixed(0);
-			console.log(`✅ [Worker] Completed: ${command} (${duration}ms, exit=${exitCode})`);
+			console.log(`[Worker] Completed: ${command} (${duration}ms, exit=${exitCode})`);
 
 			self.postMessage({ type: 'result', id, exitCode } as WorkerMessage);
 		} catch (error) {
 			runningTasks.delete(id);
-			const duration = (performance.now() - startTime).toFixed(0);
 			const errorMsg = error instanceof Error ? error.message : String(error);
-			console.error(`❌ [Worker] Failed: ${command} (${duration}ms) - ${errorMsg}`);
+			console.error(`[Worker] Failed: ${command} - ${errorMsg}`);
 			self.postMessage({
 				type: 'error',
 				id,
@@ -274,18 +248,15 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>): Promise<void> => {
 			} as WorkerMessage);
 		}
 	} else if (msg.type === 'abort') {
-		console.log(`⚠️ [Worker] Aborting task: ${msg.id}`);
 		runningTasks.get(msg.id)?.abort();
 		runningTasks.delete(msg.id);
 	} else if (msg.type === 'shellExecuteResult') {
-		console.log(`✅ [Worker] shellExecute completed: exit=${msg.exitCode}`);
 		const pending = pendingShellExecute.get(msg.requestId);
 		if (pending) {
 			pendingShellExecute.delete(msg.requestId);
 			pending.resolve(msg.exitCode);
 		}
 	} else if (msg.type === 'shellExecuteError') {
-		console.error(`❌ [Worker] shellExecute failed: ${msg.error}`);
 		const pending = pendingShellExecute.get(msg.requestId);
 		if (pending) {
 			pendingShellExecute.delete(msg.requestId);
@@ -295,5 +266,4 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>): Promise<void> => {
 };
 
 // Signal ready to the main thread
-console.log('🌐 [Worker] Worker thread started, signaling ready to main thread');
 self.postMessage({ type: 'ready' } as WorkerMessage);

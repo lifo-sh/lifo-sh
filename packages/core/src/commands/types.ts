@@ -1,4 +1,4 @@
-import type { VFS } from '@lifo-sh/kernel';
+import type { IKernel, IKernelVfs } from '@lifo-sh/kernel';
 
 export interface CommandOutputStream {
   write(text: string): void;
@@ -10,10 +10,11 @@ export interface CommandInputStream {
 }
 
 export interface CommandContext {
+  kernel: IKernel;
   args: string[];
   env: Record<string, string>;
   cwd: string;
-  vfs: VFS;
+  vfs: IKernelVfs;
   stdout: CommandOutputStream;
   stderr: CommandOutputStream;
   signal: AbortSignal;

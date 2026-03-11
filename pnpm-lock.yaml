@@ -137,14 +137,14 @@ importers:
   packages/core:
     dependencies:
       '@lifo-sh/kernel':
-        specifier: ^0.1.3
-        version: 0.1.3(@lifo-sh/node-compat@0.1.6)
+        specifier: ^0.1.5
+        version: 0.1.5(@lifo-sh/node-compat@0.1.7)
       '@lifo-sh/node-compat':
-        specifier: ^0.1.6
-        version: 0.1.6
+        specifier: ^0.1.7
+        version: 0.1.7
       '@lifo-sh/node-runner':
-        specifier: ^0.1.8
-        version: 0.1.8(@lifo-sh/node-compat@0.1.6)
+        specifier: ^0.1.9
+        version: 0.1.9(@lifo-sh/node-compat@0.1.7)
       '@lifo-sh/ui':
         specifier: workspace:*
         version: link:../ui
@@ -675,19 +675,19 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@lifo-sh/kernel@0.1.3':
-    resolution: {integrity: sha512-uhYuIXRSrUvE1tcPFaa6xyxB9neG5ATYukzfxX37RM6RgKFwPPmDI4YSuiIizbXCbD1a6zz+/MMY3MifZQtaLw==}
+  '@lifo-sh/kernel@0.1.5':
+    resolution: {integrity: sha512-N1kLnVOjdrt57Ytp4PJDAaMeybVFMsZ7/o/wDlEzOwsctPqDJ8dk+uY0Ka40TR90MbzQ+wzdEEKvPa810po1VQ==}
     peerDependencies:
       '@lifo-sh/node-compat': '>=0.1.0'
     peerDependenciesMeta:
       '@lifo-sh/node-compat':
         optional: true
 
-  '@lifo-sh/node-compat@0.1.6':
-    resolution: {integrity: sha512-U24z4v2w/S0tnTSpfXVeuLYtkMdU/avJ/7qJ7kDCSuSRSaxrCfq4lOVjhD6nZneXk9ZiMxmml9ezT18HeGUzJA==}
+  '@lifo-sh/node-compat@0.1.7':
+    resolution: {integrity: sha512-Q/+xgdKybQf2FUo40BNj5kN/LIAwAEggof0zYGhxHTCIt8B3Li3MdcdKFwJ5vrFaOD+c44oojGyFnZOYYvo92g==}
 
-  '@lifo-sh/node-runner@0.1.8':
-    resolution: {integrity: sha512-ToQYPvLoy1y7q6b0PFkS29FROaTlGH5GoE6VupyfIPqt8maVSYD3qc85FQXg7uet7/QEXZyxsditSI4oirlL7g==}
+  '@lifo-sh/node-runner@0.1.9':
+    resolution: {integrity: sha512-IErG+tlhegX5PkwrakWRxmM8p9GIK+YBjy6VfoyZ9C/F8Xvd/4lhooWd2t2LGliQtXtw+AK7F8FeYz7ce66XZg==}
     peerDependencies:
       '@lifo-sh/node-compat': '>=0.1.0'
     peerDependenciesMeta:
@@ -2638,20 +2638,20 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@lifo-sh/kernel@0.1.3(@lifo-sh/node-compat@0.1.6)':
+  '@lifo-sh/kernel@0.1.5(@lifo-sh/node-compat@0.1.7)':
     optionalDependencies:
-      '@lifo-sh/node-compat': 0.1.6
+      '@lifo-sh/node-compat': 0.1.7
 
-  '@lifo-sh/node-compat@0.1.6':
+  '@lifo-sh/node-compat@0.1.7':
     dependencies:
-      '@lifo-sh/kernel': 0.1.3(@lifo-sh/node-compat@0.1.6)
+      '@lifo-sh/kernel': 0.1.5(@lifo-sh/node-compat@0.1.7)
       picomatch: 4.0.3
 
-  '@lifo-sh/node-runner@0.1.8(@lifo-sh/node-compat@0.1.6)':
+  '@lifo-sh/node-runner@0.1.9(@lifo-sh/node-compat@0.1.7)':
     dependencies:
       '@lifo-sh/vfs': 0.1.4
     optionalDependencies:
-      '@lifo-sh/node-compat': 0.1.6
+      '@lifo-sh/node-compat': 0.1.7
 
   '@lifo-sh/vfs@0.1.4': {}
 

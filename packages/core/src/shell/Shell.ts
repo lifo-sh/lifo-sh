@@ -1,5 +1,6 @@
 import type { ITerminal } from '../terminal/ITerminal.js';
-import type { VFS } from '@lifo-sh/kernel';
+import type { IKernelVfs } from '@lifo-sh/kernel';
+import { Kernel } from '@lifo-sh/kernel';
 import type { CommandRegistry } from '../commands/registry.js';
 import type { CommandOutputStream } from '../commands/types.js';
 import { resolve } from '../utils/path.js';
@@ -24,7 +25,8 @@ export interface ExecuteOptions {
 
 export class Shell {
   private terminal: ITerminal;
-  private vfs: VFS;
+  private kernel: Kernel;
+  private vfs: IKernelVfs;
   private registry: CommandRegistry;
   private cwd: string;
   private env: Record<string, string>;
@@ -66,14 +68,13 @@ export class Shell {
 
   constructor(
     terminal: ITerminal,
-    vfs: VFS,
+    kernel: Kernel,
     registry: CommandRegistry,
     env: Record<string, string>,
-    processRegistry: ProcessRegistry,
-    processExecutor?: ProcessExecutor,
   ) {
     this.terminal = terminal;
-    this.vfs = vfs;
+    this.kernel = kernel;
+    this.vfs = kernel.createVfsProxy();
     this.registry = registry;
     this.cwd = env['HOME'] ?? '/home/user';
     this.env = { ...env };
@@ -86,27 +87,27 @@ export class Shell {
     this.jobTable = new JobTable();
 
     // Use shared process registry and executor from Kernel
-    this.processRegistry = processRegistry;
-    this.processExecutor = processExecutor;
+    this.processRegistry = kernel.processRegistry;
+    this.processExecutor = kernel.processExecutor;
 
-    // Register shellExecute callback for worker threads (npm run, npx, etc.)
-    if (processExecutor && 'setShellExecute' in processExecutor) {
-      (processExecutor as any).setShellExecute(async (cmd: string, ctx: any) => {
-        return this.execute(cmd, {
-          cwd: ctx.cwd,
-          env: ctx.env,
-          onStdout: (data: string) => ctx.stdout?.write(data),
-          onStderr: (data: string) => ctx.stderr?.write(data),
-        });
+    // Register shellExecute callback on kernel for worker threads (npm run, npx, etc.)
+    kernel.setShellExecute(async (cmd: string, ctx: any) => {
+      const result = await this.execute(cmd, {
+        cwd: ctx.cwd,
+        env: ctx.env,
+        onStdout: (data: string) => ctx.stdout?.write(data),
+        onStderr: (data: string) => ctx.stderr?.write(data),
       });
-    }
+      return result.exitCode;
+    });
 
     // Initialize history manager
-    this.historyManager = new HistoryManager(vfs);
+    this.historyManager = new HistoryManager(this.vfs);
     this.historyManager.load();
 
     // Initialize interpreter
     this.interpreterConfig = {
+      kernel: this.kernel,
       env: this.env,
       getCwd: () => this.cwd,
       setCwd: (cwd: string) => { this.cwd = cwd; },
@@ -166,7 +167,7 @@ export class Shell {
     return this.env;
   }
 
-  getVfs(): VFS {
+  getVfs(): IKernelVfs {
     return this.vfs;
   }
 

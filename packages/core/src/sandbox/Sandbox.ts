@@ -20,7 +20,7 @@ import { createIPCommand } from '../commands/net/ip.js';
 import { createNpmCommand, createNpxCommand } from '../commands/system/npm.js';
 import { createLifoPkgCommand, bootLifoPackages } from '../commands/system/lifo.js';
 import { createSystemctlCommand } from '../commands/system/systemctl.js';
-import type { VFS } from '@lifo-sh/kernel';
+import type { IKernelVfs } from '@lifo-sh/kernel';
 import { NativeFsProvider } from '@lifo-sh/kernel';
 import type { NativeFsModule } from '@lifo-sh/kernel';
 import type { ITerminal } from '../terminal/ITerminal.js';
@@ -75,38 +75,22 @@ export class Sandbox {
 		const kernel = new Kernel();
 		await kernel.boot({ persist: options?.persist ?? false });
 
-		// 2. Create command registry
-		const registry = createDefaultRegistry();
-		bootLifoPackages(kernel.vfs, registry);
+		// 2. Create VFS proxy (all process-level VFS access goes through this)
+		const vfsProxy = kernel.createVfsProxy();
 
-		// 2a. Initialize kernel's process executor with registry
-		const shellExecuteFn = kernel.createShellExecuteFn();
-		const vfsReloadFn = async () => {
-			const saved = await kernel.persistence.load();
-			if (saved) {
-				kernel.vfs.loadFromSerialized(saved);
-			}
-		};
-		const vfsSaveFn = async () => {
-			await kernel.persistence.open();
-			await kernel.persistence.save(kernel.vfs.getRoot());
-		};
-		const executor = createProcessExecutor(
-			kernel.vfsDbName,
-			registry,
-			kernel.enableThreading,
-			shellExecuteFn,
-			vfsReloadFn,
-			kernel.portRegistry,
-			vfsSaveFn,
-		);
+		// 3. Create command registry
+		const registry = createDefaultRegistry();
+		bootLifoPackages(vfsProxy, registry);
+
+		// 3a. Initialize kernel's process executor with registry
+		const executor = createProcessExecutor(kernel, registry);
 		kernel.setProcessExecutor(executor);
 
-		// 3. Pre-populate files if provided
+		// 4. Pre-populate files if provided
 		if (options?.files) {
 			for (const [path, content] of Object.entries(options.files)) {
-				ensureParentDirs(kernel.vfs, path);
-				kernel.vfs.writeFile(path, content);
+				ensureParentDirs(vfsProxy, path);
+				vfsProxy.writeFile(path, content);
 			}
 		}
 
@@ -130,7 +114,7 @@ export class Sandbox {
 			isVisual = true;
 
 			// Display MOTD
-			const motd = kernel.vfs.readFileString('/etc/motd');
+			const motd = vfsProxy.readFileString('/etc/motd');
 			xtermTerminal.write(motd.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n'));
 		} else if (options?.terminal && typeof options.terminal === 'object') {
 			// Pre-created ITerminal instance
@@ -141,20 +125,8 @@ export class Sandbox {
 			shellTerminal = new HeadlessTerminal();
 		}
 
-		// 6. Create shell
-		const shell = new Shell(shellTerminal, kernel.vfs, registry, env, kernel.processRegistry, kernel.processExecutor);
-
-		// 6a. Wire shell execution to kernel so worker threads (npm/npx) can run
-		// commands like `node` on the main thread via the shellExecute proxy.
-		kernel.setShellExecute(async (cmd: string, ctx: any) => {
-			const result = await shell.execute(cmd, {
-				cwd: ctx.cwd,
-				env: ctx.env,
-				onStdout: (data: string) => ctx.stdout?.write(data),
-				onStderr: (data: string) => ctx.stderr?.write(data),
-			});
-			return result.exitCode;
-		});
+		// 6. Create shell (Shell registers shellExecute on kernel automatically)
+		const shell = new Shell(shellTerminal, kernel, registry, env);
 
 		// 6b. Initialize kernel process API (syscall layer for node-compat child_process)
 		kernel.initProcessAPI({ cwd: options?.cwd ?? env.HOME, env });
@@ -213,7 +185,7 @@ export class Sandbox {
 
 		// 11. Build the Sandbox
 		const getCwd = () => shell.getCwd();
-		const sandboxFs = new SandboxFsImpl(kernel.vfs, getCwd);
+		const sandboxFs = new SandboxFsImpl(vfsProxy, getCwd);
 		const sandboxCommands = new SandboxCommandsImpl(shell, registry);
 
 		const sandbox = new Sandbox(kernel, shell, sandboxCommands, sandboxFs, env);
@@ -293,7 +265,7 @@ export class Sandbox {
 		const { Terminal } = await import('@lifo-sh/ui');
 		const xtermTerminal = new Terminal(container);
 
-		const motd = this.kernel.vfs.readFileString('/etc/motd');
+		const motd = this.kernel.createVfsProxy().readFileString('/etc/motd');
 		xtermTerminal.write(motd.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n'));
 		xtermTerminal.focus();
 	}
@@ -338,7 +310,7 @@ function resolveContainer(target: string | HTMLElement): HTMLElement {
 	return target;
 }
 
-function ensureParentDirs(vfs: VFS, filePath: string): void {
+function ensureParentDirs(vfs: IKernelVfs, filePath: string): void {
 	const parts = filePath.split('/').filter(Boolean);
 	parts.pop(); // remove filename
 	let current = '';

@@ -12,7 +12,7 @@ import type {
   FunctionDefNode,
   GroupNode,
 } from './types.js';
-import type { VFS } from '@lifo-sh/kernel';
+import type { IKernel, IKernelVfs } from '@lifo-sh/kernel';
 import type { CommandRegistry } from '../commands/registry.js';
 import type {
   CommandOutputStream,
@@ -52,10 +52,11 @@ export type BuiltinFn = (
 ) => Promise<number>;
 
 export interface InterpreterConfig {
+  kernel: IKernel;
   env: Record<string, string>;
   getCwd: () => string;
   setCwd: (cwd: string) => void;
-  vfs: VFS;
+  vfs: IKernelVfs;
   registry: CommandRegistry;
   builtins: Map<string, BuiltinFn>;
   jobTable: JobTable;
@@ -562,6 +563,7 @@ export class Interpreter {
             }
 
             const ctx: CommandContext = {
+              kernel: this.config.kernel,
               args,
               env: { ...this.config.env },
               cwd: this.config.getCwd(),

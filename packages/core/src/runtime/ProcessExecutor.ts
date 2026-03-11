@@ -7,8 +7,8 @@
  * 2. createProcessExecutor() factory that knows the worker URL
  */
 
-import type { CommandContext } from '../commands/types.js';
 import type { CommandRegistry } from '../commands/registry.js';
+import { Kernel } from '@lifo-sh/kernel';
 import {
 	MainThreadExecutor,
 	WorkerExecutor,
@@ -35,19 +35,14 @@ export type { WorkerMessage, StreamMessage, SerializableContext } from '@lifo-sh
  * the worker script is userspace code that sets up the command registry.
  */
 export function createProcessExecutor(
-	vfsDbName: string,
+	kernel: Kernel,
 	registry: CommandRegistry,
-	enableWorker = true,
-	onShellExecute?: (cmd: string, ctx: CommandContext) => Promise<number>,
-	onVfsReload?: () => Promise<void>,
-	portRegistry?: Map<number, any>,
-	onVfsSave?: () => Promise<void>,
 ): IProcessExecutor {
-	if (!enableWorker) {
+	if (!kernel.enableThreading) {
 		console.log('⚠️ [ProcessExecutor] Worker threads DISABLED - all commands run on main thread');
 		return new MainThreadExecutor(registry);
 	}
 	console.log('✅ [ProcessExecutor] Worker threads ENABLED - routing CPU-intensive commands to workers');
 	const workerUrl = new URL('./command-worker.js', import.meta.url);
-	return new RoutingExecutor(workerUrl, vfsDbName, registry, onShellExecute, onVfsReload, portRegistry, onVfsSave);
+	return new RoutingExecutor(workerUrl, kernel, registry);
 }

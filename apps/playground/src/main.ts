@@ -1008,43 +1008,14 @@ async function addInteractiveTab(): Promise<InteractiveTab> {
 
 	const terminal = new Terminal(container);
 	const registry = createDefaultRegistry();
-	bootLifoPackages(kernel.vfs, registry);
+	bootLifoPackages(kernel.createVfsProxy(), registry);
 
 	// Initialize ProcessExecutor with the registry (enables worker threading)
-	const shellExecuteFn = kernel.createShellExecuteFn();
-	const vfsReloadFn = async () => {
-		const saved = await kernel.persistence.load();
-		if (saved) {
-			kernel.vfs.loadFromSerialized(saved);
-		}
-	};
-	const vfsSaveFn = async () => {
-		await kernel.persistence.open();
-		await kernel.persistence.save(kernel.vfs.getRoot());
-	};
-	kernel.setProcessExecutor(createProcessExecutor(
-		kernel.vfsDbName,
-		registry,
-		kernel.enableThreading,
-		shellExecuteFn,
-		vfsReloadFn,
-		kernel.portRegistry,
-		vfsSaveFn,
-	));
+	kernel.setProcessExecutor(createProcessExecutor(kernel, registry));
 
 	const env = kernel.getDefaultEnv();
-	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry, kernel.processExecutor);
+	const shell = new Shell(terminal, kernel, registry, env);
 
-	// Wire shell execution to kernel for process API and worker threads
-	kernel.setShellExecute(async (cmd: string, ctx: any) => {
-		const result = await shell.execute(cmd, {
-			cwd: ctx.cwd,
-			env: ctx.env,
-			onStdout: (data: string) => ctx.stdout?.write(data),
-			onStderr: (data: string) => ctx.stderr?.write(data),
-		});
-		return result.exitCode;
-	});
 
 	// Initialize kernel process API (syscall layer for child_process)
 	kernel.initProcessAPI({ env });
@@ -1254,32 +1225,13 @@ async function addMultiTab(): Promise<MultiTab> {
 
 	const terminal = new Terminal(container);
 	const registry = createDefaultRegistry();
-	bootLifoPackages(kernel.vfs, registry);
+	bootLifoPackages(kernel.createVfsProxy(), registry);
 
 	// Initialize ProcessExecutor with the registry (enables worker threading)
-	const shellExecuteFn = kernel.createShellExecuteFn();
-	const vfsReloadFn = async () => {
-		const saved = await kernel.persistence.load();
-		if (saved) {
-			kernel.vfs.loadFromSerialized(saved);
-		}
-	};
-	const vfsSaveFn = async () => {
-		await kernel.persistence.open();
-		await kernel.persistence.save(kernel.vfs.getRoot());
-	};
-	kernel.setProcessExecutor(createProcessExecutor(
-		kernel.vfsDbName,
-		registry,
-		kernel.enableThreading,
-		shellExecuteFn,
-		vfsReloadFn,
-		kernel.portRegistry,
-		vfsSaveFn,
-	));
+	kernel.setProcessExecutor(createProcessExecutor(kernel, registry));
 
 	const env = kernel.getDefaultEnv();
-	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry, kernel.processExecutor);
+	const shell = new Shell(terminal, kernel, registry, env);
 
 	const jobTable = shell.getJobTable();
 	const processRegistry = shell.getProcessRegistry();
@@ -1470,7 +1422,7 @@ async function addHttpTab(label: string): Promise<HttpTab> {
 
 	const terminal = new Terminal(container);
 	const registry = createDefaultRegistry();
-	bootLifoPackages(kernel.vfs, registry);
+	bootLifoPackages(kernel.createVfsProxy(), registry);
 
 	// Register node, curl, and tunnel with kernel
 	registry.register('node', createNodeCommand(kernel));
@@ -1493,29 +1445,10 @@ async function addHttpTab(label: string): Promise<HttpTab> {
 	registry.register('systemctl', createSystemctlCommand(kernel));
 
 	// Initialize ProcessExecutor with the registry (enables worker threading)
-	const shellExecuteFn = kernel.createShellExecuteFn();
-	const vfsReloadFn = async () => {
-		const saved = await kernel.persistence.load();
-		if (saved) {
-			kernel.vfs.loadFromSerialized(saved);
-		}
-	};
-	const vfsSaveFn = async () => {
-		await kernel.persistence.open();
-		await kernel.persistence.save(kernel.vfs.getRoot());
-	};
-	kernel.setProcessExecutor(createProcessExecutor(
-		kernel.vfsDbName,
-		registry,
-		kernel.enableThreading,
-		shellExecuteFn,
-		vfsReloadFn,
-		kernel.portRegistry,
-		vfsSaveFn,
-	));
+	kernel.setProcessExecutor(createProcessExecutor(kernel, registry));
 
 	const env = kernel.getDefaultEnv();
-	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry, kernel.processExecutor);
+	const shell = new Shell(terminal, kernel, registry, env);
 
 	const jobTable = shell.getJobTable();
 	const processRegistry = shell.getProcessRegistry();
@@ -1712,32 +1645,13 @@ async function bootExplorer() {
 	const termContainer = document.getElementById('explorer-terminal')!;
 	const terminal = new Terminal(termContainer);
 	const registry = createDefaultRegistry();
-	bootLifoPackages(vfs, registry);
+	bootLifoPackages(explorerKernel.createVfsProxy(), registry);
 
 	// Initialize ProcessExecutor with the registry (enables worker threading)
-	const shellExecuteFn = explorerKernel.createShellExecuteFn();
-	const vfsReloadFn = async () => {
-		const saved = await explorerKernel.persistence.load();
-		if (saved) {
-			explorerKernel.vfs.loadFromSerialized(saved);
-		}
-	};
-	const vfsSaveFn = async () => {
-		await explorerKernel.persistence.open();
-		await explorerKernel.persistence.save(explorerKernel.vfs.getRoot());
-	};
-	explorerKernel.setProcessExecutor(createProcessExecutor(
-		explorerKernel.vfsDbName,
-		registry,
-		explorerKernel.enableThreading,
-		shellExecuteFn,
-		vfsReloadFn,
-		explorerKernel.portRegistry,
-		vfsSaveFn,
-	));
+	explorerKernel.setProcessExecutor(createProcessExecutor(explorerKernel, registry));
 
 	const env = explorerKernel.getDefaultEnv();
-	const shell = new Shell(terminal, vfs, registry, env, explorerKernel.processRegistry, explorerKernel.processExecutor);
+	const shell = new Shell(terminal, explorerKernel, registry, env);
 
 	const jobTable = shell.getJobTable();
 	const processRegistry = shell.getProcessRegistry();
@@ -1776,32 +1690,13 @@ async function bootGit() {
 	const registry = createDefaultRegistry();
 	registry.register('git', gitCommand);      // register from lifo-pkg-git
 	registry.register('ffmpeg', ffmpegCommand); // register from lifo-pkg-ffmpeg
-	bootLifoPackages(kernel.vfs, registry);
+	bootLifoPackages(kernel.createVfsProxy(), registry);
 
 	// Initialize ProcessExecutor with the registry (enables worker threading)
-	const shellExecuteFn = kernel.createShellExecuteFn();
-	const vfsReloadFn = async () => {
-		const saved = await kernel.persistence.load();
-		if (saved) {
-			kernel.vfs.loadFromSerialized(saved);
-		}
-	};
-	const vfsSaveFn = async () => {
-		await kernel.persistence.open();
-		await kernel.persistence.save(kernel.vfs.getRoot());
-	};
-	kernel.setProcessExecutor(createProcessExecutor(
-		kernel.vfsDbName,
-		registry,
-		kernel.enableThreading,
-		shellExecuteFn,
-		vfsReloadFn,
-		kernel.portRegistry,
-		vfsSaveFn,
-	));
+	kernel.setProcessExecutor(createProcessExecutor(kernel, registry));
 
 	const env = kernel.getDefaultEnv();
-	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry, kernel.processExecutor);
+	const shell = new Shell(terminal, kernel, registry, env);
 
 	const jobTable = shell.getJobTable();
 	const processRegistry = shell.getProcessRegistry();
@@ -1864,32 +1759,13 @@ async function bootFfmpeg() {
 	const terminal = new Terminal(termContainer);
 	const registry = createDefaultRegistry();
 	registry.register('ffmpeg', ffmpegCommand);
-	bootLifoPackages(vfs, registry);
+	bootLifoPackages(ffmpegKernel.createVfsProxy(), registry);
 
 	// Initialize ProcessExecutor with the registry (enables worker threading)
-	const shellExecuteFn = ffmpegKernel.createShellExecuteFn();
-	const vfsReloadFn = async () => {
-		const saved = await ffmpegKernel.persistence.load();
-		if (saved) {
-			ffmpegKernel.vfs.loadFromSerialized(saved);
-		}
-	};
-	const vfsSaveFn = async () => {
-		await ffmpegKernel.persistence.open();
-		await ffmpegKernel.persistence.save(ffmpegKernel.vfs.getRoot());
-	};
-	ffmpegKernel.setProcessExecutor(createProcessExecutor(
-		ffmpegKernel.vfsDbName,
-		registry,
-		ffmpegKernel.enableThreading,
-		shellExecuteFn,
-		vfsReloadFn,
-		ffmpegKernel.portRegistry,
-		vfsSaveFn,
-	));
+	ffmpegKernel.setProcessExecutor(createProcessExecutor(ffmpegKernel, registry));
 
 	const env = ffmpegKernel.getDefaultEnv();
-	const shell = new Shell(terminal, vfs, registry, env, ffmpegKernel.processRegistry, ffmpegKernel.processExecutor);
+	const shell = new Shell(terminal, ffmpegKernel, registry, env);
 
 	const jobTable = shell.getJobTable();
 	const processRegistry = shell.getProcessRegistry();
