@@ -1,5 +1,5 @@
 import type { Command } from '../types.js';
-import type { VFS } from '@lifo-sh/kernel';
+import type { IKernelVfs } from '@lifo-sh/kernel';
 
 // ─── ANSI helpers ───
 
@@ -104,7 +104,7 @@ const DEFAULT_CONFIG: FetchConfig = {
   ],
 };
 
-function loadConfig(vfs: VFS): FetchConfig {
+function loadConfig(vfs: IKernelVfs): FetchConfig {
   const paths = [
     '/home/user/.config/fastfetch/config.json',
     '/home/user/.fastfetchrc',
@@ -159,7 +159,7 @@ function getMemoryInfo(): string {
   return 'N/A';
 }
 
-function getDiskInfo(vfs: VFS): string {
+function getDiskInfo(vfs: IKernelVfs): string {
   let totalBytes = 0;
   let totalFiles = 0;
   function walk(dir: string): void {
@@ -235,7 +235,7 @@ function getLocale(): string {
   return 'en-US';
 }
 
-function getBinCount(vfs: VFS): number {
+function getBinCount(vfs: IKernelVfs): number {
   try {
     return vfs.readdir('/bin').length + 20;
   } catch {
@@ -257,7 +257,7 @@ function colorBlocks(): [string, string] {
 
 function resolveModule(
   mod: string,
-  ctx: { user: string; hostname: string; cols: number; rows: number; vfs: VFS },
+  ctx: { user: string; hostname: string; cols: number; rows: number; vfs: IKernelVfs },
   labelColor: string,
   separator: string,
 ): string | null {

@@ -1,4 +1,4 @@
-import type { VFS } from '@lifo-sh/kernel';
+import type { IKernelVfs } from '@lifo-sh/kernel';
 import { resolve } from './path.js';
 
 /**
@@ -103,7 +103,7 @@ function matchCharClass(pattern: string, pos: number, ch: string): { matched: bo
  * Expand a glob pattern against the VFS.
  * Returns sorted matching paths, or [pattern] if no matches.
  */
-export function expandGlob(pattern: string, cwd: string, vfs: VFS): string[] {
+export function expandGlob(pattern: string, cwd: string, vfs: IKernelVfs): string[] {
   // If no glob chars, return as-is
   if (!hasGlobChars(pattern)) {
     return [pattern];

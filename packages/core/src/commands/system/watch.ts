@@ -41,6 +41,7 @@ export function createWatchCommand(registry: CommandRegistry): Command {
       };
 
       await command({
+        kernel: ctx.kernel,
         args: cmdArgs,
         env: ctx.env,
         cwd: ctx.cwd,

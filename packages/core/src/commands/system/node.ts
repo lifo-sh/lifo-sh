@@ -5,7 +5,7 @@ import { createModuleMap } from '@lifo-sh/node-compat';
 import type { NodeContext } from '@lifo-sh/node-compat';
 import { VFSError } from '@lifo-sh/kernel';
 import { ACTIVE_SERVERS } from '@lifo-sh/node-compat/http';
-import type { VirtualRequestHandler, Kernel } from '@lifo-sh/kernel';
+import type { VirtualRequestHandler, Kernel, IKernel } from '@lifo-sh/kernel';
 
 const NODE_VERSION = 'v20.0.0';
 
@@ -45,7 +45,7 @@ const _rollupHelpers: Record<string, (...args: unknown[]) => unknown> = {
 };
 
 export function createNodeImpl(
-	kernelOrPortRegistry?: Kernel | Map<number, VirtualRequestHandler>,
+	kernelOrPortRegistry?: Kernel | IKernel | Map<number, VirtualRequestHandler>,
 	shellExecuteFn?: (cmd: string, ctx: any) => Promise<number>,
 ): Command {
 	return async (ctx) => {
@@ -103,19 +103,20 @@ export function createNodeImpl(
 
 		const dir = filename === '[eval]' ? ctx.cwd : dirname(filename);
 
-		// Extract portRegistry from either Kernel or direct Map
-		const portRegistry = kernelOrPortRegistry instanceof Map
-			? kernelOrPortRegistry
-			: kernelOrPortRegistry?.portRegistry;
+		// Distinguish kernel object (Kernel or WorkerKernel) from bare Map
+		const isKernelLike = kernelOrPortRegistry && 'vfs' in kernelOrPortRegistry;
+		const portRegistry = isKernelLike
+			? kernelOrPortRegistry.portRegistry
+			: kernelOrPortRegistry as Map<number, VirtualRequestHandler> | undefined;
 
-		// Extract processAPI and executeCapture from Kernel if available
-		const kernel = kernelOrPortRegistry instanceof Map ? undefined : kernelOrPortRegistry;
+		// Extract processAPI from kernel (works for both Kernel and WorkerKernel)
+		const kernel = isKernelLike ? kernelOrPortRegistry : undefined;
 		const processAPI = kernel?.processAPI ?? undefined;
 
 		// Create executeCapture: runs a shell command and captures stdout.
 		// Used by child_process as fallback when processAPI is unavailable (e.g. worker).
 		// Prefer kernel's shell callback, fall back to explicitly passed shellExecuteFn.
-		const resolvedShellExecute = kernel?.getShellExecute?.() ?? shellExecuteFn;
+		const resolvedShellExecute = (kernel as any)?.getShellExecute?.() ?? shellExecuteFn;
 		const executeCapture = resolvedShellExecute
 			? async (cmd: string): Promise<string> => {
 				let out = '';
@@ -202,6 +203,30 @@ export function createNodeImpl(
 					}
 				}
 			}
+		}
+
+		// Check if any child processes were spawned (long-running process)
+		const ACTIVE_CHILD_PROCESSES = Symbol.for('lifo:activeChildProcesses');
+		const getActiveChildren = () => {
+			const cpMod = runner.moduleCache.get('child_process') as Record<symbol, unknown> | undefined;
+			return cpMod?.[ACTIVE_CHILD_PROCESSES] as Array<{ exitCode: number | null; on: (event: string, fn: (...args: unknown[]) => void) => void }> | undefined;
+		};
+
+		const activeChildren = getActiveChildren();
+		if (activeChildren && activeChildren.length > 0) {
+			const childExitPromises = activeChildren.map(child =>
+				new Promise<void>(resolve => {
+					if (child.exitCode !== null) { resolve(); return; }
+					child.on('exit', () => resolve());
+				})
+			);
+
+			const abortPromise = new Promise<void>(resolve => {
+				if (ctx.signal.aborted) { resolve(); return; }
+				ctx.signal.addEventListener('abort', () => resolve(), { once: true });
+			});
+
+			await Promise.race([Promise.all(childExitPromises), abortPromise]);
 		}
 
 		return result.exitCode;

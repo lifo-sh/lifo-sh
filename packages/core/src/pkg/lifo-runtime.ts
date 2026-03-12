@@ -9,7 +9,7 @@
  */
 
 import type { Command, CommandContext } from '../commands/types.js';
-import type { VFS } from '@lifo-sh/kernel';
+import type { IKernelVfs } from '@lifo-sh/kernel';
 import { resolve, dirname, join } from '../utils/path.js';
 import { createProcess } from '@lifo-sh/node-compat/process';
 import { createConsole } from '@lifo-sh/node-compat/console';
@@ -143,7 +143,7 @@ function rewriteImportsToCdn(source: string, cdn: string): string {
  */
 export function createLifoCommand(
   entryPath: string,
-  vfs: VFS,
+  vfs: IKernelVfs,
 ): Command {
   return async (ctx: CommandContext): Promise<number> => {
     const source = vfs.readFileString(entryPath);
@@ -276,7 +276,7 @@ async function executeEsmCommand(
 function executeCjsCommand(
   source: string,
   entryPath: string,
-  vfs: VFS,
+  vfs: IKernelVfs,
   ctx: CommandContext,
   lifo: LifoAPI,
 ): Promise<number> {
@@ -547,7 +547,7 @@ export interface LifoPackageJson {
 /**
  * Read a package.json and return the lifo manifest if present.
  */
-export function readLifoManifest(vfs: VFS, pkgDir: string): LifoPackageManifest | null {
+export function readLifoManifest(vfs: IKernelVfs, pkgDir: string): LifoPackageManifest | null {
   const pkgJsonPath = join(pkgDir, 'package.json');
   try {
     const pkg: LifoPackageJson = JSON.parse(vfs.readFileString(pkgJsonPath));

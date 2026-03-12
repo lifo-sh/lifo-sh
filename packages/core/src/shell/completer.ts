@@ -1,4 +1,4 @@
-import type { VFS } from '@lifo-sh/kernel';
+import type { IKernelVfs } from '@lifo-sh/kernel';
 import type { CommandRegistry } from '../commands/registry.js';
 import { resolve } from '../utils/path.js';
 
@@ -14,7 +14,7 @@ export interface CompletionContext {
   cursorPos: number;
   cwd: string;
   env: Record<string, string>;
-  vfs: VFS;
+  vfs: IKernelVfs;
   registry: CommandRegistry;
   builtinNames: string[];
 }

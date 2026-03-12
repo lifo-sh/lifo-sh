@@ -6,7 +6,7 @@
  * that forwards writes back to the kernel via MessagePort.
  */
 
-import { WorkerKernel } from '@lifo-sh/kernel';
+import { WorkerKernel, WorkerProcessAPIProxy, WorkerVfsProxy } from '@lifo-sh/kernel';
 import { createDefaultRegistry, type CommandRegistry } from '../commands/registry.js';
 import {
 	createMessagePortOutputStream,
@@ -22,16 +22,21 @@ let registry: CommandRegistry | null = null;
 
 // Port registry port - MessagePort for communicating with main thread's port registry
 let portRegistryPort: MessagePort | null = null;
+// ProcessAPI port - MessagePort for spawning child processes on the main thread
+let processAPIPort: MessagePort | null = null;
+let workerProcessAPI: WorkerProcessAPIProxy | null = null;
 const localPortHandlers = new Map<number, any>();
 const portRequestChannels = new Map<number, MessagePort>();
 
 // Simple port registry that forwards to main thread via MessagePort
 const proxyPortRegistry = new Map();
 proxyPortRegistry.set = function(port: number, handler: any) {
-	console.log(`[Worker] Registering port ${port} with main thread`);
+	console.log(`[Worker] Registering port ${port} with main thread (portRegistryPort: ${!!portRegistryPort})`);
 
 	// Store handler locally
 	localPortHandlers.set(port, handler);
+	// Also store in the Map itself so .size / .entries() work locally
+	Map.prototype.set.call(proxyPortRegistry, port, handler);
 
 	if (portRegistryPort) {
 		// Create a channel for this specific port's requests
@@ -77,6 +82,42 @@ proxyPortRegistry.set = function(port: number, handler: any) {
 			port,
 			requestPort: channel.port2
 		}, [channel.port2]);
+	} else {
+		console.warn(`[Worker] portRegistryPort is null! Port ${port} registration will not reach main thread. Sending via main channel fallback.`);
+		// Fallback: notify via the worker's main channel
+		const channel = new MessageChannel();
+		portRequestChannels.set(port, channel.port1);
+
+		channel.port1.onmessage = async (e: MessageEvent) => {
+			const { requestId, method, url, headers, body } = e.data;
+			const vReq = { method, url, headers, body };
+			const vRes = { statusCode: 200, headers: {}, body: '' };
+			try {
+				handler(vReq, vRes);
+				if ((vRes as any)._donePromise) await (vRes as any)._donePromise;
+				self.postMessage({
+					type: 'portResponse',
+					requestId,
+					statusCode: vRes.statusCode,
+					headers: vRes.headers,
+					body: vRes.body
+				});
+			} catch (error) {
+				self.postMessage({
+					type: 'portResponse',
+					requestId,
+					statusCode: 500,
+					headers: {},
+					body: String(error)
+				});
+			}
+		};
+
+		self.postMessage({
+			type: 'portRegister',
+			port,
+			requestPort: channel.port2
+		}, { transfer: [channel.port2] });
 	}
 
 	return proxyPortRegistry;
@@ -149,7 +190,7 @@ function createShellExecuteProxy(): ShellExecuteFn {
 	};
 }
 
-function initRegistry(): void {
+async function initRegistry(): Promise<void> {
 	if (registry) return;
 
 	registry = createDefaultRegistry();
@@ -159,10 +200,10 @@ function initRegistry(): void {
 	registry.register('npm', createNpmCommand(registry, shellExecute, workerKernel as any));
 	registry.register('npx', createNpxCommand(registry, shellExecute));
 
-	// Override node command to use workerKernel's portRegistry and shellExecute proxy
-	import('../commands/system/node.js').then(({ createNodeImpl }) => {
-		registry!.register('node', createNodeImpl(proxyPortRegistry as any, shellExecute as any));
-	});
+	// Override node command to use workerKernel (has portRegistry + processAPI) and shellExecute proxy
+	// Must await so that the override is in place before any command resolves 'node'
+	const { createNodeImpl } = await import('../commands/system/node.js');
+	registry.register('node', createNodeImpl(workerKernel as any, shellExecute as any));
 }
 
 self.onmessage = async (event: MessageEvent<WorkerMessage>): Promise<void> => {
@@ -173,38 +214,57 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>): Promise<void> => {
 		const startTime = performance.now();
 
 		try {
-			// Set port registry port if provided
-			if ((ctx as any).portRegistryPort && !portRegistryPort && event.ports) {
-				const portIndex = ports.stdin ? 3 : 2; // After stdout, stderr, (stdin?), vfsPort
-				// VFS port is at index portIndex, portRegistry is after that
-				if ((ctx as any).hasVfsPort) {
-					if (event.ports.length > portIndex + 1) {
-						portRegistryPort = event.ports[portIndex + 1];
-					}
-				} else if (event.ports.length > portIndex) {
-					portRegistryPort = event.ports[portIndex];
-				}
+			// Extract transferred ports by index:
+			// [stdout, stderr, stdin?, vfsPort?, portRegistryPort?, processAPIPort?]
+			let nextPortIndex = ports.stdin ? 3 : 2;
+			const vfsPort = (ctx as any).hasVfsPort ? event.ports[nextPortIndex++] : null;
+
+			if ((ctx as any).portRegistryPort && !portRegistryPort && event.ports.length > nextPortIndex) {
+				portRegistryPort = event.ports[nextPortIndex++];
+			} else if ((ctx as any).portRegistryPort) {
+				nextPortIndex++; // skip even if already set
 			}
 
-			// Get the VFS MessagePort from transferred ports
-			let vfsPortIndex = ports.stdin ? 3 : 2;
-			const vfsPort = (ctx as any).hasVfsPort ? event.ports[vfsPortIndex] : null;
+			if ((ctx as any).processAPIPort && !processAPIPort && event.ports.length > nextPortIndex) {
+				processAPIPort = event.ports[nextPortIndex++];
+				workerProcessAPI = new WorkerProcessAPIProxy(processAPIPort);
+				console.log('[Worker] ProcessAPI proxy initialized');
+			}
 
 			// Create or update WorkerKernel
+			// When concurrent commands are running (e.g. forked child processes),
+			// create a per-command VFS to avoid replacing the parent's VFS.
+			let commandVfs: WorkerVfsProxy | undefined;
+			const hasConcurrentTasks = runningTasks.size > 0;
+
 			if (vfsPort && vfsSnapshot) {
 				if (workerKernel) {
-					workerKernel.reset(vfsPort, vfsSnapshot);
+					if (hasConcurrentTasks) {
+						// Another command is running — use per-command VFS
+						commandVfs = new WorkerVfsProxy(vfsPort, vfsSnapshot);
+					} else {
+						workerKernel.reset(vfsPort, vfsSnapshot);
+					}
 				} else {
 					workerKernel = new WorkerKernel(vfsPort, vfsSnapshot, proxyPortRegistry);
 				}
 			} else if (workerKernel && vfsSnapshot) {
-				workerKernel.loadSnapshot(vfsSnapshot);
+				if (hasConcurrentTasks) {
+					// Don't replace the cache while another command is using it
+				} else {
+					workerKernel.loadSnapshot(vfsSnapshot);
+				}
 			} else if (!workerKernel) {
 				throw new Error('No VFS channel or snapshot provided');
 			}
 
+			// Wire processAPI into WorkerKernel so node commands can access it
+			if (workerProcessAPI && workerKernel) {
+				workerKernel.processAPI = workerProcessAPI;
+			}
+
 			// Initialize registry (once, after workerKernel is created)
-			initRegistry();
+			await initRegistry();
 
 			const abortController = new AbortController();
 			runningTasks.set(id, abortController);
@@ -212,12 +272,15 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>): Promise<void> => {
 			const stdout = createMessagePortOutputStream(ports.stdout);
 			const stderr = createMessagePortOutputStream(ports.stderr);
 
+			// Use per-command VFS if created, otherwise fall back to shared kernel VFS
+			const vfs = commandVfs ?? workerKernel.vfs;
+
 			const commandCtx: CommandContext = {
 				kernel: workerKernel,
 				args: ctx.args,
 				env: ctx.env,
 				cwd: ctx.cwd,
-				vfs: workerKernel.vfs,
+				vfs,
 				stdout,
 				stderr,
 				stdin: ports.stdin ? createMessagePortInputStream(ports.stdin) : undefined,

@@ -87,7 +87,7 @@ export class Shell {
     this.jobTable = new JobTable();
 
     // Use shared process registry and executor from Kernel
-    this.processRegistry = kernel.processRegistry;
+    this.processRegistry = kernel.processRegistry as unknown as ProcessRegistry;
     this.processExecutor = kernel.processExecutor;
 
     // Register shellExecute callback on kernel for worker threads (npm run, npx, etc.)

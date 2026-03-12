@@ -1,4 +1,4 @@
-import type { VFS } from '@lifo-sh/kernel';
+import type { IKernelVfs } from '@lifo-sh/kernel';
 import type { SandboxFs as ISandboxFs } from './types.js';
 import { resolve, dirname } from '../utils/path.js';
 import { createTar, parseTar, compressGzip, decompressGzip } from '../utils/archive.js';
@@ -10,7 +10,7 @@ import type { TarEntry } from '../utils/archive.js';
  */
 export class SandboxFsImpl implements ISandboxFs {
   constructor(
-    private vfs: VFS,
+    private vfs: IKernelVfs,
     private getCwd: () => string,
   ) {}
 

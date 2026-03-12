@@ -1,12 +1,12 @@
 import type { WordPart } from './types.js';
-import type { VFS } from '@lifo-sh/kernel';
+import type { IKernelVfs } from '@lifo-sh/kernel';
 import { expandGlob, globMatch } from '../utils/glob.js';
 
 export interface ExpandContext {
   env: Record<string, string>;
   lastExitCode: number;
   cwd: string;
-  vfs: VFS;
+  vfs: IKernelVfs;
   executeCapture?: (input: string) => Promise<string>;
 }
 

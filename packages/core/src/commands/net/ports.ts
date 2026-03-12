@@ -7,23 +7,10 @@ import type { Kernel } from '@lifo-sh/kernel';
  */
 export function createPortsCommand(kernel: Kernel): Command {
 	return async (ctx) => {
-		// Debug: Show kernel info
-		const hasRegistry = !!kernel.portRegistry;
-		const registrySize = hasRegistry ? kernel.portRegistry.size : 0;
-
-		ctx.stdout.write(`\x1b[90m[Debug] Kernel has portRegistry: ${hasRegistry}\x1b[0m\n`);
-		ctx.stdout.write(`\x1b[90m[Debug] Registry size: ${registrySize}\x1b[0m\n`);
-		ctx.stdout.write(`\x1b[90m[Debug] Registry instance: ${kernel.portRegistry ? 'Map' : 'undefined'}\x1b[0m\n\n`);
-
 		const ports = Array.from(kernel.portRegistry.entries()).sort((a, b) => a[0] - b[0]);
 
 		if (ports.length === 0) {
-			ctx.stdout.write('No ports registered in portRegistry\n');
-			ctx.stdout.write('\nDiagnostic steps:\n');
-			ctx.stdout.write('  1. Run: node test-server.js\n');
-			ctx.stdout.write('  2. Look for "[lifo-http] Server listening on port 3000"\n');
-			ctx.stdout.write('  3. Run: ports (in the SAME tab)\n');
-			ctx.stdout.write('  4. If still empty, there may be an error during server creation\n');
+			ctx.stdout.write('No active ports\n');
 			return 0;
 		}
 

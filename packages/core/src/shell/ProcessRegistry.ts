@@ -260,17 +260,37 @@ export class ProcessRegistry {
   }
 
   /**
-   * Collect and reap all zombie processes.
+   * Collect and reap orphan zombie processes.
+   * Only reaps zombies whose parent is no longer alive (orphans reparented to init).
+   * Zombies whose parent is still running are left for the parent to reap via waitpid.
    * Returns array of reaped processes for display/logging.
    */
   collectZombies(): Process[] {
-    const zombies = this.getZombies().filter((p) => p.pid !== 1);
+    const zombies = this.getZombies().filter((p) => {
+      if (p.pid === 1) return false;
+      // Only reap if parent is gone (orphan zombie)
+      const parent = this.processes.get(p.ppid);
+      return !parent || parent.status === 'zombie';
+    });
 
     for (const zombie of zombies) {
       this.processes.delete(zombie.pid);
     }
 
     return zombies;
+  }
+
+  /**
+   * Reap all zombie children of a given parent PID.
+   * Called when a parent exits without waitpid on its children.
+   * Running children are NOT killed — they stay alive (reparented to init in spirit).
+   */
+  reapOrphansOf(ppid: number): void {
+    for (const proc of this.processes.values()) {
+      if (proc.ppid === ppid && proc.status === 'zombie') {
+        this.processes.delete(proc.pid);
+      }
+    }
   }
 
   /**

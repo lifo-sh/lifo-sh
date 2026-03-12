@@ -1,4 +1,4 @@
-import type { VFS } from '@lifo-sh/kernel';
+import type { IKernelVfs } from '@lifo-sh/kernel';
 import { resolve, dirname } from './path.js';
 import { encode, decode, concatBytes } from './encoding.js';
 
@@ -343,7 +343,7 @@ export function parseZip(data: Uint8Array): ZipEntry[] {
 
 // ─── VFS helper: recursively collect files ───
 
-export function collectFiles(vfs: VFS, basePath: string, paths: string[]): TarEntry[] {
+export function collectFiles(vfs: IKernelVfs, basePath: string, paths: string[]): TarEntry[] {
   const entries: TarEntry[] = [];
 
   function walk(absPath: string, relativeTo: string): void {

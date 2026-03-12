@@ -1,6 +1,6 @@
 {
   "name": "@lifo-sh/core",
-  "version": "0.5.0",
+  "version": "0.5.6",
   "description": "Linux-like OS engine for JavaScript -- kernel, shell, VFS, and 60+ commands",
   "license": "MIT",
   "repository": {
@@ -42,9 +42,10 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@lifo-sh/kernel": "^0.1.3",
-    "@lifo-sh/node-compat": "^0.1.6",
-    "@lifo-sh/node-runner": "^0.1.8",
+    "@lifo-sh/kernel": "^0.1.13",
+    "@lifo-sh/node-compat": "^0.1.13",
+    "@lifo-sh/node-runner": "^0.1.15",
+    "@lifo-sh/vfs": "^0.1.9",
     "ws": "^8.19.0"
   },
   "peerDependencies": {

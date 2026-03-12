@@ -1,6 +1,6 @@
 import type { Command, CommandContext, CommandOutputStream } from '../types.js';
 import type { CommandRegistry } from '../registry.js';
-import type { VFS } from '@lifo-sh/kernel';
+import type { IKernelVfs } from '@lifo-sh/kernel';
 import type { Kernel } from '@lifo-sh/kernel';
 import { resolve, join } from '../../utils/path.js';
 import { decompressGzip, parseTar } from '../../utils/archive.js';
@@ -230,7 +230,7 @@ async function fetchWithRange(
 async function downloadAndExtract(
 	tarballUrl: string,
 	targetDir: string,
-	vfs: VFS,
+	vfs: IKernelVfs,
 	signal: AbortSignal,
 ): Promise<void> {
 	const response = await fetch(tarballUrl, { signal });
@@ -271,7 +271,7 @@ async function downloadAndExtract(
 	}
 }
 
-function readProjectPackageJson(vfs: VFS, cwd: string): PackageJson | null {
+function readProjectPackageJson(vfs: IKernelVfs, cwd: string): PackageJson | null {
 	const pkgPath = join(cwd, 'package.json');
 	try {
 		return JSON.parse(vfs.readFileString(pkgPath));
@@ -280,7 +280,7 @@ function readProjectPackageJson(vfs: VFS, cwd: string): PackageJson | null {
 	}
 }
 
-function writeProjectPackageJson(vfs: VFS, cwd: string, pkg: PackageJson): void {
+function writeProjectPackageJson(vfs: IKernelVfs, cwd: string, pkg: PackageJson): void {
 	const pkgPath = join(cwd, 'package.json');
 	vfs.writeFile(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
 }
@@ -315,7 +315,7 @@ async function installSinglePackage(
 	name: string,
 	version: string | null,
 	targetBase: string,
-	vfs: VFS,
+	vfs: IKernelVfs,
 	npmRegistry: string,
 	signal: AbortSignal,
 	stdout: CommandOutputStream,
@@ -686,7 +686,7 @@ async function npmList(ctx: CommandContext): Promise<number> {
 	return 0;
 }
 
-function readPkgVersion(vfs: VFS, pkgDir: string): string {
+function readPkgVersion(vfs: IKernelVfs, pkgDir: string): string {
 	try {
 		const pkg = JSON.parse(vfs.readFileString(join(pkgDir, 'package.json')));
 		return pkg.version || '?';
@@ -783,7 +783,7 @@ async function npmRun(ctx: CommandContext, shellExecute?: ShellExecuteFn, regist
 }
 
 /** Scan node_modules for packages with bin entries and register them as commands */
-function registerLocalBins(vfs: VFS, cwd: string, registry: CommandRegistry, kernel?: Kernel): number {
+function registerLocalBins(vfs: IKernelVfs, cwd: string, registry: CommandRegistry, kernel?: Kernel): number {
 	const nmDir = join(cwd, 'node_modules');
 	if (!vfs.exists(nmDir)) return 0;
 
@@ -811,7 +811,7 @@ function registerLocalBins(vfs: VFS, cwd: string, registry: CommandRegistry, ker
 	return count;
 }
 
-function registerPkgBins(vfs: VFS, pkgDir: string, registry: CommandRegistry, kernel?: Kernel): number {
+function registerPkgBins(vfs: IKernelVfs, pkgDir: string, registry: CommandRegistry, kernel?: Kernel): number {
 	const pkgJsonPath = join(pkgDir, 'package.json');
 	if (!vfs.exists(pkgJsonPath)) return 0;
 	let count = 0;
@@ -981,7 +981,7 @@ export function createNpmCommand(registry: CommandRegistry, shellExecute?: Shell
 const NPX_CACHE = '/tmp/.npx-cache/node_modules';
 
 function findBinScript(
-	vfs: VFS,
+	vfs: IKernelVfs,
 	pkgDir: string,
 	binName: string | null,
 ): string | null {
@@ -1126,7 +1126,7 @@ export async function npmInstallGlobal(
 	try {
 		const installed = await installSinglePackage(
 			packageName, null, GLOBAL_MODULES, ctx.vfs, npmRegistry, ctx.signal,
-			ctx.stdout, ctx.stderr, true, registry, seen, kernel,
+			ctx.stdout, ctx.stderr, true, registry, seen, ctx.kernel as any,
 		);
 
 		const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);

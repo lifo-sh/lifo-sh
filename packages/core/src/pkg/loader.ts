@@ -1,11 +1,11 @@
-import type { VFS } from '@lifo-sh/kernel';
+import type { IKernelVfs } from '@lifo-sh/kernel';
 import type { CommandRegistry } from '../commands/registry.js';
 import type { Command, CommandContext } from '../commands/types.js';
 
 const METADATA_FILE = '/usr/share/pkg/packages.json';
 const MODULES_DIR = '/usr/share/pkg/node_modules';
 
-export function loadInstalledPackages(vfs: VFS, registry: CommandRegistry): void {
+export function loadInstalledPackages(vfs: IKernelVfs, registry: CommandRegistry): void {
   let meta: { packages: Record<string, { name: string }> };
 
   try {

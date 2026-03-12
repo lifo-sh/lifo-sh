@@ -11,60 +11,67 @@ import { createHelpCommand } from './commands/system/help.js';
 import { createNpmCommand, createNpxCommand } from './commands/system/npm.js';
 import { createLifoPkgCommand, bootLifoPackages } from './commands/system/lifo.js';
 import { createSystemctlCommand } from './commands/system/systemctl.js';
+import { createNodeCommand } from './commands/system/node.js';
+import { createPortsCommand } from './commands/net/ports.js';
+import { createNetstatCommand } from './commands/net/netstat.js';
+import { createTunnelCommand } from './commands/net/tunnel.js';
+import { createForwardCommand, createUnforwardCommand } from './commands/net/forward.js';
+import { createCurlCommand } from './commands/net/curl.js';
+import { createIfconfigCommand } from './commands/net/ifconfig.js';
+import { createIPCommand } from './commands/net/ip.js';
+import { createRouteCommand } from './commands/net/route.js';
+import { createHostCommand } from './commands/net/host.js';
 
 async function boot(): Promise<void> {
 	// 1. Kernel & filesystem (async -- loads persisted data)
 	const kernel = new Kernel();
 	await kernel.boot();
 
-	// 2. Terminal
+	// 2. Create VFS proxy (all process-level access goes through this)
+	const vfsProxy = kernel.createVfsProxy();
+
+	// 3. Terminal
 	const container = document.getElementById('terminal');
 	if (!container) throw new Error('Missing #terminal element');
 	const terminal = new Terminal(container);
 
-	// 3. Command registry
+	// 4. Command registry
 	const registry = createDefaultRegistry();
 
-	// 3a. Initialize kernel's process executor with registry
-	const shellExecuteFn = kernel.createShellExecuteFn();
-	const vfsReloadFn = async () => {
-		const saved = await kernel.persistence.load();
-		if (saved) {
-			kernel.vfs.loadFromSerialized(saved);
-		}
-	};
-	const vfsSaveFn = async () => {
-		await kernel.persistence.open();
-		await kernel.persistence.save(kernel.vfs.getRoot());
-	};
-	kernel.setProcessExecutor(createProcessExecutor(
-		kernel.vfsDbName,
-		registry,
-		kernel.enableThreading,
-		shellExecuteFn,
-		vfsReloadFn,
-		kernel.portRegistry,
-		vfsSaveFn,
-	));
+	// 4a. Initialize kernel's process executor with registry
+	kernel.setProcessExecutor(createProcessExecutor(kernel, registry));
 
-	// 3b. Boot lifo packages (dev links + installed lifo-pkg-* upgrades)
-	bootLifoPackages(kernel.vfs, registry);
+	// 4b. Boot lifo packages (dev links + installed lifo-pkg-* upgrades)
+	bootLifoPackages(vfsProxy, registry);
 
-	// 4. Display MOTD
-	const motd = kernel.vfs.readFileString('/etc/motd');
+	// 5. Display MOTD
+	const motd = vfsProxy.readFileString('/etc/motd');
 	// Convert \n to \r\n for xterm
 	terminal.write(motd.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n'));
 
-	// 5. Shell
+	// 6. Shell
 	const env = kernel.getDefaultEnv();
-	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry, kernel.processExecutor);
+	const shell = new Shell(terminal, kernel, registry, env);
 
-	// 5b. Register factory commands that need shell/registry access
-	const jobTable = shell.getJobTable();
+	// 6a. Initialize kernel process API (syscall layer for child_process fork/spawn)
+	kernel.initProcessAPI({ cwd: env.HOME, env });
+
+	// 6b. Register factory commands that need shell/registry access
 	const processRegistry = shell.getProcessRegistry();
 	registry.register('ps', createPsCommand(processRegistry));
 	registry.register('top', createTopCommand(processRegistry));
 	registry.register('kill', createKillCommand(processRegistry));
+	registry.register('node', createNodeCommand(kernel));
+	registry.register('ports', createPortsCommand(kernel));
+	registry.register('netstat', createNetstatCommand(kernel));
+	registry.register('tunnel', createTunnelCommand(kernel));
+	registry.register('forward', createForwardCommand(kernel));
+	registry.register('unforward', createUnforwardCommand(kernel));
+	registry.register('curl', createCurlCommand(kernel));
+	registry.register('ifconfig', createIfconfigCommand(kernel));
+	registry.register('ip', createIPCommand(kernel));
+	registry.register('route', createRouteCommand(kernel));
+	registry.register('host', createHostCommand(kernel));
 	registry.register('watch', createWatchCommand(registry));
 	registry.register('help', createHelpCommand(registry));
 
@@ -86,11 +93,7 @@ async function boot(): Promise<void> {
 	kernel.initServiceManager(registry, env);
 	registry.register('systemctl', createSystemctlCommand(kernel));
 
-	// 6. Source config files before showing prompt
-	await shell.sourceFile('/etc/profile');
-	await shell.sourceFile(env.HOME + '/.bashrc');
-
-	// 6b. Boot enabled services
+	// 6. Boot enabled services
 	await kernel.bootServices();
 
 	// 7. Start shell & focus

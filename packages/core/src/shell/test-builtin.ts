@@ -1,4 +1,4 @@
-import type { VFS } from '@lifo-sh/kernel';
+import type { IKernelVfs } from '@lifo-sh/kernel';
 import type { CommandOutputStream } from '../commands/types.js';
 
 /**
@@ -7,7 +7,7 @@ import type { CommandOutputStream } from '../commands/types.js';
  */
 export function evaluateTest(
   args: string[],
-  vfs: VFS,
+  vfs: IKernelVfs,
   stderr: CommandOutputStream,
 ): number {
   // `[` requires closing `]`
@@ -37,11 +37,11 @@ interface ExprResult {
   pos: number;
 }
 
-function parseExpr(args: string[], pos: number, vfs: VFS): ExprResult {
+function parseExpr(args: string[], pos: number, vfs: IKernelVfs): ExprResult {
   return parseOr(args, pos, vfs);
 }
 
-function parseOr(args: string[], pos: number, vfs: VFS): ExprResult {
+function parseOr(args: string[], pos: number, vfs: IKernelVfs): ExprResult {
   let left = parseAnd(args, pos, vfs);
 
   while (left.pos < args.length && args[left.pos] === '-o') {
@@ -52,7 +52,7 @@ function parseOr(args: string[], pos: number, vfs: VFS): ExprResult {
   return left;
 }
 
-function parseAnd(args: string[], pos: number, vfs: VFS): ExprResult {
+function parseAnd(args: string[], pos: number, vfs: IKernelVfs): ExprResult {
   let left = parsePrimary(args, pos, vfs);
 
   while (left.pos < args.length && args[left.pos] === '-a') {
@@ -63,7 +63,7 @@ function parseAnd(args: string[], pos: number, vfs: VFS): ExprResult {
   return left;
 }
 
-function parsePrimary(args: string[], pos: number, vfs: VFS): ExprResult {
+function parsePrimary(args: string[], pos: number, vfs: IKernelVfs): ExprResult {
   if (pos >= args.length) {
     return { value: false, pos };
   }
@@ -147,7 +147,7 @@ function parsePrimary(args: string[], pos: number, vfs: VFS): ExprResult {
   return { value: arg.length > 0, pos: pos + 1 };
 }
 
-function evaluateFileTest(flag: string, path: string, vfs: VFS): boolean | null {
+function evaluateFileTest(flag: string, path: string, vfs: IKernelVfs): boolean | null {
   switch (flag) {
     case 'e': {
       return vfs.exists(path);

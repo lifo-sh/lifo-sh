@@ -1,13 +1,13 @@
-import type { VFS } from '@lifo-sh/kernel';
+import type { IKernelVfs } from '@lifo-sh/kernel';
 
 const HISTORY_PATH = '/home/user/.bash_history';
 const MAX_HISTORY = 1000;
 
 export class HistoryManager {
   private entries: string[] = [];
-  private vfs: VFS;
+  private vfs: IKernelVfs;
 
-  constructor(vfs: VFS) {
+  constructor(vfs: IKernelVfs) {
     this.vfs = vfs;
   }
 

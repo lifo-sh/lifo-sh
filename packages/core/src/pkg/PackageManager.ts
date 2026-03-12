@@ -1,4 +1,4 @@
-import type { VFS } from '@lifo-sh/kernel';
+import type { IKernelVfs } from '@lifo-sh/kernel';
 
 const PKG_DIR = '/usr/share/pkg';
 const MODULES_DIR = '/usr/share/pkg/node_modules';
@@ -16,7 +16,7 @@ interface PackagesMetadata {
 }
 
 export class PackageManager {
-  constructor(private vfs: VFS) {}
+  constructor(private vfs: IKernelVfs) {}
 
   private readMetadata(): PackagesMetadata {
     try {

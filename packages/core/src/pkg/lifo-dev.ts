@@ -5,7 +5,7 @@
  * to local VFS paths.  `lifo link` adds entries, `lifo unlink` removes them.
  */
 
-import type { VFS } from '@lifo-sh/kernel';
+import type { IKernelVfs } from '@lifo-sh/kernel';
 import type { CommandRegistry } from '../commands/registry.js';
 import { join } from '../utils/path.js';
 import { createLifoCommand, readLifoManifest } from './lifo-runtime.js';
@@ -25,7 +25,7 @@ export type DevLinksMap = Record<string, DevLink>;
 
 // ─── Persistence ───
 
-export function readDevLinks(vfs: VFS): DevLinksMap {
+export function readDevLinks(vfs: IKernelVfs): DevLinksMap {
   try {
     return JSON.parse(vfs.readFileString(DEV_LINKS_PATH));
   } catch {
@@ -33,7 +33,7 @@ export function readDevLinks(vfs: VFS): DevLinksMap {
   }
 }
 
-export function writeDevLinks(vfs: VFS, links: DevLinksMap): void {
+export function writeDevLinks(vfs: IKernelVfs, links: DevLinksMap): void {
   try { vfs.mkdir('/etc/lifo', { recursive: true }); } catch { /* exists */ }
   vfs.writeFile(DEV_LINKS_PATH, JSON.stringify(links, null, 2) + '\n');
 }
@@ -48,7 +48,7 @@ export function writeDevLinks(vfs: VFS, links: DevLinksMap): void {
  * Returns the list of command names registered.
  */
 export function linkPackage(
-  vfs: VFS,
+  vfs: IKernelVfs,
   registry: CommandRegistry,
   pkgDir: string,
 ): string[] {
@@ -95,7 +95,7 @@ export function linkPackage(
  * Returns the command names that were linked, or null if not found.
  */
 export function unlinkPackage(
-  vfs: VFS,
+  vfs: IKernelVfs,
   pkgName: string,
 ): string[] | null {
   const links = readDevLinks(vfs);
@@ -112,7 +112,7 @@ export function unlinkPackage(
 /**
  * Restore all dev-linked commands at boot time.
  */
-export function loadDevLinks(vfs: VFS, registry: CommandRegistry): void {
+export function loadDevLinks(vfs: IKernelVfs, registry: CommandRegistry): void {
   const links = readDevLinks(vfs);
 
   for (const link of Object.values(links)) {
