@@ -1,7 +1,8 @@
 import type { Command, CommandOutputStream } from '../types.js';
 import type { CommandRegistry } from '../registry.js';
+import type { Kernel } from '@lifo-sh/kernel';
 
-export function createWatchCommand(registry: CommandRegistry): Command {
+export function createWatchCommand(_kernel: Kernel, registry: CommandRegistry): Command {
   return async (ctx) => {
     let interval = 2;
     let argStart = 0;

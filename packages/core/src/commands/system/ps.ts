@@ -1,5 +1,6 @@
 import type { Command } from '../types.js';
-import type { ProcessRegistry, Process } from '../../shell/ProcessRegistry.js';
+import type { Process } from '../../shell/ProcessRegistry.js';
+import type { Kernel } from '@lifo-sh/kernel';
 
 /**
  * Map process status to Linux-style STAT codes.
@@ -66,7 +67,7 @@ function printFull(processes: Process[], write: (s: string) => void): void {
   }
 }
 
-export function createPsCommand(processRegistry: ProcessRegistry): Command {
+export function createPsCommand(kernel: Kernel): Command {
   return async (ctx) => {
     const args = ctx.args.slice(1); // skip 'ps' itself
     const flagStr = args.join(' ');
@@ -75,7 +76,7 @@ export function createPsCommand(processRegistry: ProcessRegistry): Command {
     const showAll = /\b-e\b/.test(flagStr) || /\b-A\b/.test(flagStr) || /\baux\b/.test(flagStr) || /\b-ax\b/.test(flagStr);
     const fullFormat = /\b-f\b/.test(flagStr) || /\baux\b/.test(flagStr) || /\b-l\b/.test(flagStr);
 
-    let processes = processRegistry.getAll();
+    let processes = kernel.processRegistry.getAll();
 
     // Sort by PID
     processes.sort((a, b) => a.pid - b.pid);

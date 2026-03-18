@@ -1,5 +1,5 @@
 import type { Command } from '../types.js';
-import type { CommandRegistry } from '../registry.js';
+import type { Kernel } from '@lifo-sh/kernel';
 
 const BUILTINS = [
   'cd', 'pwd', 'echo', 'clear', 'export', 'exit',
@@ -29,7 +29,7 @@ const CATEGORIES: Record<string, string[]> = {
   'Node.js': ['node', 'pkg'],
 };
 
-export function createHelpCommand(_registry: CommandRegistry): Command {
+export function createHelpCommand(_kernel: Kernel): Command {
   return async (ctx) => {
     ctx.stdout.write('Lifo Commands\n');
     ctx.stdout.write('==================\n\n');

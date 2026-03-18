@@ -42,10 +42,10 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@lifo-sh/kernel": "^0.1.13",
-    "@lifo-sh/node-compat": "^0.1.13",
-    "@lifo-sh/node-runner": "^0.1.15",
-    "@lifo-sh/vfs": "^0.1.9",
+    "@lifo-sh/kernel": "^0.1.22",
+    "@lifo-sh/node-compat": "^0.1.24",
+    "@lifo-sh/node-runner": "^0.1.27",
+    "@lifo-sh/vfs": "^0.1.13",
     "ws": "^8.19.0"
   },
   "peerDependencies": {

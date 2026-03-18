@@ -23,7 +23,6 @@ import {
 	createHelpCommand,
 	createNodeCommand,
 	createCurlCommand,
-	createTunnelCommand,
 	createTunnelCommandV2,
 	createIfconfigCommand,
 	createRouteCommand,
@@ -1020,14 +1019,12 @@ async function addInteractiveTab(): Promise<InteractiveTab> {
 	// Initialize kernel process API (syscall layer for child_process)
 	kernel.initProcessAPI({ env });
 
-	const jobTable = shell.getJobTable();
-	const processRegistry = shell.getProcessRegistry();
-	registry.register('ps', createPsCommand(processRegistry));
-	registry.register('top', createTopCommand(processRegistry));
-	registry.register('kill', createKillCommand(processRegistry));
+	registry.register('ps', createPsCommand(kernel));
+	registry.register('top', createTopCommand(kernel));
+	registry.register('kill', createKillCommand(kernel));
 
-	registry.register('watch', createWatchCommand(registry));
-	registry.register('help', createHelpCommand(registry));
+	registry.register('watch', createWatchCommand(kernel, registry));
+	registry.register('help', createHelpCommand(kernel));
 
 
 	const httpNpmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
@@ -1039,9 +1036,9 @@ async function addInteractiveTab(): Promise<InteractiveTab> {
 		});
 		return result.exitCode;
 	};
-	registry.register('npm', createNpmCommand(registry, httpNpmShellExecute));
-	registry.register('npx', createNpxCommand(registry, httpNpmShellExecute));
-	registry.register('lifo', createLifoPkgCommand(registry, httpNpmShellExecute));
+	registry.register('npm', createNpmCommand(kernel, registry, httpNpmShellExecute));
+	registry.register('npx', createNpxCommand(kernel, registry, httpNpmShellExecute));
+	registry.register('lifo', createLifoPkgCommand(kernel, registry, httpNpmShellExecute));
 
 
 
@@ -1062,17 +1059,17 @@ async function addInteractiveTab(): Promise<InteractiveTab> {
 	registry.register('unforward', createUnforwardCommand(kernel));
 	registry.register('ports', createPortsCommand(kernel));
 	registry.register('test-registry', createTestRegistryCommand(kernel));
-	registry.register('newtab', createNewtabCommand());
+	registry.register('newtab', createNewtabCommand(kernel));
 
 	// Register systemctl command
 	registry.register('systemctl', createSystemctlCommand(kernel));
 
 
-	registry.register('ps', createPsCommand(processRegistry));
-	registry.register('top', createTopCommand(processRegistry));
-	registry.register('kill', createKillCommand(processRegistry));
-	registry.register('watch', createWatchCommand(registry));
-	registry.register('help', createHelpCommand(registry));
+	registry.register('ps', createPsCommand(kernel));
+	registry.register('top', createTopCommand(kernel));
+	registry.register('kill', createKillCommand(kernel));
+	registry.register('watch', createWatchCommand(kernel, registry));
+	registry.register('help', createHelpCommand(kernel));
 
 
 
@@ -1085,8 +1082,8 @@ async function addInteractiveTab(): Promise<InteractiveTab> {
 		});
 		return result.exitCode;
 	};
-	registry.register('npm', createNpmCommand(registry, interactiveNpmShellExecute, interactiveKernel));
-	registry.register('lifo', createLifoPkgCommand(registry, interactiveNpmShellExecute));
+	registry.register('npm', createNpmCommand(kernel, registry, interactiveNpmShellExecute));
+	registry.register('lifo', createLifoPkgCommand(kernel, registry, interactiveNpmShellExecute));
 
 	await shell.sourceFile('/etc/profile');
 	await shell.sourceFile(env.HOME + '/.bashrc');
@@ -1233,14 +1230,12 @@ async function addMultiTab(): Promise<MultiTab> {
 	const env = kernel.getDefaultEnv();
 	const shell = new Shell(terminal, kernel, registry, env);
 
-	const jobTable = shell.getJobTable();
-	const processRegistry = shell.getProcessRegistry();
-	registry.register('ps', createPsCommand(processRegistry));
-	registry.register('top', createTopCommand(processRegistry));
-	registry.register('kill', createKillCommand(processRegistry));
+	registry.register('ps', createPsCommand(kernel));
+	registry.register('top', createTopCommand(kernel));
+	registry.register('kill', createKillCommand(kernel));
 
-	registry.register('watch', createWatchCommand(registry));
-	registry.register('help', createHelpCommand(registry));
+	registry.register('watch', createWatchCommand(kernel, registry));
+	registry.register('help', createHelpCommand(kernel));
 
 	const multiNpmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
 		const result = await shell.execute(cmd, {
@@ -1251,8 +1246,8 @@ async function addMultiTab(): Promise<MultiTab> {
 		});
 		return result.exitCode;
 	};
-	registry.register('npm', createNpmCommand(registry, multiNpmShellExecute));
-	registry.register('lifo', createLifoPkgCommand(registry, multiNpmShellExecute));
+	registry.register('npm', createNpmCommand(kernel, registry, multiNpmShellExecute));
+	registry.register('lifo', createLifoPkgCommand(kernel, registry, multiNpmShellExecute));
 
 	await shell.sourceFile('/etc/profile');
 	await shell.sourceFile(env.HOME + '/.bashrc');
@@ -1439,7 +1434,7 @@ async function addHttpTab(label: string): Promise<HttpTab> {
 	registry.register('forward', createForwardCommand(kernel));
 	registry.register('unforward', createUnforwardCommand(kernel));
 	registry.register('ports', createPortsCommand(kernel));
-	registry.register('newtab', createNewtabCommand());
+	registry.register('newtab', createNewtabCommand(kernel));
 
 	// Register systemctl command
 	registry.register('systemctl', createSystemctlCommand(kernel));
@@ -1450,13 +1445,11 @@ async function addHttpTab(label: string): Promise<HttpTab> {
 	const env = kernel.getDefaultEnv();
 	const shell = new Shell(terminal, kernel, registry, env);
 
-	const jobTable = shell.getJobTable();
-	const processRegistry = shell.getProcessRegistry();
-	registry.register('ps', createPsCommand(processRegistry));
-	registry.register('top', createTopCommand(processRegistry));
-	registry.register('kill', createKillCommand(processRegistry));
-	registry.register('watch', createWatchCommand(registry));
-	registry.register('help', createHelpCommand(registry));
+	registry.register('ps', createPsCommand(kernel));
+	registry.register('top', createTopCommand(kernel));
+	registry.register('kill', createKillCommand(kernel));
+	registry.register('watch', createWatchCommand(kernel, registry));
+	registry.register('help', createHelpCommand(kernel));
 
 
 	const httpNpmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
@@ -1468,9 +1461,9 @@ async function addHttpTab(label: string): Promise<HttpTab> {
 		});
 		return result.exitCode;
 	};
-	registry.register('npm', createNpmCommand(registry, httpNpmShellExecute));
-	registry.register('npx', createNpxCommand(registry, httpNpmShellExecute));
-	registry.register('lifo', createLifoPkgCommand(registry, httpNpmShellExecute));
+	registry.register('npm', createNpmCommand(kernel, registry, httpNpmShellExecute));
+	registry.register('npx', createNpxCommand(kernel, registry, httpNpmShellExecute));
+	registry.register('lifo', createLifoPkgCommand(kernel, registry, httpNpmShellExecute));
 
 	await shell.sourceFile('/etc/profile');
 	await shell.sourceFile(env.HOME + '/.bashrc');
@@ -1653,13 +1646,11 @@ async function bootExplorer() {
 	const env = explorerKernel.getDefaultEnv();
 	const shell = new Shell(terminal, explorerKernel, registry, env);
 
-	const jobTable = shell.getJobTable();
-	const processRegistry = shell.getProcessRegistry();
-	registry.register('ps', createPsCommand(processRegistry));
-	registry.register('top', createTopCommand(processRegistry));
-	registry.register('kill', createKillCommand(processRegistry));
-	registry.register('watch', createWatchCommand(registry));
-	registry.register('help', createHelpCommand(registry));
+	registry.register('ps', createPsCommand(explorerKernel));
+	registry.register('top', createTopCommand(explorerKernel));
+	registry.register('kill', createKillCommand(explorerKernel));
+	registry.register('watch', createWatchCommand(explorerKernel, registry));
+	registry.register('help', createHelpCommand(explorerKernel));
 
 	const explorerNpmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
 		const result = await shell.execute(cmd, {
@@ -1670,8 +1661,8 @@ async function bootExplorer() {
 		});
 		return result.exitCode;
 	};
-	registry.register('npm', createNpmCommand(registry, explorerNpmShellExecute));
-	registry.register('lifo', createLifoPkgCommand(registry, explorerNpmShellExecute));
+	registry.register('npm', createNpmCommand(explorerKernel, registry, explorerNpmShellExecute));
+	registry.register('lifo', createLifoPkgCommand(explorerKernel, registry, explorerNpmShellExecute));
 
 	await shell.sourceFile('/etc/profile');
 	await shell.sourceFile(env.HOME + '/.bashrc');
@@ -1698,13 +1689,11 @@ async function bootGit() {
 	const env = kernel.getDefaultEnv();
 	const shell = new Shell(terminal, kernel, registry, env);
 
-	const jobTable = shell.getJobTable();
-	const processRegistry = shell.getProcessRegistry();
-	registry.register('ps', createPsCommand(processRegistry));
-	registry.register('top', createTopCommand(processRegistry));
-	registry.register('kill', createKillCommand(processRegistry));
-	registry.register('watch', createWatchCommand(registry));
-	registry.register('help', createHelpCommand(registry));
+	registry.register('ps', createPsCommand(kernel));
+	registry.register('top', createTopCommand(kernel));
+	registry.register('kill', createKillCommand(kernel));
+	registry.register('watch', createWatchCommand(kernel, registry));
+	registry.register('help', createHelpCommand(kernel));
 
 	// Register npm + lifo commands
 	const npmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
@@ -1716,8 +1705,8 @@ async function bootGit() {
 		});
 		return result.exitCode;
 	};
-	registry.register('npm', createNpmCommand(registry, npmShellExecute));
-	registry.register('lifo', createLifoPkgCommand(registry, npmShellExecute));
+	registry.register('npm', createNpmCommand(kernel, registry, npmShellExecute));
+	registry.register('lifo', createLifoPkgCommand(kernel, registry, npmShellExecute));
 
 	await shell.sourceFile('/etc/profile');
 	await shell.sourceFile(env.HOME + '/.bashrc');
@@ -1767,13 +1756,11 @@ async function bootFfmpeg() {
 	const env = ffmpegKernel.getDefaultEnv();
 	const shell = new Shell(terminal, ffmpegKernel, registry, env);
 
-	const jobTable = shell.getJobTable();
-	const processRegistry = shell.getProcessRegistry();
-	registry.register('ps', createPsCommand(processRegistry));
-	registry.register('top', createTopCommand(processRegistry));
-	registry.register('kill', createKillCommand(processRegistry));
-	registry.register('watch', createWatchCommand(registry));
-	registry.register('help', createHelpCommand(registry));
+	registry.register('ps', createPsCommand(ffmpegKernel));
+	registry.register('top', createTopCommand(ffmpegKernel));
+	registry.register('kill', createKillCommand(ffmpegKernel));
+	registry.register('watch', createWatchCommand(ffmpegKernel, registry));
+	registry.register('help', createHelpCommand(ffmpegKernel));
 
 	const ffmpegNpmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
 		const result = await shell.execute(cmd, {
@@ -1784,8 +1771,8 @@ async function bootFfmpeg() {
 		});
 		return result.exitCode;
 	};
-	registry.register('npm', createNpmCommand(registry, ffmpegNpmShellExecute));
-	registry.register('lifo', createLifoPkgCommand(registry, ffmpegNpmShellExecute));
+	registry.register('npm', createNpmCommand(ffmpegKernel, registry, ffmpegNpmShellExecute));
+	registry.register('lifo', createLifoPkgCommand(ffmpegKernel, registry, ffmpegNpmShellExecute));
 
 	await shell.sourceFile('/etc/profile');
 	await shell.sourceFile(env.HOME + '/.bashrc');

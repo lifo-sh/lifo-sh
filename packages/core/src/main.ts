@@ -57,10 +57,9 @@ async function boot(): Promise<void> {
 	kernel.initProcessAPI({ cwd: env.HOME, env });
 
 	// 6b. Register factory commands that need shell/registry access
-	const processRegistry = shell.getProcessRegistry();
-	registry.register('ps', createPsCommand(processRegistry));
-	registry.register('top', createTopCommand(processRegistry));
-	registry.register('kill', createKillCommand(processRegistry));
+	registry.register('ps', createPsCommand(kernel));
+	registry.register('top', createTopCommand(kernel));
+	registry.register('kill', createKillCommand(kernel));
 	registry.register('node', createNodeCommand(kernel));
 	registry.register('ports', createPortsCommand(kernel));
 	registry.register('netstat', createNetstatCommand(kernel));
@@ -72,8 +71,8 @@ async function boot(): Promise<void> {
 	registry.register('ip', createIPCommand(kernel));
 	registry.register('route', createRouteCommand(kernel));
 	registry.register('host', createHostCommand(kernel));
-	registry.register('watch', createWatchCommand(registry));
-	registry.register('help', createHelpCommand(registry));
+	registry.register('watch', createWatchCommand(kernel, registry));
+	registry.register('help', createHelpCommand(kernel));
 
 	// 5c. Register npm with shell execution support
 	const npmShellExecute = async (cmd: string, cmdCtx: { cwd: string; env: Record<string, string>; stdout: { write: (s: string) => void }; stderr: { write: (s: string) => void } }) => {
@@ -85,9 +84,9 @@ async function boot(): Promise<void> {
 		});
 		return result.exitCode;
 	};
-	registry.register('npm', createNpmCommand(registry, npmShellExecute, kernel));
-	registry.register('npx', createNpxCommand(registry, npmShellExecute));
-	registry.register('lifo', createLifoPkgCommand(registry, npmShellExecute));
+	registry.register('npm', createNpmCommand(kernel, registry, npmShellExecute));
+	registry.register('npx', createNpxCommand(kernel, registry, npmShellExecute));
+	registry.register('lifo', createLifoPkgCommand(kernel, registry, npmShellExecute));
 
 	// 5d. Service manager & systemctl
 	kernel.initServiceManager(registry, env);

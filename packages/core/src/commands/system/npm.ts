@@ -531,7 +531,7 @@ async function npmInstall(ctx: CommandContext, registry: CommandRegistry, kernel
 			try {
 				installed += await installSinglePackage(
 					name, version, targetBase, ctx.vfs, npmRegistry, ctx.signal,
-					ctx.stdout, ctx.stderr, isGlobal, registry, seen,
+					ctx.stdout, ctx.stderr, isGlobal, registry, seen, kernel,
 				);
 
 				// Update package.json for local installs
@@ -921,7 +921,7 @@ async function npmSearch(ctx: CommandContext): Promise<number> {
 
 // ─── Factory ───
 
-export function createNpmCommand(registry: CommandRegistry, shellExecute?: ShellExecuteFn, kernel?: Kernel): Command {
+export function createNpmCommand(kernel: Kernel, registry: CommandRegistry, shellExecute?: ShellExecuteFn): Command {
 	return async (ctx) => {
 		const subcommand = ctx.args[0];
 
@@ -1002,6 +1002,7 @@ function findBinScript(
 }
 
 export function createNpxCommand(
+	kernel: Kernel,
 	registry: CommandRegistry,
 	shellExecute?: ShellExecuteFn,
 ): Command {
@@ -1077,7 +1078,7 @@ export function createNpxCommand(
 				try {
 					await installSinglePackage(
 						parsedName, version, NPX_CACHE, ctx.vfs, npmRegistry, ctx.signal,
-						ctx.stdout, ctx.stderr, false, registry, seen,
+						ctx.stdout, ctx.stderr, false, registry, seen, kernel,
 					);
 				} catch (e) {
 					ctx.stderr.write(`npx: could not install ${parsedName}: ${e instanceof Error ? e.message : String(e)}\n`);

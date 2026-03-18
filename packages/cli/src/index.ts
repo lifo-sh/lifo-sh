@@ -303,12 +303,11 @@ async function runDaemon(id: string, mountPath: string, port?: number, snapshotP
 
 	const shell = new Shell(daemonTerminal, kernel.vfs, registry, env, kernel.processRegistry, kernel.processExecutor);
 
-	const jobTable = shell.getJobTable();
-	registry.register('ps', createPsCommand(jobTable));
-	registry.register('top', createTopCommand(jobTable));
-	registry.register('kill', createKillCommand(jobTable));
-	registry.register('watch', createWatchCommand(registry));
-	registry.register('help', createHelpCommand(registry));
+	registry.register('ps', createPsCommand(kernel));
+	registry.register('top', createTopCommand(kernel));
+	registry.register('kill', createKillCommand(kernel));
+	registry.register('watch', createWatchCommand(kernel, registry));
+	registry.register('help', createHelpCommand(kernel));
 	registry.register('node', createNodeCommand(kernel));
 	registry.register('curl', createCurlCommand(kernel));
 
@@ -324,8 +323,8 @@ async function runDaemon(id: string, mountPath: string, port?: number, snapshotP
 		});
 		return result.exitCode;
 	};
-	registry.register('npm', createNpmCommand(registry, npmShellExecute));
-	registry.register('lifo', createLifoPkgCommand(registry, npmShellExecute));
+	registry.register('npm', createNpmCommand(kernel, registry, npmShellExecute));
+	registry.register('lifo', createLifoPkgCommand(kernel, registry, npmShellExecute));
 
 	await shell.sourceFile('/etc/profile');
 	await shell.sourceFile(env.HOME + '/.bashrc');
@@ -493,12 +492,11 @@ async function runInteractive(opts: CliOptions): Promise<void> {
 
 	const shell = new Shell(terminal, kernel.vfs, registry, env, kernel.processRegistry, kernel.processExecutor);
 
-	const jobTable = shell.getJobTable();
-	registry.register('ps', createPsCommand(jobTable));
-	registry.register('top', createTopCommand(jobTable));
-	registry.register('kill', createKillCommand(jobTable));
-	registry.register('watch', createWatchCommand(registry));
-	registry.register('help', createHelpCommand(registry));
+	registry.register('ps', createPsCommand(kernel));
+	registry.register('top', createTopCommand(kernel));
+	registry.register('kill', createKillCommand(kernel));
+	registry.register('watch', createWatchCommand(kernel, registry));
+	registry.register('help', createHelpCommand(kernel));
 	registry.register('node', createNodeCommand(kernel));
 	registry.register('curl', createCurlCommand(kernel));
 
@@ -514,8 +512,8 @@ async function runInteractive(opts: CliOptions): Promise<void> {
 		});
 		return result.exitCode;
 	};
-	registry.register('npm', createNpmCommand(registry, npmShellExecute));
-	registry.register('lifo', createLifoPkgCommand(registry, npmShellExecute));
+	registry.register('npm', createNpmCommand(kernel, registry, npmShellExecute));
+	registry.register('lifo', createLifoPkgCommand(kernel, registry, npmShellExecute));
 
 	await shell.sourceFile('/etc/profile');
 	await shell.sourceFile(env.HOME + '/.bashrc');

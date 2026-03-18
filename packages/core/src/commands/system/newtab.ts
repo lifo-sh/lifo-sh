@@ -1,11 +1,12 @@
 import type { Command } from '../types.js';
+import type { Kernel } from '@lifo-sh/kernel';
 
 /**
  * newtab - Add a new tab to the current session
  * Usage: newtab [label]
  * Note: Only works in browser environments with window.addHttpTab exposed
  */
-export function createNewtabCommand(): Command {
+export function createNewtabCommand(_kernel: Kernel): Command {
 	return async (ctx) => {
 		// Check if we're in a browser environment with the addHttpTab function
 		if (typeof window === 'undefined' || !(window as any).addHttpTab) {

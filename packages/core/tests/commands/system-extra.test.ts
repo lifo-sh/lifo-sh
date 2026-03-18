@@ -1,18 +1,31 @@
 import { describe, it, expect } from 'vitest';
-import { VFS } from '../../src/kernel/vfs/index.js';
-import { JobTable } from '../../src/shell/jobs.js';
+import { VFS, ProcessRegistry } from '@lifo-sh/kernel';
 import { CommandRegistry } from '../../src/commands/registry.js';
 import type { CommandContext, CommandOutputStream, CommandInputStream } from '../../src/commands/types.js';
+import type { Kernel } from '@lifo-sh/kernel';
+
+/** Create a minimal mock Kernel with a real ProcessRegistry. */
+function createMockKernel(vfs?: VFS): Kernel {
+  const v = vfs ?? new VFS();
+  return {
+    vfs: v,
+    portRegistry: new Map(),
+    processRegistry: new ProcessRegistry(),
+    processAPI: null,
+  } as unknown as Kernel;
+}
 
 function createContext(
   vfs: VFS,
   args: string[],
   cwd = '/',
   stdin?: CommandInputStream,
+  kernel?: Kernel,
 ): CommandContext & { stdout: CommandOutputStream & { text: string }; stderr: CommandOutputStream & { text: string } } {
   const stdout = { text: '', write(t: string) { this.text += t; } };
   const stderr = { text: '', write(t: string) { this.text += t; } };
   return {
+    kernel: kernel ?? createMockKernel(vfs),
     args,
     env: { HOME: '/home/user', USER: 'user', HOSTNAME: 'lifo' },
     cwd,
@@ -33,27 +46,33 @@ function createStdin(content: string): CommandInputStream {
 }
 
 describe('ps', () => {
-  it('shows shell and ps itself with no jobs', async () => {
-    const jobTable = new JobTable();
+  it('shows process list header with no extra processes', async () => {
+    const kernel = createMockKernel();
     const { createPsCommand } = await import('../../src/commands/system/ps.js');
-    const ps = createPsCommand(jobTable);
+    const ps = createPsCommand(kernel);
     const vfs = new VFS();
-    const ctx = createContext(vfs, []);
+    const ctx = createContext(vfs, [], '/', undefined, kernel);
     const code = await ps(ctx);
     expect(code).toBe(0);
     expect(ctx.stdout.text).toContain('PID');
-    expect(ctx.stdout.text).toContain('sh');
-    expect(ctx.stdout.text).toContain('ps');
   });
 
-  it('shows background jobs', async () => {
-    const jobTable = new JobTable();
+  it('shows background processes', async () => {
+    const kernel = createMockKernel();
     const ac = new AbortController();
-    jobTable.add('sleep 100', new Promise(() => {}), ac);
+    kernel.processRegistry.spawn({
+      command: 'sleep',
+      args: ['sleep', '100'],
+      cwd: '/',
+      env: {},
+      isForeground: false,
+      promise: new Promise(() => {}),
+      abortController: ac,
+    });
     const { createPsCommand } = await import('../../src/commands/system/ps.js');
-    const ps = createPsCommand(jobTable);
+    const ps = createPsCommand(kernel);
     const vfs = new VFS();
-    const ctx = createContext(vfs, []);
+    const ctx = createContext(vfs, [], '/', undefined, kernel);
     const code = await ps(ctx);
     expect(code).toBe(0);
     expect(ctx.stdout.text).toContain('sleep');
@@ -62,11 +81,21 @@ describe('ps', () => {
 
 describe('top', () => {
   it('shows system snapshot', async () => {
-    const jobTable = new JobTable();
+    const kernel = createMockKernel();
+    // Spawn a shell-like process so output has something to show
+    kernel.processRegistry.spawn({
+      command: 'sh',
+      args: ['sh'],
+      cwd: '/',
+      env: {},
+      isForeground: true,
+      promise: new Promise(() => {}),
+      abortController: new AbortController(),
+    });
     const { createTopCommand } = await import('../../src/commands/system/top.js');
-    const top = createTopCommand(jobTable);
+    const top = createTopCommand(kernel);
     const vfs = new VFS();
-    const ctx = createContext(vfs, []);
+    const ctx = createContext(vfs, [], '/', undefined, kernel);
     const code = await top(ctx);
     expect(code).toBe(0);
     expect(ctx.stdout.text).toContain('top');
@@ -77,50 +106,78 @@ describe('top', () => {
 });
 
 describe('kill', () => {
-  it('kills a job by %N', async () => {
-    const jobTable = new JobTable();
+  it('kills a job by %N (job ID)', async () => {
+    const kernel = createMockKernel();
     const ac = new AbortController();
-    jobTable.add('sleep 100', new Promise(() => {}), ac);
+    // Spawn a background process (gets jobId=1)
+    kernel.processRegistry.spawn({
+      command: 'sleep',
+      args: ['sleep', '100'],
+      cwd: '/',
+      env: {},
+      isForeground: false,
+      promise: new Promise(() => {}),
+      abortController: ac,
+    });
     const { createKillCommand } = await import('../../src/commands/system/kill.js');
-    const kill = createKillCommand(jobTable);
+    const kill = createKillCommand(kernel);
     const vfs = new VFS();
-    const ctx = createContext(vfs, ['%1']);
+    const ctx = createContext(vfs, ['%1'], '/', undefined, kernel);
     const code = await kill(ctx);
     expect(code).toBe(0);
     expect(ac.signal.aborted).toBe(true);
   });
 
   it('kills a job by PID', async () => {
-    const jobTable = new JobTable();
+    const kernel = createMockKernel();
     const ac = new AbortController();
-    jobTable.add('sleep 100', new Promise(() => {}), ac);
+    // Spawn returns PID 2 (first non-shell PID)
+    const pid = kernel.processRegistry.spawn({
+      command: 'sleep',
+      args: ['sleep', '100'],
+      cwd: '/',
+      env: {},
+      isForeground: false,
+      promise: new Promise(() => {}),
+      abortController: ac,
+    });
     const { createKillCommand } = await import('../../src/commands/system/kill.js');
-    const kill = createKillCommand(jobTable);
+    const kill = createKillCommand(kernel);
     const vfs = new VFS();
-    // PID = jobId + 1 = 2
-    const ctx = createContext(vfs, ['2']);
+    const ctx = createContext(vfs, [String(pid)], '/', undefined, kernel);
     const code = await kill(ctx);
     expect(code).toBe(0);
     expect(ac.signal.aborted).toBe(true);
   });
 
-  it('refuses to kill PID 1 (shell)', async () => {
-    const jobTable = new JobTable();
+  it('refuses to kill shell process', async () => {
+    const kernel = createMockKernel();
+    // Register a shell process at PID 2 (since PID 1 is not auto-created)
+    kernel.processRegistry.spawn({
+      command: 'shell',
+      args: ['shell'],
+      cwd: '/',
+      env: {},
+      isForeground: true,
+      promise: new Promise(() => {}),
+      abortController: new AbortController(),
+    });
     const { createKillCommand } = await import('../../src/commands/system/kill.js');
-    const kill = createKillCommand(jobTable);
+    const kill = createKillCommand(kernel);
     const vfs = new VFS();
-    const ctx = createContext(vfs, ['1']);
+    // PID 2 is the shell process we just spawned
+    const ctx = createContext(vfs, ['2'], '/', undefined, kernel);
     const code = await kill(ctx);
     expect(code).toBe(1);
     expect(ctx.stderr.text).toContain('not permitted');
   });
 
   it('lists signals with -l', async () => {
-    const jobTable = new JobTable();
+    const kernel = createMockKernel();
     const { createKillCommand } = await import('../../src/commands/system/kill.js');
-    const kill = createKillCommand(jobTable);
+    const kill = createKillCommand(kernel);
     const vfs = new VFS();
-    const ctx = createContext(vfs, ['-l']);
+    const ctx = createContext(vfs, ['-l'], '/', undefined, kernel);
     const code = await kill(ctx);
     expect(code).toBe(0);
     expect(ctx.stdout.text).toContain('TERM');
@@ -128,14 +185,14 @@ describe('kill', () => {
   });
 
   it('errors on non-existent job', async () => {
-    const jobTable = new JobTable();
+    const kernel = createMockKernel();
     const { createKillCommand } = await import('../../src/commands/system/kill.js');
-    const kill = createKillCommand(jobTable);
+    const kill = createKillCommand(kernel);
     const vfs = new VFS();
-    const ctx = createContext(vfs, ['%99']);
+    const ctx = createContext(vfs, ['%99'], '/', undefined, kernel);
     const code = await kill(ctx);
     expect(code).toBe(1);
-    expect(ctx.stderr.text).toContain('no such process');
+    expect(ctx.stderr.text).toContain('no such job');
   });
 });
 
@@ -305,13 +362,11 @@ describe('man', () => {
 
 describe('help', () => {
   it('lists commands grouped by category', async () => {
-    const registry = new CommandRegistry();
-    registry.register('ls', async () => 0);
-    registry.register('cat', async () => 0);
+    const kernel = createMockKernel();
     const { createHelpCommand } = await import('../../src/commands/system/help.js');
-    const help = createHelpCommand(registry);
+    const help = createHelpCommand(kernel);
     const vfs = new VFS();
-    const ctx = createContext(vfs, []);
+    const ctx = createContext(vfs, [], '/', undefined, kernel);
     const code = await help(ctx);
     expect(code).toBe(0);
     expect(ctx.stdout.text).toContain('Lifo Commands');
@@ -323,22 +378,24 @@ describe('help', () => {
 
 describe('watch', () => {
   it('errors with no command', async () => {
+    const kernel = createMockKernel();
     const registry = new CommandRegistry();
     const { createWatchCommand } = await import('../../src/commands/system/watch.js');
-    const watch = createWatchCommand(registry);
+    const watch = createWatchCommand(kernel, registry);
     const vfs = new VFS();
-    const ctx = createContext(vfs, []);
+    const ctx = createContext(vfs, [], '/', undefined, kernel);
     const code = await watch(ctx);
     expect(code).toBe(1);
     expect(ctx.stderr.text).toContain('missing command');
   });
 
   it('errors on unknown command', async () => {
+    const kernel = createMockKernel();
     const registry = new CommandRegistry();
     const { createWatchCommand } = await import('../../src/commands/system/watch.js');
-    const watch = createWatchCommand(registry);
+    const watch = createWatchCommand(kernel, registry);
     const vfs = new VFS();
-    const ctx = createContext(vfs, ['nonexistent']);
+    const ctx = createContext(vfs, ['nonexistent'], '/', undefined, kernel);
     const code = await watch(ctx);
     expect(code).toBe(1);
     expect(ctx.stderr.text).toContain('command not found');

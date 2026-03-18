@@ -1,5 +1,5 @@
 import type { Command } from '../types.js';
-import type { ProcessRegistry } from '../../shell/ProcessRegistry.js';
+import type { Kernel } from '@lifo-sh/kernel';
 
 const SIGNALS: Record<string, number> = {
   HUP: 1, INT: 2, QUIT: 3, KILL: 9, TERM: 15, STOP: 19, CONT: 18,
@@ -10,7 +10,8 @@ const SIGNAL_NAMES: Record<number, string> = {
   1: 'HUP', 2: 'INT', 3: 'QUIT', 9: 'KILL', 15: 'TERM', 19: 'STOP', 18: 'CONT',
 };
 
-export function createKillCommand(processRegistry: ProcessRegistry): Command {
+export function createKillCommand(kernel: Kernel): Command {
+  const processRegistry = kernel.processRegistry;
   return async (ctx) => {
     const args = ctx.args;
 

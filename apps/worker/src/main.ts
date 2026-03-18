@@ -134,11 +134,11 @@ async function boot() {
     // Command registry
     const registry = createDefaultRegistry();
     registry.register('node', createNodeCommand(kernel));
-    registry.register('npm', createNpmCommand(registry, undefined, kernel));
-    registry.register('npx', createNpxCommand(registry));
-    registry.register('ps', createPsCommand(kernel.processRegistry));
-    registry.register('top', createTopCommand(kernel.processRegistry));
-    registry.register('kill', createKillCommand(kernel.processRegistry));
+    registry.register('npm', createNpmCommand(kernel, registry));
+    registry.register('npx', createNpxCommand(kernel, registry));
+    registry.register('ps', createPsCommand(kernel));
+    registry.register('top', createTopCommand(kernel));
+    registry.register('kill', createKillCommand(kernel));
     registry.register('curl', createCurlCommand(kernel));
     bootLifoPackages(kernel.vfs, registry);
 

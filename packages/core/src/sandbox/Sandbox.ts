@@ -132,12 +132,11 @@ export class Sandbox {
 		kernel.initProcessAPI({ cwd: options?.cwd ?? env.HOME, env });
 
 		// 7. Register factory commands
-		const processRegistry = shell.getProcessRegistry();
-		registry.register('ps', createPsCommand(processRegistry));
-		registry.register('top', createTopCommand(processRegistry));
-		registry.register('kill', createKillCommand(processRegistry));
-		registry.register('watch', createWatchCommand(registry));
-		registry.register('help', createHelpCommand(registry));
+		registry.register('ps', createPsCommand(kernel));
+		registry.register('top', createTopCommand(kernel));
+		registry.register('kill', createKillCommand(kernel));
+		registry.register('watch', createWatchCommand(kernel, registry));
+		registry.register('help', createHelpCommand(kernel));
 		registry.register('node', createNodeCommand(kernel));
 		registry.register('curl', createCurlCommand(kernel));
 		registry.register('tunnel', createTunnelCommandV2(kernel));
@@ -159,9 +158,9 @@ export class Sandbox {
 			});
 			return result.exitCode;
 		};
-		registry.register('npm', createNpmCommand(registry, npmShellExecute, kernel));
-		registry.register('npx', createNpxCommand(registry, npmShellExecute));
-		registry.register('lifo', createLifoPkgCommand(registry, npmShellExecute));
+		registry.register('npm', createNpmCommand(kernel, registry, npmShellExecute));
+		registry.register('npx', createNpxCommand(kernel, registry, npmShellExecute));
+		registry.register('lifo', createLifoPkgCommand(kernel, registry, npmShellExecute));
 		// 7b. Service manager & systemctl
 		kernel.initServiceManager(registry, env);
 		registry.register('systemctl', createSystemctlCommand(kernel));

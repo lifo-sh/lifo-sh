@@ -563,6 +563,7 @@ export class Interpreter {
 						}
 
 						const ctx: CommandContext = {
+							kernel: this.config.kernel,
 							args,
 							env: { ...this.config.env },
 							cwd: this.config.getCwd(),
@@ -570,7 +571,7 @@ export class Interpreter {
 							stdout,
 							stderr,
 							signal: abortController.signal,
-							stdin,
+							stdin: stdin ?? terminalStdin,
 							setRawMode: terminalStdin
 								? (v: boolean) => { terminalStdin.rawMode = v; }
 								: undefined,
@@ -616,6 +617,10 @@ export class Interpreter {
 								},
 								(err) => {
 									const code = (err instanceof Error && err.name === 'AbortError') ? 130 : 1;
+									// Surface the error so the user sees why the command failed
+									if (code !== 130) {
+										stderr.write(`${name}: ${err instanceof Error ? err.message : String(err)}\n`);
+									}
 									rejectPromise!(err);
 									return code;
 								}

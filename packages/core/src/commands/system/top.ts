@@ -1,7 +1,7 @@
 import type { Command } from '../types.js';
-import type { ProcessRegistry } from '../../shell/ProcessRegistry.js';
+import type { Kernel } from '@lifo-sh/kernel';
 
-export function createTopCommand(processRegistry: ProcessRegistry): Command {
+export function createTopCommand(kernel: Kernel): Command {
   return async (ctx) => {
     const now = new Date();
     const hours = String(now.getHours()).padStart(2, '0');
@@ -22,7 +22,7 @@ export function createTopCommand(processRegistry: ProcessRegistry): Command {
     const freeMem = totalMem - usedMem;
 
     // Process list
-    const processes = processRegistry.getAll();
+    const processes = kernel.processRegistry.getAll();
     const runningCount = processes.filter(p => p.status === 'running' || p.status === 'sleeping').length;
     const stoppedCount = processes.filter(p => p.status === 'stopped').length;
     const totalTasks = processes.length;

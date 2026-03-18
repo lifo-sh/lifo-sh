@@ -32,14 +32,13 @@ class TerminalInstance implements AppInstance {
     bootLifoPackages(this.ctx.kernel.vfs, registry);
 
     const env = this.ctx.kernel.getDefaultEnv();
-    this.shell = new Shell(this.terminal, this.ctx.kernel.vfs, registry, env);
+    this.shell = new Shell(this.terminal, this.ctx.kernel, registry, env);
 
-    const jobTable = this.shell.getJobTable();
-    registry.register('ps', createPsCommand(jobTable));
-    registry.register('top', createTopCommand(jobTable));
-    registry.register('kill', createKillCommand(jobTable));
-    registry.register('watch', createWatchCommand(registry));
-    registry.register('help', createHelpCommand(registry));
+    registry.register('ps', createPsCommand(this.ctx.kernel));
+    registry.register('top', createTopCommand(this.ctx.kernel));
+    registry.register('kill', createKillCommand(this.ctx.kernel));
+    registry.register('watch', createWatchCommand(this.ctx.kernel, registry));
+    registry.register('help', createHelpCommand(this.ctx.kernel));
     registry.register('node', createNodeCommand(this.ctx.kernel));
     registry.register('curl', createCurlCommand(this.ctx.kernel));
 

@@ -1,4 +1,4 @@
-import type { Command } from '../types.js';
+import type { Command, CommandInputStream } from '../types.js';
 import { resolve, dirname } from '../../utils/path.js';
 import { NodeRunner } from '@lifo-sh/node-runner';
 import { createModuleMap } from '@lifo-sh/node-compat';
@@ -6,6 +6,48 @@ import type { NodeContext } from '@lifo-sh/node-compat';
 import { VFSError } from '@lifo-sh/kernel';
 import { ACTIVE_SERVERS } from '@lifo-sh/node-compat/http';
 import type { VirtualRequestHandler, Kernel, IKernel } from '@lifo-sh/kernel';
+
+/**
+ * Wraps a CommandInputStream to track whether a consumer is actively
+ * reading from it. This lets us keep the node process alive while a
+ * script is waiting for stdin input (e.g. readline.question).
+ */
+function trackStdin(stdin: CommandInputStream) {
+	let reading = false;
+	let doneResolve: (() => void) | null = null;
+	let donePromise: Promise<void> | null = null;
+
+	const tracked: CommandInputStream = {
+		async read(): Promise<string | null> {
+			if (!reading) {
+				reading = true;
+				donePromise = new Promise<void>(r => { doneResolve = r; });
+			}
+			const result = await stdin.read();
+			if (result === null) {
+				reading = false;
+				doneResolve?.();
+			}
+			return result;
+		},
+		async readAll(): Promise<string> {
+			if (!reading) {
+				reading = true;
+				donePromise = new Promise<void>(r => { doneResolve = r; });
+			}
+			const result = await stdin.readAll();
+			reading = false;
+			doneResolve?.();
+			return result;
+		},
+	};
+
+	return {
+		stream: tracked,
+		get isReading() { return reading; },
+		get done() { return donePromise; },
+	};
+}
 
 const NODE_VERSION = 'v20.0.0';
 
@@ -130,12 +172,17 @@ export function createNodeImpl(
 			}
 			: undefined;
 
+		// Wrap stdin to track active reads so we can keep the process alive
+		const stdinTracker = ctx.stdin ? trackStdin(ctx.stdin) : null;
+
 		const nodeCtx: NodeContext = {
 			vfs: ctx.vfs,
 			cwd: ctx.cwd,
 			env: ctx.env,
 			stdout: ctx.stdout,
 			stderr: ctx.stderr,
+			stdin: stdinTracker?.stream,
+			setRawMode: ctx.setRawMode,
 			argv: [filename, ...scriptArgs],
 			filename,
 			dirname: dir,
@@ -227,6 +274,17 @@ export function createNodeImpl(
 			});
 
 			await Promise.race([Promise.all(childExitPromises), abortPromise]);
+		}
+
+		// Keep process alive while stdin is being actively read
+		// (e.g. readline.question, process.stdin.on('data'))
+		if (stdinTracker?.isReading && stdinTracker.done) {
+			const abortPromise = new Promise<void>((resolve) => {
+				if (ctx.signal.aborted) { resolve(); return; }
+				ctx.signal.addEventListener('abort', () => resolve(), { once: true });
+			});
+
+			await Promise.race([stdinTracker.done, abortPromise]);
 		}
 
 		return result.exitCode;

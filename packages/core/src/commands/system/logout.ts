@@ -1,6 +1,7 @@
 import type { Command } from '../types.js';
+import type { Kernel } from '@lifo-sh/kernel';
 
-export function createLogoutCommand(deleteToken: () => void, onExit: () => void): Command {
+export function createLogoutCommand(_kernel: Kernel, deleteToken: () => void, onExit: () => void): Command {
   return async (ctx) => {
     try {
       deleteToken();
@@ -14,4 +15,4 @@ export function createLogoutCommand(deleteToken: () => void, onExit: () => void)
   };
 }
 
-export default createLogoutCommand(() => {}, () => {});
+export default createLogoutCommand(null as any, () => {}, () => {});

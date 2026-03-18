@@ -2,7 +2,7 @@ import type { ITerminal } from '../terminal/ITerminal.js';
 import type { IKernelVfs } from '@lifo-sh/kernel';
 import { Kernel } from '@lifo-sh/kernel';
 import type { CommandRegistry } from '../commands/registry.js';
-import type { CommandOutputStream } from '../commands/types.js';
+import type { CommandOutputStream, CommandInputStream } from '../commands/types.js';
 import { resolve } from '../utils/path.js';
 import { BOLD, GREEN, BLUE, RESET } from '../utils/colors.js';
 import { VFSError } from '@lifo-sh/kernel';
@@ -15,12 +15,27 @@ import { evaluateTest } from './test-builtin.js';
 import { TerminalStdin } from './terminal-stdin.js';
 import type { IProcessExecutor as ProcessExecutor } from '@lifo-sh/kernel';
 
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Shell-escape an argument so it survives re-parsing by the interpreter. */
+function shellEscapeArg(arg: string): string {
+  if (arg === '') return "''";
+  // If the arg contains no shell-special chars, return as-is
+  if (!/[^a-zA-Z0-9_\-./=:@,]/.test(arg)) return arg;
+  // Wrap in single quotes, escaping any embedded single quotes
+  return "'" + arg.replace(/'/g, "'\\''") + "'";
+}
+
 export interface ExecuteOptions {
   cwd?: string;
   env?: Record<string, string>;
   onStdout?: (data: string) => void;
   onStderr?: (data: string) => void;
   stdin?: string;
+  /** Live TerminalStdin for interactive input (e.g. readline). Takes priority over stdin string. */
+  terminalStdin?: TerminalStdin;
 }
 
 export class Shell {
@@ -91,14 +106,35 @@ export class Shell {
     this.processExecutor = kernel.processExecutor;
 
     // Register shellExecute callback on kernel for worker threads (npm run, npx, etc.)
+    // When the worker delegates back, we must execute on the main thread directly
+    // to avoid a circular loop: worker → shellExecute → RoutingExecutor → worker → ...
     kernel.setShellExecute(async (cmd: string, ctx: any) => {
-      const result = await this.execute(cmd, {
-        cwd: ctx.cwd,
-        env: ctx.env,
-        onStdout: (data: string) => ctx.stdout?.write(data),
-        onStderr: (data: string) => ctx.stderr?.write(data),
-      });
-      return result.exitCode;
+      // Reconstruct the full command line from cmd + ctx.args.
+      // The worker sends cmd as just the command name (e.g. "node") and args
+      // separately, but Shell.execute() needs the full command string.
+      const args: string[] = ctx.args ?? [];
+      const fullCmd = args.length > 0
+        ? [cmd, ...args].map(shellEscapeArg).join(' ')
+        : cmd;
+
+      // Temporarily remove processExecutor so the interpreter runs commands
+      // directly on the main thread instead of routing back to the worker.
+      const savedExecutor = this.interpreterConfig.processExecutor;
+      this.interpreterConfig.processExecutor = undefined;
+      try {
+        const result = await this.execute(fullCmd, {
+          cwd: ctx.cwd,
+          env: ctx.env,
+          onStdout: (data: string) => ctx.stdout?.write(data),
+          onStderr: (data: string) => ctx.stderr?.write(data),
+          // Pass the shell's live terminal stdin so interactive commands
+          // (e.g. node with readline) can receive keyboard input.
+          terminalStdin: this.terminalStdin ?? undefined,
+        });
+        return result.exitCode;
+      } finally {
+        this.interpreterConfig.processExecutor = savedExecutor;
+      }
     });
 
     // Initialize history manager
@@ -145,6 +181,8 @@ export class Shell {
       Promise.resolve(evaluateTest(_args, this.vfs, stderr)));
     this.builtins.set('[', (_args, _stdout, stderr) =>
       Promise.resolve(evaluateTest(_args, this.vfs, stderr)));
+    this.builtins.set('read', (args, stdout, stderr, stdin) =>
+      this.builtinRead(args, stdout, stderr, stdin));
   }
 
   getJobTable(): JobTable {
@@ -230,9 +268,11 @@ export class Shell {
       Object.assign(this.env, options.env);
     }
 
-    // Handle stdin
+    // Handle stdin — prefer a live TerminalStdin (interactive) over a pre-buffered string
     let terminalStdin: TerminalStdin | undefined;
-    if (options?.stdin !== undefined) {
+    if (options?.terminalStdin) {
+      terminalStdin = options.terminalStdin;
+    } else if (options?.stdin !== undefined) {
       terminalStdin = new TerminalStdin();
       terminalStdin.feed(options.stdin);
       terminalStdin.close();
@@ -425,7 +465,7 @@ export class Shell {
 
     // Ctrl+U -- clear line
     if (data === '\x15') {
-      if (this.running && this.terminalStdin?.isWaiting) {
+      if (this.running && this.terminalStdin) {
         // Clear the stdin line buffer
         if (this.stdinCursorPos > 0) {
           this.terminal.write(`\x1b[${this.stdinCursorPos}D`);
@@ -442,8 +482,12 @@ export class Shell {
       return;
     }
 
-    // When a command is running and waiting for stdin, forward input
-    if (this.running && this.terminalStdin?.isWaiting) {
+    // When a command is running, forward input to stdin.
+    // We don't gate on isWaiting because there's a brief window between
+    // reads where isWaiting is false; dropping input in that gap makes
+    // interactive prompts (e.g. npx create-vite) unresponsive.
+    // TerminalStdin.feed() buffers data when no reader is waiting.
+    if (this.running && this.terminalStdin) {
       this.handleStdinInput(data);
       return;
     }
@@ -565,6 +609,12 @@ export class Shell {
   }
 
   private handleStdinInput(data: string): void {
+    // In raw mode, forward every keystroke directly without line editing
+    if (this.terminalStdin?.rawMode) {
+      this.terminalStdin.feed(data);
+      return;
+    }
+
     // Arrow keys for line editing
     if (data === '\x1b[D') {
       // Left arrow
@@ -885,6 +935,92 @@ export class Shell {
         this.env[key] = value;
       }
     }
+    return 0;
+  }
+
+  private async builtinRead(
+    args: string[],
+    stdout: CommandOutputStream,
+    stderr: CommandOutputStream,
+    stdin?: CommandInputStream,
+  ): Promise<number> {
+    // Parse flags
+    let prompt = '';
+    let raw = false;
+    let silent = false;
+    const varNames: string[] = [];
+
+    for (let i = 0; i < args.length; i++) {
+      const arg = args[i];
+      if (arg === '-p' && i + 1 < args.length) {
+        prompt = args[++i];
+      } else if (arg === '-r') {
+        raw = true;
+      } else if (arg === '-s') {
+        silent = true;
+      } else if (!arg.startsWith('-')) {
+        varNames.push(arg);
+      }
+    }
+
+    // Default variable name is REPLY
+    if (varNames.length === 0) {
+      varNames.push('REPLY');
+    }
+
+    // Print prompt
+    if (prompt) {
+      stdout.write(prompt);
+    }
+
+    // Read a line from stdin
+    if (!stdin) {
+      stderr.write('read: no stdin available\n');
+      return 1;
+    }
+
+    const line = await stdin.read();
+    if (line === null) {
+      // EOF
+      return 1;
+    }
+
+    // Strip trailing newline
+    let value = line.replace(/\n$/, '');
+
+    // Process backslash escapes unless -r
+    if (!raw) {
+      value = value.replace(/\\(.)/g, '$1');
+    }
+
+    // Split by IFS into variables
+    const ifs = this.env['IFS'] ?? ' \t\n';
+    if (varNames.length === 1) {
+      this.env[varNames[0]] = value;
+    } else {
+      // Split the line, last var gets the remainder
+      const parts: string[] = [];
+      let remaining = value;
+      for (let i = 0; i < varNames.length - 1; i++) {
+        // Trim leading IFS
+        remaining = remaining.replace(new RegExp(`^[${escapeRegex(ifs)}]+`), '');
+        const match = remaining.match(new RegExp(`^([^${escapeRegex(ifs)}]+)`));
+        if (match) {
+          parts.push(match[1]);
+          remaining = remaining.slice(match[0].length);
+        } else {
+          parts.push('');
+        }
+      }
+      // Last variable gets the trimmed remainder
+      remaining = remaining.replace(new RegExp(`^[${escapeRegex(ifs)}]+`), '');
+      parts.push(remaining);
+
+      for (let i = 0; i < varNames.length; i++) {
+        this.env[varNames[i]] = parts[i] ?? '';
+      }
+    }
+
     return 0;
   }
 

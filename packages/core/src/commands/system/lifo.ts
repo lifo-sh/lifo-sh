@@ -13,7 +13,7 @@
 
 import type { Command, CommandContext, CommandOutputStream } from '../types.js';
 import type { CommandRegistry } from '../registry.js';
-import type { IKernelVfs } from '@lifo-sh/kernel';
+import type { IKernelVfs, Kernel } from '@lifo-sh/kernel';
 import type { ShellExecuteFn } from './npm.js';
 import { npmInstallGlobal, getBinEntries, registerBinCommand } from './npm.js';
 import { resolve, join } from '../../utils/path.js';
@@ -407,6 +407,7 @@ function lifoUnlink(ctx: CommandContext): number {
 // ─── Factory ───
 
 export function createLifoPkgCommand(
+  _kernel: Kernel,
   registry: CommandRegistry,
   _shellExecute?: ShellExecuteFn,
 ): Command {

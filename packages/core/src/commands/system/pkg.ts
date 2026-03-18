@@ -1,8 +1,9 @@
 import type { Command, CommandContext } from '../types.js';
 import type { CommandRegistry } from '../registry.js';
+import type { Kernel } from '@lifo-sh/kernel';
 import { PackageManager } from '../../pkg/PackageManager.js';
 
-export function createPkgCommand(registry: CommandRegistry): Command {
+export function createPkgCommand(_kernel: Kernel, registry: CommandRegistry): Command {
   const command: Command = async (ctx) => {
     const subcommand = ctx.args[0];
     const pm = new PackageManager(ctx.vfs);
