@@ -17,10 +17,102 @@ import {
 	type StreamMessage,
 } from './ContextSerialization.js';
 import { WorkerKernel, VfsRpcClient } from '@lifo-sh/kernel';
+import type { VirtualRequest, VirtualResponse } from '@lifo-sh/kernel';
 import { createDefaultRegistry } from '../commands/registry.js';
 import { createNodeImpl } from '../commands/system/node.js';
 import type { CommandContext } from '../commands/types.js';
 import { createNpmCommand, createNpxCommand } from '../';
+
+/**
+ * Port registry proxy — intercepts set/delete and notifies the main thread
+ * so that ports registered by worker-side HTTP servers appear in the main
+ * thread's portRegistry (visible to `ports`, `curl`, `tunnel`, etc.).
+ *
+ * For each registered port, a MessageChannel is created:
+ *   - port2 is transferred to the main thread (requestPort)
+ *   - port1 stays in the worker, listening for forwarded HTTP requests
+ *
+ * When the main thread's proxy handler receives a curl/tunnel request,
+ * it forwards it to the worker via the requestPort. The worker calls the
+ * real handler, waits for _donePromise, and sends the response back.
+ */
+class WorkerPortRegistry extends Map<number, any> {
+	private requestPorts = new Map<number, MessagePort>();
+
+	set(port: number, handler: any): this {
+		super.set(port, handler);
+
+		// Create channel for main thread to send HTTP requests to this handler
+		const channel = new MessageChannel();
+		this.requestPorts.set(port, channel.port1);
+
+		// Listen for forwarded HTTP requests from the main thread
+		channel.port1.onmessage = async (e: MessageEvent) => {
+			const msg = e.data;
+			if (msg.type !== 'portRequest') return;
+
+			const vReq: VirtualRequest = {
+				method: msg.method,
+				url: msg.url,
+				headers: msg.headers,
+				body: msg.body,
+			};
+			const vRes: VirtualResponse & { _donePromise?: Promise<void> } = {
+				statusCode: 200,
+				headers: {},
+				body: '',
+			};
+
+			try {
+				handler(vReq, vRes);
+
+				// Wait for async handlers (Express, Vite, etc.) that set _donePromise
+				if (vRes._donePromise) {
+					await vRes._donePromise;
+				}
+
+				msg.responsePort.postMessage({
+					type: 'portResponse',
+					requestId: msg.requestId,
+					statusCode: vRes.statusCode,
+					headers: vRes.headers,
+					body: vRes.body ?? '',
+				});
+			} catch (error) {
+				msg.responsePort.postMessage({
+					type: 'portResponse',
+					requestId: msg.requestId,
+					statusCode: 500,
+					headers: { 'Content-Type': 'text/plain' },
+					body: error instanceof Error ? error.message : String(error),
+				});
+			}
+		};
+
+		// Notify main thread about the new port
+		console.log(`[Worker] Port ${port} registered, notifying main thread`);
+		self.postMessage(
+			{ type: 'portRegister', port, requestPort: channel.port2 } as WorkerMessage,
+			[channel.port2],
+		);
+
+		return this;
+	}
+
+	delete(port: number): boolean {
+		const existed = super.delete(port);
+		if (existed) {
+			const requestPort = this.requestPorts.get(port);
+			if (requestPort) {
+				requestPort.close();
+				this.requestPorts.delete(port);
+			}
+			console.log(`[Worker] Port ${port} unregistered, notifying main thread`);
+			self.postMessage({ type: 'portUnregister', port } as WorkerMessage);
+		}
+		return existed;
+	}
+}
 
 // Global error handler — catches unhandled errors in the worker
 self.onerror = (event) => {
@@ -89,13 +181,13 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>): Promise<void> => {
 			// wakePort is transferred via postMessage transfer list —
 			// access from msg.wakePort (structured clone), not event.ports
 			const vfsClient = new VfsRpcClient(msg.sab, msg.wakePort);
-			workerKernel = new WorkerKernel(vfsClient, new Map());
+			workerKernel = new WorkerKernel(vfsClient, new WorkerPortRegistry());
 			workerKernel.setShellExecute(shellExecuteOnMain);
 
 			// Register node command with the kernel
 			registry.register('node', createNodeImpl(workerKernel));
-			registry.register('npm', createNpmCommand(workerKernel));
-			registry.register('npx', createNpxCommand(workerKernel));
+			registry.register('npm', createNpmCommand(workerKernel as any, registry, shellExecuteOnMain));
+			registry.register('npx', createNpxCommand(workerKernel as any, registry, shellExecuteOnMain));
 
 			console.log('[Worker] VFS RPC initialized, commands registered');
 			self.postMessage({ type: 'initialized' } as WorkerMessage);
@@ -124,6 +216,15 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>): Promise<void> => {
 			const stderr = createMessagePortOutputStream(ports.stderr);
 			const stdin = ports.stdin ? createMessagePortInputStream(ports.stdin) : undefined;
 
+			// Create setRawMode callback that forwards to main thread via stdin port.
+			// The main thread's bridgeStreamsToWorker already handles incoming
+			// setRawMode messages and calls ctx.setRawMode on the terminal stdin.
+			const setRawMode = ports.stdin
+				? (enabled: boolean) => {
+					ports.stdin!.postMessage({ type: 'setRawMode', enabled } as StreamMessage);
+				}
+				: undefined;
+
 			// Resolve the command from the local registry
 			const commandImpl = await registry.resolve(command);
 			if (!commandImpl) {
@@ -145,6 +246,7 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>): Promise<void> => {
 				stdout,
 				stderr,
 				stdin,
+				setRawMode,
 				signal: abortController.signal,
 			};
 

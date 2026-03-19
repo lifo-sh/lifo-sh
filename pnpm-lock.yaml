@@ -137,8 +137,8 @@ importers:
   packages/core:
     dependencies:
       '@lifo-sh/kernel':
-        specifier: ^0.1.22
-        version: 0.1.22(@lifo-sh/node-compat@0.1.24)
+        specifier: ^0.1.28
+        version: 0.1.28(@lifo-sh/node-compat@0.1.24)
       '@lifo-sh/node-compat':
         specifier: ^0.1.24
         version: 0.1.24
@@ -678,8 +678,8 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@lifo-sh/kernel@0.1.22':
-    resolution: {integrity: sha512-c0pPRsTRikT+icCr/xa5/D+YvL1KJgAtX1ImcgefI6OV4KfY5IouoXthR9/qfBHmn3ELgK3luYUXKEqteux1AA==}
+  '@lifo-sh/kernel@0.1.28':
+    resolution: {integrity: sha512-FduODTfBHDBfyRThYREw5DK+q053y/l45JLZp73SS43+I9MIbVpQsWRjDRsW3quGUlyDrsWafDl3YekKs1QBxA==}
     peerDependencies:
       '@lifo-sh/node-compat': '>=0.1.0'
     peerDependenciesMeta:
@@ -2641,13 +2641,13 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@lifo-sh/kernel@0.1.22(@lifo-sh/node-compat@0.1.24)':
+  '@lifo-sh/kernel@0.1.28(@lifo-sh/node-compat@0.1.24)':
     optionalDependencies:
       '@lifo-sh/node-compat': 0.1.24
 
   '@lifo-sh/node-compat@0.1.24':
     dependencies:
-      '@lifo-sh/kernel': 0.1.22(@lifo-sh/node-compat@0.1.24)
+      '@lifo-sh/kernel': 0.1.28(@lifo-sh/node-compat@0.1.24)
       picomatch: 4.0.3
 
   '@lifo-sh/node-runner@0.1.27(@lifo-sh/node-compat@0.1.24)':
